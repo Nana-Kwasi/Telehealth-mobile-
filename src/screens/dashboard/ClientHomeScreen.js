@@ -1,0 +1,970 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Dimensions,
+  Modal,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth, db } from '../../services/firebaseConfig';
+import { fetchClientData, getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { Colors } from '../../constants/colors';
+import { BarChart, LineChart } from 'react-native-chart-kit';
+
+const { width } = Dimensions.get('window');
+
+const chartConfig = {
+  backgroundColor: Colors.surface,
+  backgroundGradientFrom: Colors.surface,
+  backgroundGradientTo: Colors.surface,
+  decimalPlaces: 0,
+  color: (opacity = 1) => Colors.primary,
+  labelColor: () => Colors.textSecondary,
+  style: { borderRadius: 12 },
+};
+
+function calculateTherapyProgress(therapyNotes) {
+  if (!therapyNotes || therapyNotes.length === 0) {
+    return { overallProgress: 0 };
+  }
+  const baseProgress = Math.min(50, therapyNotes.length * 5);
+  const moodMultipliers = {
+    'Depressed': 0.2, 'Sad': 0.3, 'Anxious': 0.4, 'Stressed': 0.5, 'Angry': 0.4,
+    'Neutral': 0.7, 'Calm': 0.9, 'Hopeful': 0.95, 'Optimistic': 1.0, 'Excited': 1.0
+  };
+  const progressMultipliers = {
+    'Worsened': 0.1, 'Slight Decline': 0.3, 'No Change': 0.5, 'Slight Improvement': 0.8,
+    'Improved': 1.0, 'Significantly Improved': 1.2
+  };
+  let totalMood = 0, totalProgress = 0, totalRating = 0, validNotes = 0;
+  therapyNotes.forEach(note => {
+    if (note.mood && moodMultipliers[note.mood] !== undefined) {
+      totalMood += moodMultipliers[note.mood];
+      validNotes++;
+    }
+    if (note.progressAssessment && progressMultipliers[note.progressAssessment] !== undefined) {
+      totalProgress += progressMultipliers[note.progressAssessment];
+    }
+    if (note.moodRating >= 1 && note.moodRating <= 10) totalRating += note.moodRating / 10;
+  });
+  const avgMood = validNotes > 0 ? totalMood / validNotes : 0.5;
+  const avgProgress = validNotes > 0 ? totalProgress / validNotes : 0.5;
+  const avgRating = validNotes > 0 ? totalRating / validNotes : 0.5;
+  const qualityMultiplier = Math.max(0.1, Math.min(1.5,
+    avgMood * 0.4 + avgProgress * 0.4 + avgRating * 0.2
+  ));
+  const monthsInTherapy = therapyNotes.length / 4;
+  const timeBonus = Math.min(20, monthsInTherapy * 1);
+  let consistencyBonus = 0;
+  if (therapyNotes.length >= 3) {
+    const recent = therapyNotes.slice(-3);
+    const positiveCount = recent.filter(note =>
+      (note.mood && ['Calm', 'Hopeful', 'Optimistic', 'Excited'].includes(note.mood)) ||
+      (note.progressAssessment && ['Improved', 'Significantly Improved'].includes(note.progressAssessment)) ||
+      (note.moodRating && note.moodRating >= 7)
+    ).length;
+    consistencyBonus = (positiveCount / 3) * 10;
+  }
+  const rawProgress = baseProgress + timeBonus + consistencyBonus;
+  const finalProgress = Math.round(rawProgress * qualityMultiplier);
+  return { overallProgress: Math.max(0, Math.min(100, finalProgress)) };
+}
+
+const ClientHomeScreen = ({ navigation }) => {
+  const [clientData, setClientData] = useState(null);
+  const [therapistData, setTherapistData] = useState(null);
+  const [sessionsCompleted, setSessionsCompleted] = useState(0);
+  const [progressScore, setProgressScore] = useState(0);
+  const [nextSession, setNextSession] = useState(null);
+  const [scheduledDates, setScheduledDates] = useState(new Set());
+  const [sessionsByMonth, setSessionsByMonth] = useState([]);
+  const [moodTrendData, setMoodTrendData] = useState([]);
+  const [therapyNotes, setTherapyNotes] = useState([]);
+  const [upcomingCount, setUpcomingCount] = useState(0);
+  const [allScheduledCalls, setAllScheduledCalls] = useState([]);
+  const [selectedDateForModal, setSelectedDateForModal] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const snapshotUnsubRef = useRef(null);
+
+  useEffect(() => {
+    const unsubAuth = auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        setIsLoading(false);
+        setClientData(null);
+        setTherapistData(null);
+        setNextSession(null);
+        setSessionsCompleted(0);
+        setProgressScore(0);
+        setScheduledDates(new Set());
+        setSessionsByMonth([]);
+        setMoodTrendData([]);
+        setTherapyNotes([]);
+        setUpcomingCount(0);
+        setAllScheduledCalls([]);
+        setSelectedDateForModal(null);
+        return;
+      }
+      try {
+        await loadDashboardData();
+        const clientId = await AsyncStorage.getItem('th.clientId') || user.uid;
+        const nextSessionQuery = query(
+          collection(db, 'scheduledCalls'),
+          where('clientId', '==', clientId),
+          where('status', '==', 'scheduled')
+        );
+        snapshotUnsubRef.current = onSnapshot(nextSessionQuery, (snapshot) => {
+          if (!snapshot.empty) {
+            const sessions = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            })).filter(session => {
+              const sessionTime = session.scheduledTime?.toDate ? session.scheduledTime.toDate() : new Date(session.scheduledTime);
+              return sessionTime >= new Date();
+            }).sort((a, b) => {
+              const timeA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
+              const timeB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
+              return timeA - timeB;
+            });
+            setNextSession(sessions.length > 0 ? sessions[0] : null);
+          } else {
+            setNextSession(null);
+          }
+        }, (err) => console.error('Next session snapshot:', err));
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+        setIsLoading(false);
+      }
+    });
+    return () => {
+      unsubAuth();
+      if (snapshotUnsubRef.current) snapshotUnsubRef.current();
+    };
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setIsLoading(true);
+      let client = getCachedClientData();
+      if (!client) client = await fetchClientData();
+      setClientData(client);
+      let therapist = getCachedTherapistData();
+      if (client?.therapist) therapist = client.therapist;
+      setTherapistData(therapist);
+
+      const clientId = await AsyncStorage.getItem('th.clientId') || client?.id || auth.currentUser?.uid;
+      if (!clientId) {
+        setIsLoading(false);
+        return;
+      }
+
+      let notes = [];
+      try {
+        const notesRef = collection(db, 'clients', clientId, 'therapyNotes');
+        const notesSnap = await getDocs(notesRef);
+        notes = notesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setTherapyNotes(notes);
+      } catch (e) {
+        console.error('Error fetching therapy notes:', e);
+      }
+
+      const progressData = calculateTherapyProgress(notes);
+      let progressPct = progressData.overallProgress;
+      if (client?.status === 'discharged') progressPct = Math.min(100, progressPct);
+      else progressPct = Math.min(95, progressPct);
+      setProgressScore(progressPct);
+
+      const allCallsQuery = query(collection(db, 'scheduledCalls'), where('clientId', '==', clientId));
+      const allCallsSnap = await getDocs(allCallsQuery);
+      const allCalls = allCallsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setAllScheduledCalls(allCalls);
+      const completedCount = allCalls.filter(c => (c.status || '').toLowerCase() === 'completed').length;
+      const upcomingCount = allCalls.filter(c => ['scheduled', 'pending', 'confirmed'].includes((c.status || '').toLowerCase())).length;
+      setSessionsCompleted(notes.length > 0 ? notes.length : completedCount);
+      setUpcomingCount(upcomingCount);
+
+      const datesSet = new Set();
+      const now = new Date();
+      const monthCounts = {};
+      const currentYear = now.getFullYear();
+      for (let m = 0; m <= now.getMonth() + 1; m++) {
+        const d = new Date(currentYear, m, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        monthCounts[key] = { month: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), completed: 0, new: 0 };
+      }
+      allCalls.forEach(call => {
+        const t = call.scheduledTime?.toDate?.() || call.scheduledTime;
+        if (t) {
+          const d = new Date(t);
+          datesSet.add(d.toISOString().split('T')[0]);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const status = (call.status || '').toLowerCase();
+          if (monthCounts[key]) {
+            if (status === 'completed') monthCounts[key].completed += 1;
+            else if (status === 'scheduled' || status === 'pending' || status === 'confirmed') monthCounts[key].new += 1;
+          }
+        }
+      });
+      notes.forEach(note => {
+        const d = note.sessionDate ? new Date(note.sessionDate) : null;
+        if (d) datesSet.add(d.toISOString().split('T')[0]);
+      });
+      setScheduledDates(datesSet);
+      setSessionsByMonth(
+        Object.entries(monthCounts)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([, v]) => v)
+      );
+
+      const moodTrend = notes
+        .slice(-10)
+        .map((n, i) => ({
+          session: i + 1,
+          mood: n.moodRating ?? 5,
+          label: `S${i + 1}`,
+        }));
+      setMoodTrendData(moodTrend);
+
+      const upcoming = allCalls
+        .filter(s => s.status === 'scheduled')
+        .map(s => ({ ...s, scheduledTime: s.scheduledTime?.toDate?.() || s.scheduledTime }))
+        .filter(s => new Date(s.scheduledTime) >= now)
+        .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
+      setNextSession(upcoming.length > 0 ? upcoming[0] : null);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const onRefresh = async () => {
+    if (!auth.currentUser) {
+      setRefreshing(false);
+      return;
+    }
+    setRefreshing(true);
+    await loadDashboardData();
+    setRefreshing(false);
+  };
+
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const getCalendarDays = () => {
+    const y = calendarMonth.getFullYear(), m = calendarMonth.getMonth();
+    const first = new Date(y, m, 1);
+    const start = new Date(first);
+    start.setDate(start.getDate() - first.getDay());
+    const days = [];
+    for (let i = 0; i < 42; i++) {
+      days.push(new Date(start));
+      start.setDate(start.getDate() + 1);
+    }
+    return days;
+  };
+  const isScheduledDay = (date) => scheduledDates.has(date.toISOString().split('T')[0]);
+  const isCurrentMonthDay = (date) => date.getMonth() === calendarMonth.getMonth();
+  const isToday = (date) => {
+    const t = new Date();
+    return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
+  };
+  const getSessionsForDate = (dateStr) => {
+    return allScheduledCalls.filter(call => {
+      const t = call.scheduledTime?.toDate?.() || call.scheduledTime;
+      return t && new Date(t).toISOString().split('T')[0] === dateStr;
+    });
+  };
+  const formatTimeOnly = (timestamp) => {
+    const d = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const quickActions = [
+    { icon: 'chatbubbles-outline', label: 'Messages', screen: 'Messages', color: Colors.primary },
+    { icon: 'videocam-outline', label: 'Video Call', screen: 'Video', color: '#10B981' },
+    { icon: 'calendar-outline', label: 'Schedule', screen: 'Schedule', color: '#F59E0B' },
+    { icon: 'book-outline', label: 'Resources', screen: 'Resources', color: '#8B5CF6' },
+  ];
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Welcome back!</Text>
+          <Text style={styles.name}>{clientData?.name || 'Client'}</Text>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
+          <Ionicons name="settings-outline" size={24} color={Colors.text} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Therapist Card */}
+      {therapistData && (
+        <TouchableOpacity 
+          style={styles.therapistCard}
+          onPress={() => navigation.navigate('Messages')}
+        >
+          <Ionicons name="person-circle" size={48} color={Colors.primary} />
+          <View style={styles.therapistInfo}>
+            <Text style={styles.therapistLabel}>Your Therapist</Text>
+            <Text style={styles.therapistName}>{therapistData.name || 'Not assigned'}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      )}
+
+      {/* Stats Cards */}
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Ionicons name="checkmark-circle" size={32} color="#10B981" />
+          <Text style={styles.statNumber}>{sessionsCompleted}</Text>
+          <Text style={styles.statLabel}>Sessions</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Ionicons name="trending-up" size={32} color={Colors.primary} />
+          <Text style={styles.statNumber}>{progressScore}%</Text>
+          <Text style={styles.statLabel}>Progress</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Ionicons name="calendar" size={32} color="#F59E0B" />
+          <Text style={styles.statNumber}>{upcomingCount}</Text>
+          <Text style={styles.statLabel}>New schedules</Text>
+        </View>
+      </View>
+
+      {/* Progress bar (same % as therapist dashboard) */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Your progress</Text>
+        <View style={styles.progressBarWrap}>
+          <View style={[styles.progressBarTrack, { width: '100%' }]}>
+            <View style={[styles.progressBarFill, { width: `${progressScore}%` }]} />
+          </View>
+          <Text style={styles.progressBarLabel}>{progressScore}% — matches your therapist&apos;s view</Text>
+        </View>
+      </View>
+
+      {/* Live calendar - days with sessions marked */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>My sessions calendar</Text>
+        <View style={styles.calendarCard}>
+          <View style={styles.monthNav}>
+            <TouchableOpacity onPress={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1))}>
+              <Ionicons name="chevron-back" size={24} color={Colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.monthTitle}>{calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text>
+            <TouchableOpacity onPress={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1))}>
+              <Ionicons name="chevron-forward" size={24} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.weekdayRow}>
+            {weekDays.map(day => (
+              <Text key={day} style={styles.weekdayLabel}>{day}</Text>
+            ))}
+          </View>
+          <View style={styles.calendarGrid}>
+            {getCalendarDays().map((day, i) => {
+              const dateStr = day.toISOString().split('T')[0];
+              const scheduled = isScheduledDay(day);
+              const dayContent = (
+                <>
+                  <Text style={[
+                    styles.calendarDayNum,
+                    !isCurrentMonthDay(day) && styles.calendarDayNumOther,
+                    scheduled && styles.calendarDayNumScheduled,
+                  ]}>
+                    {day.getDate()}
+                  </Text>
+                  {scheduled && <Ionicons name="checkmark" size={12} color="#fff" style={styles.calendarTick} />}
+                </>
+              );
+              const dayStyle = [
+                styles.calendarDay,
+                !isCurrentMonthDay(day) && styles.calendarDayOther,
+                isToday(day) && styles.calendarDayToday,
+                scheduled && styles.calendarDayScheduled,
+              ];
+              return scheduled ? (
+                <TouchableOpacity
+                  key={i}
+                  style={dayStyle}
+                  onPress={() => setSelectedDateForModal(dateStr)}
+                  activeOpacity={0.7}
+                >
+                  {dayContent}
+                </TouchableOpacity>
+              ) : (
+                <View key={i} style={dayStyle}>{dayContent}</View>
+              );
+            })}
+          </View>
+          <Text style={styles.calendarLegend}>✓ = day with a session (tap for details)</Text>
+        </View>
+      </View>
+
+      <Modal
+        visible={!!selectedDateForModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedDateForModal(null)}
+      >
+        <TouchableOpacity
+          style={styles.dateModalOverlay}
+          activeOpacity={1}
+          onPress={() => setSelectedDateForModal(null)}
+        >
+          <TouchableOpacity style={styles.dateModalContent} activeOpacity={1} onPress={() => {}}>
+            <Text style={styles.dateModalTitle}>
+              {selectedDateForModal
+                ? new Date(selectedDateForModal + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+                : ''}
+            </Text>
+            {selectedDateForModal && getSessionsForDate(selectedDateForModal).length > 0 ? (
+              getSessionsForDate(selectedDateForModal).map((session, idx) => (
+                <View key={session.id || idx} style={styles.dateModalSession}>
+                  <Text style={styles.dateModalTime}>{formatTimeOnly(session.scheduledTime)}</Text>
+                  <Text style={styles.dateModalMeta}>
+                    {session.duration ? `${session.duration} min` : ''} • {session.status || 'scheduled'}
+                  </Text>
+                  {session.therapistName && (
+                    <Text style={styles.dateModalTherapist}>Therapist: {session.therapistName}</Text>
+                  )}
+                  {session.notes ? (
+                    <Text style={styles.dateModalNotes} numberOfLines={3}>{session.notes}</Text>
+                  ) : null}
+                </View>
+              ))
+            ) : (
+              <Text style={styles.dateModalEmpty}>No session details for this date.</Text>
+            )}
+            <TouchableOpacity
+              style={styles.dateModalClose}
+              onPress={() => setSelectedDateForModal(null)}
+            >
+              <Text style={styles.dateModalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Quick Actions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.actionsGrid}>
+          {quickActions.map((action, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.actionCard}
+              onPress={() => navigation.navigate(action.screen)}
+            >
+              <View style={[styles.actionIconContainer, { backgroundColor: `${action.color}20` }]}>
+                <Ionicons name={action.icon} size={28} color={action.color} />
+              </View>
+              <Text style={styles.actionLabel}>{action.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Charts */}
+      {sessionsByMonth.length > 0 && (() => {
+        const groupedLabels = sessionsByMonth.flatMap(m => [m.month, '']);
+        const groupedData = sessionsByMonth.flatMap(m => [m.completed, m.new]);
+        const groupedColors = groupedData.map((_, i) => (opacity = 1) => (i % 2 === 0 ? '#10B981' : '#F59E0B'));
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Sessions per month</Text>
+            <View style={styles.chartCard}>
+              <BarChart
+                data={{
+                  labels: groupedLabels,
+                  datasets: [{ data: groupedData, colors: groupedColors }],
+                }}
+                width={width - 80}
+                height={200}
+                chartConfig={{ ...chartConfig, barPercentage: 0.5 }}
+                style={styles.chart}
+                fromZero
+                showBarTops={false}
+                yAxisLabel=""
+                yAxisSuffix=""
+                withCustomBarColorFromData
+              />
+              <View style={styles.chartLegend}>
+                <View style={styles.chartLegendItem}>
+                  <View style={[styles.chartLegendDot, { backgroundColor: '#10B981' }]} />
+                  <Text style={styles.chartLegendText}>Completed</Text>
+                </View>
+                <View style={styles.chartLegendItem}>
+                  <View style={[styles.chartLegendDot, { backgroundColor: '#F59E0B' }]} />
+                  <Text style={styles.chartLegendText}>New (scheduled/pending)</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
+      {moodTrendData.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Session mood rating (last 10)</Text>
+          <View style={styles.chartCard}>
+            <LineChart
+              data={{
+                labels: moodTrendData.map(d => d.label),
+                datasets: [{ data: moodTrendData.map(d => d.mood) }],
+              }}
+              width={width - 80}
+              height={200}
+              chartConfig={{ ...chartConfig, color: () => '#8B5CF6' }}
+              style={styles.chart}
+              fromZero
+              yAxisSuffix="/10"
+              bezier
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Next Session */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Upcoming Session</Text>
+        {nextSession ? (
+          <View style={styles.sessionCard}>
+            <View style={styles.sessionHeader}>
+              <Ionicons name="calendar" size={24} color={Colors.primary} />
+              <Text style={styles.sessionDate}>{formatDate(nextSession.scheduledTime)}</Text>
+            </View>
+            {nextSession.notes && (
+              <Text style={styles.sessionNotes} numberOfLines={2}>{nextSession.notes}</Text>
+            )}
+            <TouchableOpacity
+              style={styles.viewDetailsButton}
+              onPress={() => navigation.navigate('Schedule')}
+            >
+              <Text style={styles.viewDetailsText}>View Details</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="calendar-outline" size={48} color={Colors.textSecondary} />
+            <Text style={styles.emptyText}>No upcoming sessions</Text>
+            <TouchableOpacity
+              style={styles.scheduleButton}
+              onPress={() => navigation.navigate('Video')}
+            >
+              <Text style={styles.scheduleButtonText}>Schedule a Session</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  contentContainer: {
+    padding: 20,
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: Colors.textSecondary,
+    fontSize: 14,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  greeting: {
+    fontSize: 18,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  name: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  therapistCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  therapistInfo: {
+    marginLeft: 16,
+    flex: 1,
+  },
+  therapistLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  therapistName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 16,
+  },
+  progressBarWrap: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 16,
+  },
+  progressBarTrack: {
+    height: 12,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 6,
+  },
+  progressBarLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 8,
+  },
+  calendarCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+  },
+  monthNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  weekdayRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  weekdayLabel: {
+    width: (width - 64) / 7,
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  calendarDay: {
+    width: (width - 64) / 7,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  calendarDayOther: {
+    opacity: 0.4,
+  },
+  calendarDayToday: {
+    backgroundColor: `${Colors.primary}20`,
+  },
+  calendarDayScheduled: {
+    backgroundColor: Colors.primary,
+  },
+  calendarDayNum: {
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '500',
+  },
+  calendarDayNumOther: {
+    color: Colors.textSecondary,
+  },
+  calendarDayNumScheduled: {
+    color: '#fff',
+  },
+  calendarTick: {
+    position: 'absolute',
+    bottom: 2,
+  },
+  calendarLegend: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  dateModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  dateModalContent: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+  },
+  dateModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  dateModalSession: {
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  dateModalTime: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  dateModalMeta: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  dateModalTherapist: {
+    fontSize: 13,
+    color: Colors.text,
+    marginTop: 4,
+  },
+  dateModalNotes: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  dateModalEmpty: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  dateModalClose: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  dateModalCloseText: {
+    color: Colors.surface,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  chartCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 12,
+    alignItems: 'center',
+  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 12,
+  },
+  chartLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 12,
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chartLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  chartLegendText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  actionCard: {
+    width: '48%',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  actionIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  actionLabel: {
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '500',
+  },
+  sessionCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sessionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sessionDate: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    marginLeft: 12,
+  },
+  sessionNotes: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+  },
+  viewDetailsButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  viewDetailsText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyState: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    marginTop: 12,
+    marginBottom: 20,
+  },
+  scheduleButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  scheduleButtonText: {
+    color: Colors.surface,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
+
+export default ClientHomeScreen;

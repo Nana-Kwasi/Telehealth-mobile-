@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "NessaHub",
+    "slug": "telehealth-client-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#4a7c59"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nessahub.client"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#4a7c59"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.nessahub.client"
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    }
+  }
+}

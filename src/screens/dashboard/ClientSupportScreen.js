@@ -1,0 +1,1186 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
+import { db, auth } from '../../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getCachedClientData } from '../../services/clientDataService';
+import { Colors } from '../../constants/colors';
+
+const ClientSupportScreen = ({ navigation }) => {
+  const [recentSessions, setRecentSessions] = useState([]);
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [incidents, setIncidents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  const [showFAQ, setShowFAQ] = useState(false);
+  const [showIncidentDetails, setShowIncidentDetails] = useState(false);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [searchedIncident, setSearchedIncident] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [incidentSearch, setIncidentSearch] = useState('');
+  
+  const [rating, setRating] = useState(0);
+  const [ratingTherapist, setRatingTherapist] = useState(0);
+  const [ratingSystem, setRatingSystem] = useState(0);
+  const [ratingComment, setRatingComment] = useState('');
+  
+  const [issueForm, setIssueForm] = useState({
+    title: '',
+    description: '',
+    severity: 'medium',
+    relatedSession: '',
+    consentToShare: false
+  });
+  const [faqSearch, setFaqSearch] = useState('');
+
+  const faqItems = [
+    {
+      question: 'How do I schedule a session?',
+      answer: 'You can schedule a session by going to the Schedule or Video Calls screen and clicking the "+" button. Select a date and time that works for you, and your therapist will confirm the appointment.'
+    },
+    {
+      question: 'Can I reschedule or cancel a session?',
+      answer: 'Yes, you can reschedule or cancel sessions up to 24 hours before the scheduled time. Go to your Schedule screen and select the session you want to modify.'
+    },
+    {
+      question: 'How do I contact my therapist?',
+      answer: 'You can message your therapist directly through the Messages screen. Your therapist will respond as soon as possible during their working hours.'
+    },
+    {
+      question: 'What if I have a technical issue?',
+      answer: 'If you experience any technical issues, please report them using the "Report Issue" button on this screen. Our support team will help you resolve the problem.'
+    },
+    {
+      question: 'How do I access my resources?',
+      answer: 'All your assigned resources, worksheets, and notes are available in the Resources screen. You can search and filter them by category.'
+    },
+    {
+      question: 'How do I update my payment information?',
+      answer: 'You can update your payment methods and view billing history in the Billing screen under your dashboard menu.'
+    },
+    {
+      question: 'What should I do in case of an emergency?',
+      answer: 'If you are experiencing a mental health emergency, please contact your local emergency services (911) or crisis hotline immediately. This platform is not for emergency situations.'
+    },
+    {
+      question: 'How do I change my password?',
+      answer: 'Go to Settings > Security section and click "Change Password". You will need to enter your current password and then set a new one.'
+    }
+  ];
+
+  useEffect(() => {
+    fetchSupportData();
+  }, []);
+
+  const fetchSupportData = async () => {
+    try {
+      setIsLoading(true);
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const clientId = await AsyncStorage.getItem('th.clientId') || currentUser.uid;
+
+      // Fetch recent sessions - query without orderBy to avoid index requirement
+      try {
+        const sessionsQuery = query(
+          collection(db, 'scheduledCalls'),
+          where('clientId', '==', clientId),
+          where('status', '==', 'completed')
+        );
+        const sessionsSnapshot = await getDocs(sessionsQuery);
+        const sessions = sessionsSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .sort((a, b) => {
+            const dateA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
+            const dateB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
+            return dateB - dateA;
+          })
+          .slice(0, 5);
+        setRecentSessions(sessions);
+      } catch (error) {
+        console.error('Error fetching sessions:', error);
+        // Fallback: fetch all and filter client-side
+        try {
+          const allSessionsQuery = query(collection(db, 'scheduledCalls'));
+          const allSessionsSnapshot = await getDocs(allSessionsQuery);
+          const sessions = allSessionsSnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(session => session.clientId === clientId && session.status === 'completed')
+            .sort((a, b) => {
+              const dateA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
+              const dateB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
+              return dateB - dateA;
+            })
+            .slice(0, 5);
+          setRecentSessions(sessions);
+        } catch (fallbackError) {
+          console.error('Fallback sessions query failed:', fallbackError);
+        }
+      }
+
+      // Fetch support tickets - query without orderBy to avoid index requirement
+      try {
+        const ticketsQuery = query(
+          collection(db, 'supportTickets'),
+          where('clientId', '==', clientId)
+        );
+        const ticketsSnapshot = await getDocs(ticketsQuery);
+        const tickets = ticketsSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return dateB - dateA;
+          })
+          .slice(0, 10);
+        setSupportTickets(tickets);
+      } catch (error) {
+        console.error('Error fetching support tickets:', error);
+        // Fallback: fetch all and filter client-side
+        try {
+          const allTicketsQuery = query(collection(db, 'supportTickets'));
+          const allTicketsSnapshot = await getDocs(allTicketsQuery);
+          const tickets = allTicketsSnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(ticket => ticket.clientId === clientId)
+            .sort((a, b) => {
+              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+              return dateB - dateA;
+            })
+            .slice(0, 10);
+          setSupportTickets(tickets);
+        } catch (fallbackError) {
+          console.error('Fallback tickets query failed:', fallbackError);
+        }
+      }
+
+      // Fetch incidents
+      try {
+        const incidentsQuery = query(
+          collection(db, 'therapistReports'),
+          where('clientId', '==', clientId)
+        );
+        const incidentsSnapshot = await getDocs(incidentsQuery);
+        const incidentsData = incidentsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        incidentsData.sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return dateB - dateA;
+        });
+        
+        setIncidents(incidentsData);
+      } catch (error) {
+        console.error('Error fetching incidents:', error);
+        // Fallback: fetch all and filter client-side
+        try {
+          const allIncidentsQuery = query(collection(db, 'therapistReports'));
+          const allIncidentsSnapshot = await getDocs(allIncidentsQuery);
+          const incidentsData = allIncidentsSnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(incident => incident.clientId === clientId)
+            .sort((a, b) => {
+              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+              return dateB - dateA;
+            });
+          setIncidents(incidentsData);
+        } catch (fallbackError) {
+          console.error('Fallback incident query failed:', fallbackError);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error fetching support data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRatingSubmit = async () => {
+    if (!selectedSession || rating === 0) {
+      Alert.alert('Error', 'Please provide a rating for the session.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'sessionRatings'), {
+        sessionId: selectedSession.id,
+        clientId: auth.currentUser.uid,
+        therapistId: selectedSession.therapistId,
+        sessionRating: rating,
+        therapistRating: ratingTherapist,
+        systemRating: ratingSystem,
+        comment: ratingComment,
+        createdAt: serverTimestamp()
+      });
+
+      Alert.alert('Success', 'Thank you for your feedback!');
+      setShowRatingModal(false);
+      setRating(0);
+      setRatingTherapist(0);
+      setRatingSystem(0);
+      setRatingComment('');
+      setSelectedSession(null);
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+      Alert.alert('Error', 'Failed to submit rating. Please try again.');
+    }
+  };
+
+  const handleIssueSubmit = async () => {
+    if (!issueForm.title || !issueForm.description) {
+      Alert.alert('Error', 'Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'supportTickets'), {
+        clientId: auth.currentUser.uid,
+        title: issueForm.title,
+        description: issueForm.description,
+        severity: issueForm.severity,
+        relatedSession: issueForm.relatedSession || null,
+        attachments: [],
+        consentToShare: issueForm.consentToShare,
+        status: 'open',
+        createdAt: serverTimestamp()
+      });
+
+      Alert.alert('Success', 'Support ticket created successfully! We will get back to you soon.');
+      setShowIssueModal(false);
+      setIssueForm({
+        title: '',
+        description: '',
+        severity: 'medium',
+        relatedSession: '',
+        consentToShare: false
+      });
+      fetchSupportData();
+    } catch (error) {
+      console.error('Error creating support ticket:', error);
+      Alert.alert('Error', 'Failed to create support ticket. Please try again.');
+    }
+  };
+
+  const handleIncidentSearch = () => {
+    if (!incidentSearch.trim()) {
+      Alert.alert('Error', 'Please enter an incident ID to search.');
+      return;
+    }
+
+    setIsSearching(true);
+    const searchId = incidentSearch.trim();
+    const foundIncident = incidents.find(incident => 
+      incident.incidentId === searchId
+    );
+    
+    if (foundIncident) {
+      setSearchedIncident(foundIncident);
+      setShowIncidentDetails(true);
+      setIncidentSearch('');
+    } else {
+      Alert.alert('Not Found', `Incident ID "${searchId}" not found. Please check your incident ID and try again.`);
+    }
+    setIsSearching(false);
+  };
+
+  const formatSessionDate = (scheduledTime) => {
+    const date = scheduledTime?.toDate ? scheduledTime.toDate() : new Date(scheduledTime);
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  };
+
+  const formatIncidentDate = (timestamp) => {
+    if (!timestamp) return 'Unknown date';
+    const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getTicketStatusColor = (status) => {
+    switch (status) {
+      case 'open': return '#3B82F6';
+      case 'in_progress': return '#F59E0B';
+      case 'resolved': return '#10B981';
+      case 'closed': return Colors.textSecondary;
+      default: return Colors.textSecondary;
+    }
+  };
+
+  const getIncidentStatusColor = (status) => {
+    switch (status) {
+      case 'submitted': return '#3B82F6';
+      case 'seen': return '#F59E0B';
+      case 'processing': return '#F97316';
+      case 'completed': return '#10B981';
+      default: return Colors.textSecondary;
+    }
+  };
+
+  const filteredFAQ = faqItems.filter(item =>
+    item.question.toLowerCase().includes(faqSearch.toLowerCase()) ||
+    item.answer.toLowerCase().includes(faqSearch.toLowerCase())
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchSupportData();
+    setRefreshing(false);
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading support information...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color={Colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Feedback & Support</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Quick Actions */}
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={() => {
+              if (recentSessions.length > 0) {
+                setSelectedSession(recentSessions[0]);
+              }
+              setShowRatingModal(true);
+            }}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#F59E0B20' }]}>
+              <Ionicons name="star" size={32} color="#F59E0B" />
+            </View>
+            <Text style={styles.actionTitle}>Rate Session</Text>
+            <Text style={styles.actionSubtitle}>Share your experience</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={() => setShowIssueModal(true)}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#EF444420' }]}>
+              <Ionicons name="alert-circle" size={32} color="#EF4444" />
+            </View>
+            <Text style={styles.actionTitle}>Report Issue</Text>
+            <Text style={styles.actionSubtitle}>Get technical help</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={() => setShowFAQ(true)}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#3B82F620' }]}>
+              <Ionicons name="help-circle" size={32} color="#3B82F6" />
+            </View>
+            <Text style={styles.actionTitle}>FAQ</Text>
+            <Text style={styles.actionSubtitle}>Common questions</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Recent Sessions */}
+        {recentSessions.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Recent Sessions</Text>
+            {recentSessions.slice(0, 3).map((session) => (
+              <View key={session.id} style={styles.sessionCard}>
+                <View style={styles.sessionInfo}>
+                  <Text style={styles.sessionTherapist}>
+                    Session with {session.therapistName || 'Therapist'}
+                  </Text>
+                  <Text style={styles.sessionDate}>
+                    {formatSessionDate(session.scheduledTime)}
+                  </Text>
+                  <Text style={styles.sessionDuration}>
+                    {session.duration || 30} minutes
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.rateButton}
+                  onPress={() => {
+                    setSelectedSession(session);
+                    setShowRatingModal(true);
+                  }}
+                >
+                  <Ionicons name="star" size={16} color={Colors.surface} />
+                  <Text style={styles.rateButtonText}>Rate</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Support Tickets */}
+        {supportTickets.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Support Tickets</Text>
+            {supportTickets.map((ticket) => (
+              <View key={ticket.id} style={styles.ticketCard}>
+                <View style={styles.ticketHeader}>
+                  <Text style={styles.ticketTitle}>{ticket.title}</Text>
+                  <View style={[
+                    styles.ticketStatus,
+                    { backgroundColor: `${getTicketStatusColor(ticket.status)}20` }
+                  ]}>
+                    <Text style={[
+                      styles.ticketStatusText,
+                      { color: getTicketStatusColor(ticket.status) }
+                    ]}>
+                      {ticket.status}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.ticketDescription} numberOfLines={2}>
+                  {ticket.description}
+                </Text>
+                <Text style={styles.ticketDate}>
+                  {formatIncidentDate(ticket.createdAt)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Incident Tracking */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Incident Tracking</Text>
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Enter incident ID to track status..."
+              placeholderTextColor={Colors.textSecondary}
+              value={incidentSearch}
+              onChangeText={setIncidentSearch}
+            />
+            <TouchableOpacity
+              style={styles.searchButton}
+              onPress={handleIncidentSearch}
+              disabled={isSearching || !incidentSearch.trim()}
+            >
+              {isSearching ? (
+                <ActivityIndicator size="small" color={Colors.surface} />
+              ) : (
+                <Text style={styles.searchButtonText}>Search</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {incidents.length > 0 && (
+            <View style={styles.incidentsList}>
+              {incidents.map((incident) => (
+                <View key={incident.id} style={styles.incidentCard}>
+                  <View style={styles.incidentHeader}>
+                    <Text style={styles.incidentId}>{incident.incidentId}</Text>
+                    <View style={[
+                      styles.incidentStatus,
+                      { backgroundColor: `${getIncidentStatusColor(incident.status)}20` }
+                    ]}>
+                      <Text style={[
+                        styles.incidentStatusText,
+                        { color: getIncidentStatusColor(incident.status) }
+                      ]}>
+                        {incident.status}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.incidentType}>
+                    {incident.incidentType?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  </Text>
+                  <Text style={styles.incidentDate}>
+                    {formatIncidentDate(incident.createdAt)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Rating Modal */}
+      <Modal
+        visible={showRatingModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowRatingModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Rate Session</Text>
+              <TouchableOpacity onPress={() => setShowRatingModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalContent}>
+              <Text style={styles.ratingLabel}>Overall Session Rating *</Text>
+              <View style={styles.starsContainer}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={() => setRating(star)}
+                  >
+                    <Ionicons
+                      name={star <= rating ? 'star' : 'star-outline'}
+                      size={32}
+                      color={star <= rating ? '#F59E0B' : Colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.ratingLabel}>Therapist Rating</Text>
+              <View style={styles.starsContainer}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={() => setRatingTherapist(star)}
+                  >
+                    <Ionicons
+                      name={star <= ratingTherapist ? 'star' : 'star-outline'}
+                      size={32}
+                      color={star <= ratingTherapist ? '#F59E0B' : Colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.ratingLabel}>System Rating</Text>
+              <View style={styles.starsContainer}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={() => setRatingSystem(star)}
+                  >
+                    <Ionicons
+                      name={star <= ratingSystem ? 'star' : 'star-outline'}
+                      size={32}
+                      color={star <= ratingSystem ? '#F59E0B' : Colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.ratingLabel}>Comments (optional)</Text>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Share your feedback..."
+                placeholderTextColor={Colors.textSecondary}
+                value={ratingComment}
+                onChangeText={setRatingComment}
+                multiline
+                numberOfLines={4}
+              />
+
+              <TouchableOpacity
+                style={[styles.submitButton, rating === 0 && styles.submitButtonDisabled]}
+                onPress={handleRatingSubmit}
+                disabled={rating === 0}
+              >
+                <Text style={styles.submitButtonText}>Submit Rating</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Issue Modal */}
+      <Modal
+        visible={showIssueModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowIssueModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report Issue</Text>
+              <TouchableOpacity onPress={() => setShowIssueModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalContent}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Title *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Brief description of the issue"
+                  placeholderTextColor={Colors.textSecondary}
+                  value={issueForm.title}
+                  onChangeText={(text) => setIssueForm({...issueForm, title: text})}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Description *</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Describe the issue in detail..."
+                  placeholderTextColor={Colors.textSecondary}
+                  value={issueForm.description}
+                  onChangeText={(text) => setIssueForm({...issueForm, description: text})}
+                  multiline
+                  numberOfLines={6}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Severity</Text>
+                <View style={styles.severityContainer}>
+                  {['low', 'medium', 'high'].map(severity => (
+                    <TouchableOpacity
+                      key={severity}
+                      style={[
+                        styles.severityButton,
+                        issueForm.severity === severity && styles.severityButtonActive
+                      ]}
+                      onPress={() => setIssueForm({...issueForm, severity})}
+                    >
+                      <Text style={[
+                        styles.severityButtonText,
+                        issueForm.severity === severity && styles.severityButtonTextActive
+                      ]}>
+                        {severity.charAt(0).toUpperCase() + severity.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.submitButton, (!issueForm.title || !issueForm.description) && styles.submitButtonDisabled]}
+                onPress={handleIssueSubmit}
+                disabled={!issueForm.title || !issueForm.description}
+              >
+                <Text style={styles.submitButtonText}>Submit Ticket</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FAQ Modal */}
+      <Modal
+        visible={showFAQ}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFAQ(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Frequently Asked Questions</Text>
+              <TouchableOpacity onPress={() => setShowFAQ(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search-outline" size={20} color={Colors.textSecondary} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search FAQ..."
+                placeholderTextColor={Colors.textSecondary}
+                value={faqSearch}
+                onChangeText={setFaqSearch}
+              />
+            </View>
+            <ScrollView style={styles.modalContent}>
+              {filteredFAQ.map((item, index) => (
+                <View key={index} style={styles.faqItem}>
+                  <Text style={styles.faqQuestion}>{item.question}</Text>
+                  <Text style={styles.faqAnswer}>{item.answer}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Incident Details Modal */}
+      <Modal
+        visible={showIncidentDetails}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowIncidentDetails(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Incident Details</Text>
+              <TouchableOpacity onPress={() => setShowIncidentDetails(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalContent}>
+              {searchedIncident && (
+                <>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Incident ID:</Text>
+                    <Text style={styles.detailValue}>{searchedIncident.incidentId}</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Type:</Text>
+                    <Text style={styles.detailValue}>
+                      {searchedIncident.incidentType?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Status:</Text>
+                    <Text style={[styles.detailValue, { color: getIncidentStatusColor(searchedIncident.status) }]}>
+                      {searchedIncident.status?.charAt(0).toUpperCase() + searchedIncident.status?.slice(1)}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Date Created:</Text>
+                    <Text style={styles.detailValue}>
+                      {formatIncidentDate(searchedIncident.createdAt)}
+                    </Text>
+                  </View>
+                  {searchedIncident.description && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Description:</Text>
+                      <Text style={styles.detailValue}>{searchedIncident.description}</Text>
+                    </View>
+                  )}
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: Colors.textSecondary,
+    fontSize: 14,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 24,
+  },
+  actionCard: {
+    flex: 1,
+    minWidth: '48%',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  actionIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  actionSubtitle: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 16,
+  },
+  sessionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sessionInfo: {
+    flex: 1,
+  },
+  sessionTherapist: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  sessionDate: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 2,
+  },
+  sessionDuration: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  rateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  rateButtonText: {
+    color: Colors.surface,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  ticketCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  ticketHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  ticketTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    flex: 1,
+    marginRight: 12,
+  },
+  ticketStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  ticketStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  ticketDescription: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 8,
+  },
+  ticketDate: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 16,
+    gap: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.text,
+  },
+  searchButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  searchButtonText: {
+    color: Colors.surface,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  incidentsList: {
+    gap: 12,
+  },
+  incidentCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  incidentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  incidentId: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    flex: 1,
+  },
+  incidentStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  incidentStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  incidentType: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  incidentDate: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modal: {
+    backgroundColor: Colors.surface,
+    borderRadius: 24,
+    width: '90%',
+    maxHeight: '90%',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  modalContent: {
+    padding: 20,
+  },
+  ratingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 12,
+    marginTop: 16,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  commentInput: {
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: Colors.text,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: Colors.text,
+    backgroundColor: Colors.surface,
+  },
+  textArea: {
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  severityContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  severityButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  severityButtonActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  severityButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  severityButtonTextActive: {
+    color: Colors.surface,
+  },
+  submitButton: {
+    backgroundColor: Colors.primary,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    color: Colors.surface,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  faqItem: {
+    marginBottom: 24,
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  faqQuestion: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  faqAnswer: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    lineHeight: 24,
+  },
+  detailRow: {
+    marginBottom: 16,
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  detailValue: {
+    fontSize: 16,
+    color: Colors.text,
+  },
+});
+
+export default ClientSupportScreen;
