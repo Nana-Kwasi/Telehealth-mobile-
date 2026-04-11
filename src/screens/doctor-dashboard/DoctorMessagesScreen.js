@@ -11,6 +11,7 @@ import {
   orderBy, serverTimestamp, getDoc, doc,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { enrichPatientNames } from '../../utils/doctorUtils';
 
 function getInitials(name) {
   if (!name) return 'P';
@@ -28,7 +29,7 @@ function timeAgo(ts) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function DoctorMessagesScreen() {
+export default function DoctorMessagesScreen({ route }) {
   const [patients, setPatients] = useState([]);
   const [activePatient, setActivePatient] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -44,6 +45,19 @@ export default function DoctorMessagesScreen() {
     loadPatients();
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, []);
+
+  // Auto-open chat if navigated with a patientId param
+  useEffect(() => {
+    const { patientId, patientName } = route?.params || {};
+    if (patientId && patients.length > 0) {
+      const found = patients.find(p => p.id === patientId);
+      if (found) {
+        setActivePatient(found);
+      } else {
+        setActivePatient({ id: patientId, name: patientName || 'Patient' });
+      }
+    }
+  }, [patients, route?.params?.patientId]);
 
   useEffect(() => {
     if (!activePatient) { setMessages([]); return; }
@@ -70,13 +84,14 @@ export default function DoctorMessagesScreen() {
         if (!existing || (data.date || '') > (existing.lastVisit || '')) {
           patMap.set(data.clientId, {
             id: data.clientId,
-            name: data.clientName || 'Patient',
+            name: data.clientName || '',
             email: data.clientEmail || '',
             lastVisit: data.date || '',
           });
         }
       });
-      setPatients(Array.from(patMap.values()));
+      const enriched = await enrichPatientNames(patMap);
+      setPatients(Array.from(enriched.values()));
     } catch (err) {
       console.error('DoctorMessages patients error:', err);
     } finally {

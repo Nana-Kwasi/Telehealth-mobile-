@@ -10,6 +10,7 @@ import {
   doc, serverTimestamp,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { enrichPatientNames } from '../../utils/doctorUtils';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const FILTERS = ['Today', 'Upcoming', 'Past', 'All'];
@@ -40,7 +41,17 @@ export default function DoctorVideoScreen() {
       const snap = await getDocs(
         query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
       );
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const rawAll = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Enrich patient names
+      const patMap = new Map();
+      rawAll.forEach(a => { if (a.clientId) patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '' }); });
+      const enrichedPats = await enrichPatientNames(patMap);
+      const nameMap = {};
+      for (const [id, p] of enrichedPats.entries()) nameMap[id] = p.name;
+      const all = rawAll.map(a => ({
+        ...a,
+        clientName: (a.clientId && nameMap[a.clientId]) ? nameMap[a.clientId] : (a.clientName || 'Patient'),
+      }));
       const video = all.filter(a => {
         const t = (a.consultationType || a.type || '').toLowerCase();
         return t === 'video';

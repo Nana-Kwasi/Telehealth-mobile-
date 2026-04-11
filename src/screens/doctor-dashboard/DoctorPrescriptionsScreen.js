@@ -8,9 +8,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import {
   collection, query, where, getDocs, addDoc, updateDoc,
-  deleteDoc, doc, orderBy, serverTimestamp, getDoc,
+  deleteDoc, doc, serverTimestamp, getDoc,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { enrichPatientNames } from '../../utils/doctorUtils';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -51,15 +52,36 @@ export default function DoctorPrescriptionsScreen() {
       apptSnap.docs.forEach(d => {
         const data = d.data();
         if (data.clientId && !patMap.has(data.clientId)) {
-          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || 'Patient' });
+          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || '' });
         }
       });
-      setPatients(Array.from(patMap.values()));
+      const enriched = await enrichPatientNames(patMap);
+      setPatients(Array.from(enriched.values()));
 
+      // Build name lookup from enriched patient map
+      const nameById = {};
+      for (const [id, p] of enriched.entries()) nameById[id] = p.name;
+
+      // Load prescriptions — no orderBy to avoid composite index requirement; sort in JS
       const rxSnap = await getDocs(
-        query(collection(db, 'doctorPrescriptions'), where('doctorId', '==', cu.uid), orderBy('date', 'desc'))
+        query(collection(db, 'doctorPrescriptions'), where('doctorId', '==', cu.uid))
       );
-      setPrescriptions(rxSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const rxList = rxSnap.docs.map(d => {
+        const data = d.data();
+        // Normalize: handle both flat format (from PatientDetail) and array format
+        let medications = data.medications;
+        if (!medications || medications.length === 0) {
+          if (data.medication) {
+            medications = [{ name: data.medication, dosage: data.dosage || '', frequency: data.frequency || '', duration: data.duration || '' }];
+          } else {
+            medications = [];
+          }
+        }
+        const patientName = data.patientName || (data.patientId && nameById[data.patientId]) || 'Patient';
+        return { id: d.id, ...data, medications, patientName };
+      });
+      rxList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setPrescriptions(rxList);
     } catch (err) {
       console.error('DoctorPrescriptions load error:', err);
     } finally {

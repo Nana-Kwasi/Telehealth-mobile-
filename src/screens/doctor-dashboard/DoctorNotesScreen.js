@@ -8,9 +8,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import {
   collection, query, where, getDocs, addDoc, updateDoc,
-  deleteDoc, doc, orderBy, serverTimestamp, getDoc,
+  deleteDoc, doc, serverTimestamp, getDoc,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { enrichPatientNames } from '../../utils/doctorUtils';
 
 const NOTE_TYPES = [
   { value: 'consultation', label: 'Consultation', color: '#1e6bb8', bg: '#dbeafe' },
@@ -60,16 +61,19 @@ export default function DoctorNotesScreen() {
       apptSnap.docs.forEach(d => {
         const data = d.data();
         if (data.clientId && !patMap.has(data.clientId)) {
-          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || 'Patient' });
+          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || '' });
         }
       });
-      setPatients(Array.from(patMap.values()));
+      const enriched = await enrichPatientNames(patMap);
+      setPatients(Array.from(enriched.values()));
 
-      // Load notes
+      // Load notes — sort in JS to avoid composite index requirement
       const notesSnap = await getDocs(
-        query(collection(db, 'doctorNotes'), where('doctorId', '==', cu.uid), orderBy('createdAt', 'desc'))
+        query(collection(db, 'doctorNotes'), where('doctorId', '==', cu.uid))
       );
-      setNotes(notesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const notesList = notesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      notesList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setNotes(notesList);
     } catch (err) {
       console.error('DoctorNotes load error:', err);
     } finally {

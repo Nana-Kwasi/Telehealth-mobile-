@@ -7,6 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { enrichPatientNames } from '../../utils/doctorUtils';
+import { LineChart } from 'react-native-chart-kit';
+import Svg, { Circle, G } from 'react-native-svg';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -24,6 +27,47 @@ function toDateStr(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+// ── Donut chart using react-native-svg ──
+const DONUT_SIZE = 130;
+const DONUT_STROKE = 26;
+const DONUT_R = (DONUT_SIZE - DONUT_STROKE) / 2;
+const DONUT_CX = DONUT_SIZE / 2;
+const DONUT_CY = DONUT_SIZE / 2;
+const DONUT_C = 2 * Math.PI * DONUT_R;
+
+function DonutChart({ segments }) {
+  const total = segments.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return (
+    <Svg width={DONUT_SIZE} height={DONUT_SIZE}>
+      <Circle cx={DONUT_CX} cy={DONUT_CY} r={DONUT_R} fill="none" stroke="#e2e8f0" strokeWidth={DONUT_STROKE} />
+    </Svg>
+  );
+  let cumLen = 0;
+  return (
+    <Svg width={DONUT_SIZE} height={DONUT_SIZE}>
+      <G rotation={-90} origin={`${DONUT_CX},${DONUT_CY}`}>
+        {segments.map((seg, i) => {
+          const arc = (seg.value / total) * DONUT_C;
+          const offset = DONUT_C - cumLen;
+          cumLen += arc;
+          return (
+            <Circle
+              key={i}
+              cx={DONUT_CX} cy={DONUT_CY} r={DONUT_R}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={DONUT_STROKE}
+              strokeDasharray={`${arc} ${DONUT_C}`}
+              strokeDashoffset={offset}
+              strokeLinecap="butt"
+            />
+          );
+        })}
+      </G>
+    </Svg>
+  );
+}
+
 export default function DoctorHomeScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [allAppts, setAllAppts] = useState([]);
@@ -31,6 +75,8 @@ export default function DoctorHomeScreen({ navigation }) {
   const [todaySchedule, setTodaySchedule] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
   const [recentPatients, setRecentPatients] = useState([]);
+  const [trendData, setTrendData] = useState(null);
+  const [sessionBreakdown, setSessionBreakdown] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -51,7 +97,19 @@ export default function DoctorHomeScreen({ navigation }) {
       const apptSnap = await getDocs(
         query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
       );
-      const appts = apptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const rawAppts = apptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Build name map for enrichment
+      const tempPatMap = new Map();
+      rawAppts.forEach(a => { if (a.clientId) tempPatMap.set(a.clientId, { id: a.clientId, name: a.clientName || '' }); });
+      const tempEnriched = await enrichPatientNames(tempPatMap);
+      const tempNameMap = {};
+      for (const [id, p] of tempEnriched.entries()) tempNameMap[id] = p.name;
+
+      const appts = rawAppts.map(a => ({
+        ...a,
+        clientName: (a.clientId && tempNameMap[a.clientId]) ? tempNameMap[a.clientId] : (a.clientName || 'Patient'),
+      }));
 
       const todayAppts = appts.filter(a => a.date === TODAY).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
       const pending = appts.filter(a => a.status === 'pending');
@@ -86,10 +144,39 @@ export default function DoctorHomeScreen({ navigation }) {
         revenue,
         weekAppts: weekAppts.length,
       });
+      // ── Trend data (last 6 months) ──
+      const now = new Date();
+      const trendLabels = [];
+      const trendAppts = [];
+      const trendPats = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        trendLabels.push(d.toLocaleDateString('en-US', { month: 'short' }));
+        const monthAppts = appts.filter(a => (a.date || '').startsWith(prefix));
+        trendAppts.push(monthAppts.length);
+        trendPats.push(new Set(monthAppts.map(a => a.clientId).filter(Boolean)).size);
+      }
+      setTrendData({
+        labels: trendLabels,
+        datasets: [
+          { data: trendAppts, color: (o = 1) => `rgba(59,130,246,${o})`, strokeWidth: 2 },
+          { data: trendPats,  color: (o = 1) => `rgba(139,92,246,${o})`, strokeWidth: 2 },
+        ],
+        legend: ['Appointments', 'Unique Patients'],
+      });
+
+      // ── Session breakdown ──
+      setSessionBreakdown([
+        { label: 'Completed', value: completed.length,                       color: '#3b82f6' },
+        { label: 'Confirmed', value: appts.filter(a => a.status === 'confirmed').length, color: '#22c55e' },
+        { label: 'Pending',   value: pending.length,                         color: '#f59e0b' },
+      ]);
+
       setAllAppts(appts);
       setTodaySchedule(todayAppts);
       setRecentActivity(activity);
-      setRecentPatients(Array.from(patMap.values()).sort((a, b) => b.lastDate.localeCompare(a.lastDate)).slice(0, 5));
+      setRecentPatients(Array.from(patMap.values()).sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || '')).slice(0, 5));
     } catch (err) {
       console.error('DoctorHome load error:', err);
     } finally {
@@ -166,48 +253,48 @@ export default function DoctorHomeScreen({ navigation }) {
         )}
       </View>
 
-      {/* Stats Grid */}
-      <View style={styles.statsGrid}>
+      {/* Stats — horizontal scroll */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll} contentContainerStyle={styles.statsScrollContent}>
         {[
-          { label: 'Total Patients', value: stats.patients,   icon: 'people-outline',            color: '#2563eb', bg: '#eff6ff' },
-          { label: "Today's Appts",  value: stats.todayAppts, icon: 'calendar-outline',           color: '#16a34a', bg: '#dcfce7' },
-          { label: 'Pending',        value: stats.pending,    icon: 'time-outline',               color: '#d97706', bg: '#fef9c3' },
-          { label: 'Completed',      value: stats.completed,  icon: 'checkmark-circle-outline',   color: '#7c3aed', bg: '#f3e8ff' },
-          { label: 'Est. Revenue',   value: `₵${stats.revenue.toLocaleString()}`, icon: 'trending-up-outline', color: '#059669', bg: '#d1fae5' },
-          { label: 'This Week',      value: stats.weekAppts,  icon: 'pulse-outline',              color: '#0284c7', bg: '#e0f2fe' },
+          { label: 'Patients',    value: stats.patients,                            icon: 'people',           bg: '#1e40af' },
+          { label: "Today",       value: stats.todayAppts,                          icon: 'calendar',         bg: '#065f46' },
+          { label: 'Pending',     value: stats.pending,                             icon: 'time',             bg: '#92400e' },
+          { label: 'Completed',   value: stats.completed,                           icon: 'checkmark-circle', bg: '#4c1d95' },
+          { label: 'Revenue',     value: `₵${stats.revenue.toLocaleString()}`,      icon: 'trending-up',      bg: '#0f766e' },
+          { label: 'This Week',   value: stats.weekAppts,                           icon: 'pulse',            bg: '#0c4a6e' },
         ].map((s, i) => (
           <View key={i} style={[styles.statCard, { backgroundColor: s.bg }]}>
-            <View style={[styles.statIcon, { backgroundColor: s.color + '22' }]}>
-              <Ionicons name={s.icon} size={20} color={s.color} />
-            </View>
-            <Text style={[styles.statValue, { color: s.color }]}>{s.value}</Text>
+            <Ionicons name={`${s.icon}-outline`} size={22} color="rgba(255,255,255,0.8)" style={{ marginBottom: 6 }} />
+            <Text style={styles.statValue}>{s.value}</Text>
             <Text style={styles.statLabel}>{s.label}</Text>
           </View>
         ))}
-      </View>
+      </ScrollView>
 
       {/* Quick Actions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.quickRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickScroll} contentContainerStyle={styles.quickScrollContent}>
           {[
-            { label: 'Patients',      icon: 'people',       screen: 'DoctorPatients' },
-            { label: 'Appointments',  icon: 'calendar',     screen: 'DoctorAppointments' },
-            { label: 'Video Calls',   icon: 'videocam',     screen: 'DoctorVideo' },
-            { label: 'Prescriptions', icon: 'medkit',       screen: 'DoctorPrescriptions' },
+            { label: 'Patients',      icon: 'people',         screen: 'DoctorPatients',      color: '#2563eb', bg: '#eff6ff' },
+            { label: 'Appointments',  icon: 'calendar',       screen: 'DoctorAppointments',  color: '#16a34a', bg: '#dcfce7' },
+            { label: 'Video Calls',   icon: 'videocam',       screen: 'DoctorVideo',         color: '#7c3aed', bg: '#f3e8ff' },
+            { label: 'Prescriptions', icon: 'medkit',         screen: 'DoctorPrescriptions', color: '#d97706', bg: '#fef3c7' },
+            { label: 'Messages',      icon: 'chatbubbles',    screen: 'DoctorMessages',      color: '#0284c7', bg: '#e0f2fe' },
+            { label: 'Notes',         icon: 'document-text',  screen: 'DoctorNotes',         color: '#dc2626', bg: '#fee2e2' },
           ].map((a, i) => (
             <TouchableOpacity key={i} style={styles.quickBtn} onPress={() => navigation.navigate(a.screen)}>
-              <View style={styles.quickIcon}>
-                <Ionicons name={`${a.icon}-outline`} size={22} color={DoctorColors.primary} />
+              <View style={[styles.quickIcon, { backgroundColor: a.bg }]}>
+                <Ionicons name={`${a.icon}-outline`} size={22} color={a.color} />
               </View>
-              <Text style={styles.quickLabel}>{a.label}</Text>
+              <Text style={[styles.quickLabel, { color: a.color }]}>{a.label}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </View>
 
       {/* Mini Calendar */}
-      <View style={styles.section}>
+      <View style={[styles.section, { marginTop: 4 }]}>
         <View style={styles.calHeader}>
           <TouchableOpacity onPress={prevMonth} style={styles.calNav}>
             <Ionicons name="chevron-back" size={18} color={DoctorColors.text} />
@@ -312,7 +399,7 @@ export default function DoctorHomeScreen({ navigation }) {
           recentActivity.map(appt => {
             const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.pending;
             return (
-              <View key={appt.id} style={[styles.activityRow, { backgroundColor: sc.bg }]}>
+              <View key={appt.id} style={styles.activityRow}>
                 <View style={[styles.activityIcon, { backgroundColor: sc.dot + '22' }]}>
                   <Ionicons name={sc.icon} size={18} color={sc.dot} />
                 </View>
@@ -325,6 +412,70 @@ export default function DoctorHomeScreen({ navigation }) {
           })
         )}
       </View>
+
+      {/* Charts Row */}
+      {trendData && (
+        <View style={styles.section}>
+          {/* Line Chart */}
+          <View style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Appointment Trends (6 months)</Text>
+            <LineChart
+              data={trendData}
+              width={SCREEN_W - 64}
+              height={160}
+              chartConfig={{
+                backgroundColor: '#fff',
+                backgroundGradientFrom: '#fff',
+                backgroundGradientTo: '#fff',
+                decimalPlaces: 0,
+                color: (o = 1) => `rgba(15,61,56,${o})`,
+                labelColor: (o = 1) => `rgba(100,116,139,${o})`,
+                style: { borderRadius: 8 },
+                propsForDots: { r: '4', strokeWidth: '2' },
+                propsForBackgroundLines: { stroke: '#f1f5f9' },
+              }}
+              bezier
+              style={{ borderRadius: 8, marginLeft: -12 }}
+              withInnerLines
+              withOuterLines={false}
+              fromZero
+            />
+            {/* Legend */}
+            <View style={styles.chartLegend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
+                <Text style={styles.legendText}>Appointments</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#8b5cf6' }]} />
+                <Text style={styles.legendText}>Unique Patients</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Donut + Breakdown */}
+          <View style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Session Breakdown</Text>
+            <View style={styles.donutRow}>
+              <View style={{ alignItems: 'center' }}>
+                <DonutChart segments={sessionBreakdown} />
+                <Text style={styles.donutTotal}>
+                  {sessionBreakdown.reduce((s, d) => s + d.value, 0)} Total
+                </Text>
+              </View>
+              <View style={styles.donutLegend}>
+                {sessionBreakdown.map((s, i) => (
+                  <View key={i} style={styles.donutLegendItem}>
+                    <View style={[styles.donutLegendDot, { backgroundColor: s.color }]} />
+                    <Text style={styles.donutLegendLabel}>{s.label}</Text>
+                    <Text style={styles.donutLegendValue}>{s.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Recent Patients */}
       <View style={styles.section}>
@@ -380,26 +531,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
   },
   badgeText: { fontSize: 12, fontWeight: '600', color: DoctorColors.primary },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 10 },
+  statsScroll: { paddingVertical: 12 },
+  statsScrollContent: { paddingHorizontal: 14, gap: 10 },
   statCard: {
-    flex: 1, minWidth: '44%', borderRadius: 14, padding: 14, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+    width: 96, borderRadius: 16, padding: 14, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
   },
-  statIcon: { width: 42, height: 42, borderRadius: 11, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  statValue: { fontSize: 20, fontWeight: '800', marginBottom: 2 },
-  statLabel: { fontSize: 10, color: '#64748b', textAlign: 'center' },
+  statValue: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 2 },
+  statLabel: { fontSize: 10, color: 'rgba(255,255,255,0.75)', textAlign: 'center', fontWeight: '600' },
   section: { paddingHorizontal: 16, marginBottom: 20 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: DoctorColors.text, marginBottom: 12 },
   seeAll: { fontSize: 13, color: DoctorColors.primary, fontWeight: '600' },
-  quickRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  quickBtn: { alignItems: 'center', flex: 1 },
+  quickScroll: { marginHorizontal: -4 },
+  quickScrollContent: { paddingHorizontal: 4, paddingBottom: 4, gap: 10 },
+  quickBtn: { alignItems: 'center', width: 72 },
   quickIcon: {
-    width: 52, height: 52, borderRadius: 14, backgroundColor: DoctorColors.primaryLight,
+    width: 56, height: 56, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center', marginBottom: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 1,
   },
-  quickLabel: { fontSize: 11, color: DoctorColors.textSecondary, fontWeight: '500', textAlign: 'center' },
+  quickLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center', lineHeight: 13 },
   // Calendar
   calHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   calNav: { padding: 6, borderRadius: 8, backgroundColor: '#f1f5f9' },
@@ -435,9 +589,12 @@ const styles = StyleSheet.create({
   // Activity
   activityRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderRadius: 10, padding: 12, marginBottom: 6,
+    backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 6,
+    borderLeftWidth: 3, borderLeftColor: '#e2e8f0',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03, shadowRadius: 3, elevation: 1,
   },
-  activityIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  activityIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f1f5f9' },
   activityMsg: { fontSize: 13, fontWeight: '600', color: DoctorColors.text },
   activityTime: { fontSize: 11, color: DoctorColors.textSecondary, marginTop: 2 },
   // Patients
@@ -456,4 +613,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 10, padding: 24, alignItems: 'center', gap: 8,
   },
   emptyText: { fontSize: 13, color: '#94a3b8', textAlign: 'center' },
+  // Charts
+  chartCard: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  chartTitle: { fontSize: 14, fontWeight: '700', color: DoctorColors.text, marginBottom: 12 },
+  chartLegend: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 8 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 12, color: '#64748b' },
+  // Donut
+  donutRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  donutTotal: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
+  donutLegend: { flex: 1, gap: 10 },
+  donutLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  donutLegendDot: { width: 12, height: 12, borderRadius: 6 },
+  donutLegendLabel: { flex: 1, fontSize: 13, color: DoctorColors.textSecondary },
+  donutLegendValue: { fontSize: 16, fontWeight: '800', color: DoctorColors.text },
 });

@@ -182,20 +182,25 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
     setSavingRx(true);
     try {
       const cu = auth.currentUser;
-      const newRx = await addDoc(collection(db, 'doctorPrescriptions'), {
+      const rxPayload = {
         doctorId: cu.uid,
         doctorName: doctorProfile?.name || 'Doctor',
         patientId,
         patientName: patient.name,
-        medication: rxForm.medication.trim(),
-        dosage: rxForm.dosage.trim(),
-        frequency: rxForm.frequency.trim(),
-        duration: rxForm.duration.trim(),
+        diagnosis: rxForm.instructions.trim() || 'See instructions',
         instructions: rxForm.instructions.trim(),
+        medications: [{
+          name: rxForm.medication.trim(),
+          dosage: rxForm.dosage.trim(),
+          frequency: rxForm.frequency.trim(),
+          duration: rxForm.duration.trim(),
+        }],
+        date: new Date().toISOString().split('T')[0],
         status: 'active',
         createdAt: serverTimestamp(),
-      });
-      setPrescriptions(prev => [{ id: newRx.id, ...rxForm, patientId, patientName: patient.name }, ...prev]);
+      };
+      const newRx = await addDoc(collection(db, 'doctorPrescriptions'), rxPayload);
+      setPrescriptions(prev => [{ id: newRx.id, ...rxPayload }, ...prev]);
       setShowRxForm(false);
       setRxForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
     } catch {

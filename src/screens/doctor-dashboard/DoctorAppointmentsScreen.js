@@ -11,6 +11,7 @@ import {
   doc, serverTimestamp, setDoc, getDoc,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { enrichPatientNames } from '../../utils/doctorUtils';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -80,10 +81,21 @@ export default function DoctorAppointmentsScreen() {
       const patMap = new Map();
       appts.forEach(a => {
         if (a.clientId && !patMap.has(a.clientId)) {
-          patMap.set(a.clientId, { id: a.clientId, name: a.clientName || 'Patient' });
+          patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '' });
         }
       });
-      setPatients(Array.from(patMap.values()));
+      const enrichedPats = await enrichPatientNames(patMap);
+
+      // Back-fill real names onto loaded appointments
+      const nameMap = {};
+      for (const [id, p] of enrichedPats.entries()) nameMap[id] = p.name;
+      const enrichedAppts = appts.map(a => ({
+        ...a,
+        clientName: (a.clientId && nameMap[a.clientId]) ? nameMap[a.clientId] : (a.clientName || 'Patient'),
+      }));
+
+      setAppointments(enrichedAppts.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+      setPatients(Array.from(enrichedPats.values()));
     } catch (err) {
       console.error('DoctorAppointments load error:', err);
     } finally {

@@ -10,6 +10,7 @@ import {
   setDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { enrichPatientNames } from '../../utils/doctorUtils';
 
 function getInitials(name) {
   if (!name) return 'P';
@@ -62,7 +63,7 @@ export default function DoctorPatientsScreen({ navigation }) {
         if (!prev) {
           patMap.set(data.clientId, {
             id: data.clientId,
-            name: data.clientName || 'Patient',
+            name: data.clientName || '',
             email: data.clientEmail || '',
             lastVisit: data.date || '',
             visitCount: 1,
@@ -72,11 +73,15 @@ export default function DoctorPatientsScreen({ navigation }) {
           prev.visitCount += 1;
           if (data.status === 'completed') prev.completedCount += 1;
           if ((data.date || '') > prev.lastVisit) prev.lastVisit = data.date;
+          if (!prev.name && data.clientName) prev.name = data.clientName;
         }
       });
 
+      // Enrich with real names from Firestore auth collection
+      const enriched = await enrichPatientNames(patMap);
+
       // Load patient statuses from patientProfiles
-      const list = Array.from(patMap.values());
+      const list = Array.from(enriched.values());
       for (const p of list) {
         try {
           const ppSnap = await getDoc(doc(db, 'patientProfiles', p.id));
@@ -155,7 +160,7 @@ export default function DoctorPatientsScreen({ navigation }) {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => navigation.navigate('DoctorMessages')}
+            onPress={() => navigation.navigate('DoctorMessages', { patientId: item.id, patientName: item.name })}
           >
             <Ionicons name="chatbubble-outline" size={14} color={DoctorColors.primary} />
             <Text style={styles.actionText}>Message</Text>
