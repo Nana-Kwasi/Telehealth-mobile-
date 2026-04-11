@@ -78,7 +78,9 @@ export default function DoctorPrescriptionsScreen() {
           }
         }
         const patientName = data.patientName || (data.patientId && nameById[data.patientId]) || 'Patient';
-        return { id: d.id, ...data, medications, patientName };
+        // Fallback diagnosis for old flat-format records that stored text in `instructions`
+        const diagnosis = data.diagnosis || data.instructions || '';
+        return { id: d.id, ...data, medications, patientName, diagnosis };
       });
       rxList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setPrescriptions(rxList);

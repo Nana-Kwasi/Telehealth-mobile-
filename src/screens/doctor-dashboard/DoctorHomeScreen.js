@@ -399,7 +399,7 @@ export default function DoctorHomeScreen({ navigation }) {
           recentActivity.map(appt => {
             const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.pending;
             return (
-              <View key={appt.id} style={styles.activityRow}>
+              <View key={appt.id} style={[styles.activityRow, { borderLeftColor: sc.dot }]}>
                 <View style={[styles.activityIcon, { backgroundColor: sc.dot + '22' }]}>
                   <Ionicons name={sc.icon} size={18} color={sc.dot} />
                 </View>
