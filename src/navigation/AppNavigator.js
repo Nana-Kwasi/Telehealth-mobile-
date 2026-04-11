@@ -52,21 +52,103 @@ import HealthRecordsScreen from '../screens/medical-dashboard/HealthRecordsScree
 import DoctorDetailScreen from '../screens/medical-dashboard/DoctorDetailScreen';
 import SupportScreen from '../screens/medical-dashboard/SupportScreen';
 
+// Therapist dashboard screens
+import TherapistHomeScreen from '../screens/therapist-dashboard/TherapistHomeScreen';
+import TherapistClientsScreen from '../screens/therapist-dashboard/TherapistClientsScreen';
+import TherapistMessagesScreen from '../screens/therapist-dashboard/TherapistMessagesScreen';
+import TherapistScheduleScreen from '../screens/therapist-dashboard/TherapistScheduleScreen';
+import TherapistNotesScreen from '../screens/therapist-dashboard/TherapistNotesScreen';
+import TherapistSettingsScreen from '../screens/therapist-dashboard/TherapistSettingsScreen';
+import TherapistMoodScreen from '../screens/therapist-dashboard/TherapistMoodScreen';
+import TherapistReportsScreen from '../screens/therapist-dashboard/TherapistReportsScreen';
+import TherapistResourcesScreen from '../screens/therapist-dashboard/TherapistResourcesScreen';
+
+// Doctor dashboard screens
+import DoctorHomeScreen from '../screens/doctor-dashboard/DoctorHomeScreen';
+import DoctorPatientsScreen from '../screens/doctor-dashboard/DoctorPatientsScreen';
+import DoctorAppointmentsScreen from '../screens/doctor-dashboard/DoctorAppointmentsScreen';
+import DoctorVideoScreen from '../screens/doctor-dashboard/DoctorVideoScreen';
+import DoctorMessagesScreen from '../screens/doctor-dashboard/DoctorMessagesScreen';
+import DoctorNotesScreen from '../screens/doctor-dashboard/DoctorNotesScreen';
+import DoctorPrescriptionsScreen from '../screens/doctor-dashboard/DoctorPrescriptionsScreen';
+import DoctorReviewsScreen from '../screens/doctor-dashboard/DoctorReviewsScreen';
+import DoctorAnalyticsScreen from '../screens/doctor-dashboard/DoctorAnalyticsScreen';
+import DoctorSettingsScreen from '../screens/doctor-dashboard/DoctorSettingsScreen';
+
 // Drawer content components
 import CustomDrawerContent from '../components/CustomDrawerContent';
 import MedicalDrawerContent from '../components/MedicalDrawerContent';
+import TherapistDrawerContent from '../components/TherapistDrawerContent';
+import DoctorDrawerContent from '../components/DoctorDrawerContent';
 
-import { Colors, MedicalColors } from '../constants/colors';
+import { Colors, MedicalColors, TherapistColors, DoctorColors } from '../constants/colors';
 
 const Stack = createStackNavigator();
 const TherapyDrawer = createDrawerNavigator();
 const MedicalDrawer = createDrawerNavigator();
+const TherapistDrawer = createDrawerNavigator();
+const DoctorDrawer = createDrawerNavigator();
 
 const LoadingScreen = () => (
   <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
     <ActivityIndicator size="large" color={Colors.primary} />
   </View>
 );
+
+// ── Doctor Drawer ──
+const DoctorDrawerNavigator = ({ profile }) => {
+  return (
+    <DoctorDrawer.Navigator
+      drawerContent={(props) => <DoctorDrawerContent {...props} profile={profile} />}
+      screenOptions={{
+        headerStyle: { backgroundColor: DoctorColors.primaryDark },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '700' },
+        drawerStyle: { backgroundColor: DoctorColors.surface, width: 280 },
+        drawerActiveTintColor: DoctorColors.primary,
+        drawerInactiveTintColor: DoctorColors.textSecondary,
+      }}
+    >
+      <DoctorDrawer.Screen name="DoctorHome"          component={DoctorHomeScreen}          options={{ title: 'Dashboard' }} />
+      <DoctorDrawer.Screen name="DoctorPatients"      component={DoctorPatientsScreen}      options={{ title: 'My Patients' }} />
+      <DoctorDrawer.Screen name="DoctorAppointments"  component={DoctorAppointmentsScreen}  options={{ title: 'Appointments' }} />
+      <DoctorDrawer.Screen name="DoctorVideo"         component={DoctorVideoScreen}         options={{ title: 'Video Calls' }} />
+      <DoctorDrawer.Screen name="DoctorMessages"      component={DoctorMessagesScreen}      options={{ title: 'Messages' }} />
+      <DoctorDrawer.Screen name="DoctorNotes"         component={DoctorNotesScreen}         options={{ title: 'Notes' }} />
+      <DoctorDrawer.Screen name="DoctorPrescriptions" component={DoctorPrescriptionsScreen} options={{ title: 'Prescriptions' }} />
+      <DoctorDrawer.Screen name="DoctorReviews"       component={DoctorReviewsScreen}       options={{ title: 'Reviews' }} />
+      <DoctorDrawer.Screen name="DoctorAnalytics"     component={DoctorAnalyticsScreen}     options={{ title: 'Analytics' }} />
+      <DoctorDrawer.Screen name="DoctorSettings"      component={DoctorSettingsScreen}      options={{ title: 'Profile & Settings' }} />
+    </DoctorDrawer.Navigator>
+  );
+};
+
+// ── Therapist Drawer ──
+const TherapistDrawerNavigator = ({ profile }) => {
+  return (
+    <TherapistDrawer.Navigator
+      drawerContent={(props) => <TherapistDrawerContent {...props} profile={profile} />}
+      screenOptions={{
+        headerStyle: { backgroundColor: TherapistColors.primaryDark },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '700' },
+        drawerStyle: { backgroundColor: TherapistColors.surface, width: 280 },
+        drawerActiveTintColor: TherapistColors.primary,
+        drawerInactiveTintColor: TherapistColors.textSecondary,
+      }}
+    >
+      <TherapistDrawer.Screen name="TherapistHome"      component={TherapistHomeScreen}      options={{ title: 'Dashboard' }} />
+      <TherapistDrawer.Screen name="TherapistClients"   component={TherapistClientsScreen}   options={{ title: 'My Clients' }} />
+      <TherapistDrawer.Screen name="TherapistMessages"  component={TherapistMessagesScreen}  options={{ title: 'Messages' }} />
+      <TherapistDrawer.Screen name="TherapistSchedule"  component={TherapistScheduleScreen}  options={{ title: 'Schedule' }} />
+      <TherapistDrawer.Screen name="TherapistNotes"     component={TherapistNotesScreen}     options={{ title: 'Session Notes' }} />
+      <TherapistDrawer.Screen name="TherapistMood"      component={TherapistMoodScreen}      options={{ title: 'Client Moods' }} />
+      <TherapistDrawer.Screen name="TherapistReports"   component={TherapistReportsScreen}   options={{ title: 'Reports' }} />
+      <TherapistDrawer.Screen name="TherapistResources" component={TherapistResourcesScreen} options={{ title: 'Resources' }} />
+      <TherapistDrawer.Screen name="TherapistSettings"  component={TherapistSettingsScreen}  options={{ title: 'Settings' }} />
+    </TherapistDrawer.Navigator>
+  );
+};
 
 // ── Therapy Drawer (existing, unchanged) ──
 const TherapyDrawerNavigator = ({ profile }) => {
@@ -141,8 +223,8 @@ const AppNavigator = () => {
       try {
         const { role, profile: resolvedProfile } = await resolveRole(user.uid);
 
-        // Only allow clients on mobile
-        if (role !== 'client') {
+        // Block unknown roles only
+        if (role !== 'client' && role !== 'therapist' && role !== 'admin' && role !== 'doctor') {
           await auth.signOut();
           setIsAuthenticated(false);
           setProfile(null);
@@ -156,7 +238,15 @@ const AppNavigator = () => {
         await AsyncStorage.setItem('userRole', role);
         await AsyncStorage.setItem('userId', resolvedProfile?.id || user.uid);
 
-        const intent = resolvedProfile?.userIntent || await AsyncStorage.getItem('userIntent') || 'therapy';
+        // Determine intent based on role
+        let intent;
+        if (role === 'therapist' || role === 'admin') {
+          intent = 'therapist';
+        } else if (role === 'doctor') {
+          intent = 'doctor';
+        } else {
+          intent = resolvedProfile?.userIntent || await AsyncStorage.getItem('userIntent') || 'therapy';
+        }
         await AsyncStorage.setItem('userIntent', intent);
 
         setProfile(resolvedProfile);
@@ -178,7 +268,10 @@ const AppNavigator = () => {
   // Determine initial route
   const getInitialRoute = () => {
     if (isAuthenticated) {
-      return userIntent === 'medical' ? 'MedicalMain' : 'Main';
+      if (userIntent === 'therapist') return 'TherapistMain';
+      if (userIntent === 'doctor') return 'DoctorMain';
+      if (userIntent === 'medical') return 'MedicalMain';
+      return 'Main';
     }
     return 'Intent';
   };
@@ -260,7 +353,17 @@ const AppNavigator = () => {
           }}
         />
 
-        {/* ── Therapy Dashboard (existing) ── */}
+        {/* ── Doctor Professional Dashboard ── */}
+        <Stack.Screen name="DoctorMain" options={{ headerShown: false }}>
+          {() => <DoctorDrawerNavigator profile={profile} />}
+        </Stack.Screen>
+
+        {/* ── Therapist Dashboard ── */}
+        <Stack.Screen name="TherapistMain" options={{ headerShown: false }}>
+          {() => <TherapistDrawerNavigator profile={profile} />}
+        </Stack.Screen>
+
+        {/* ── Therapy Client Dashboard (existing) ── */}
         <Stack.Screen name="Main" options={{ headerShown: false }}>
           {() => <TherapyDrawerNavigator profile={profile} />}
         </Stack.Screen>

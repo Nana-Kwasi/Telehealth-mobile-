@@ -42,3 +42,50 @@ export const MedicalColors = {
   verified: '#059669',       // Verified badge green
   rating: '#f59e0b',        // Star rating gold
 };
+
+// Doctor theme colors (teal + deep green — medical professional)
+export const DoctorColors = {
+  primary: '#0d9488',          // Teal
+  primaryDark: '#0f3d38',      // Deep teal
+  primaryLight: '#f0fdfa',     // Light teal tint
+  secondary: '#1e6bb8',        // Blue
+  accent: '#6366f1',           // Indigo accent
+  background: '#f0fdfb',       // Soft teal-gray
+  surface: '#ffffff',          // White
+  text: '#0f172a',             // Slate dark
+  textSecondary: '#475569',    // Slate medium
+  textLight: '#94a3b8',        // Slate light
+  success: '#10b981',          // Emerald
+  warning: '#f59e0b',          // Amber
+  error: '#f43f5e',            // Rose
+  info: '#0ea5e9',             // Sky
+  border: '#ccfbf1',           // Teal border
+  shadow: 'rgba(0, 0, 0, 0.08)',
+  overlay: 'rgba(0, 0, 0, 0.5)',
+  cardBg: '#f8fafc',
+};
+
+// Therapist theme colors (deep indigo + teal)
+export const TherapistColors = {
+  primary: '#4f46e5',         // Indigo
+  primaryDark: '#1e1b4b',     // Deep indigo
+  primaryLight: '#eff6ff',    // Light indigo tint
+  secondary: '#0d9488',       // Teal
+  accent: '#a855f7',          // Purple accent
+  background: '#f4f6fb',      // Soft gray-blue
+  surface: '#ffffff',         // White
+  text: '#0f172a',            // Slate dark
+  textSecondary: '#475569',   // Slate medium
+  textLight: '#94a3b8',       // Slate light
+  success: '#10b981',         // Emerald
+  warning: '#f59e0b',         // Amber
+  error: '#f43f5e',           // Rose
+  info: '#0ea5e9',            // Sky
+  border: '#e2e8f0',          // Slate border
+  shadow: 'rgba(0, 0, 0, 0.08)',
+  overlay: 'rgba(0, 0, 0, 0.5)',
+  cardBg: '#f8fafc',
+  sidebarBg: '#1a1748',
+  activeItem: '#4f46e5',
+  inactiveItem: '#94a3b8',
+};

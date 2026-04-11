@@ -9,14 +9,17 @@ import {
   RefreshControl,
   Dimensions,
   Modal,
+  TextInput,
+  Linking,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../services/firebaseConfig';
 import { fetchClientData, getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Colors } from '../../constants/colors';
-import { BarChart, LineChart } from 'react-native-chart-kit';
+import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 
 const { width } = Dimensions.get('window');
 
@@ -77,6 +80,22 @@ function calculateTherapyProgress(therapyNotes) {
   return { overallProgress: Math.max(0, Math.min(100, finalProgress)) };
 }
 
+const CRISIS_HOTLINES = [
+  { name: '988 Suicide & Crisis Lifeline', desc: 'Call or text 988 — 24/7', tel: '988', icon: 'call-outline' },
+  { name: 'Crisis Text Line', desc: 'Text HOME to 741741', sms: '741741', body: 'HOME', icon: 'chatbubble-outline' },
+  { name: 'Emergency Services', desc: 'Call 911 immediately', tel: '911', icon: 'warning-outline' },
+  { name: 'Trevor Project (LGBTQ+)', desc: '1-866-488-7386', tel: '18664887386', icon: 'heart-outline' },
+];
+
+const MOOD_OPTIONS = [
+  { emoji: '😄', label: 'Great', value: 9 },
+  { emoji: '😊', label: 'Good', value: 7 },
+  { emoji: '😐', label: 'Okay', value: 5 },
+  { emoji: '😔', label: 'Low', value: 3 },
+  { emoji: '😢', label: 'Sad', value: 2 },
+  { emoji: '😰', label: 'Anxious', value: 4 },
+];
+
 const ClientHomeScreen = ({ navigation }) => {
   const [clientData, setClientData] = useState(null);
   const [therapistData, setTherapistData] = useState(null);
@@ -93,6 +112,19 @@ const ClientHomeScreen = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const snapshotUnsubRef = useRef(null);
+
+  // Emergency modal
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+
+  // Mood check-in
+  const [showMoodModal, setShowMoodModal] = useState(false);
+  const [moodStep, setMoodStep] = useState(0); // 0=emoji, 1=journal
+  const [selectedMood, setSelectedMood] = useState(null);
+  const [moodJournal, setMoodJournal] = useState('');
+  const [submittingMood, setSubmittingMood] = useState(false);
+
+  // Mood distribution (pie chart)
+  const [moodDistribution, setMoodDistribution] = useState([]);
 
   useEffect(() => {
     const unsubAuth = auth.onAuthStateChanged(async (user) => {
@@ -238,6 +270,9 @@ const ClientHomeScreen = ({ navigation }) => {
         .filter(s => new Date(s.scheduledTime) >= now)
         .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
       setNextSession(upcoming.length > 0 ? upcoming[0] : null);
+
+      // Load mood distribution for pie chart
+      await loadMoodDistribution(clientId);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -298,10 +333,89 @@ const ClientHomeScreen = ({ navigation }) => {
     return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
 
+  // Check if mood check-in is due (once per day)
+  useEffect(() => {
+    const checkMoodDue = async () => {
+      const last = await AsyncStorage.getItem('lastMoodCheck');
+      if (!last) { setShowMoodModal(true); return; }
+      const lastDate = new Date(last).toDateString();
+      if (lastDate !== new Date().toDateString()) setShowMoodModal(true);
+    };
+    checkMoodDue();
+  }, []);
+
+  const handleMoodSubmit = async () => {
+    if (!selectedMood) return;
+    setSubmittingMood(true);
+    try {
+      const user = auth.currentUser;
+      const clientId = user?.uid;
+      await addDoc(collection(db, 'Client daily mood tracking'), {
+        clientId,
+        clientName: clientData?.name || 'Client',
+        assignedTherapistId: clientData?.assignedTherapist || clientData?.assignedTherapistId || '',
+        assignedTherapistName: clientData?.assignedTherapistName || therapistData?.name || '',
+        mood: selectedMood.emoji,
+        moodValue: selectedMood.value,
+        moodLabel: selectedMood.label,
+        journalEntry: moodJournal,
+        date: new Date().toISOString().split('T')[0],
+        timestamp: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+      await AsyncStorage.setItem('lastMoodCheck', new Date().toISOString());
+      setShowMoodModal(false);
+      setMoodStep(0);
+      setSelectedMood(null);
+      setMoodJournal('');
+      // Refresh mood distribution chart
+      const uid = auth.currentUser?.uid;
+      if (uid) await loadMoodDistribution(uid);
+      Alert.alert('Mood Saved', 'Your mood check-in has been recorded.');
+    } catch (err) {
+      console.error('Mood submit error:', err);
+    } finally {
+      setSubmittingMood(false);
+    }
+  };
+
+  const loadMoodDistribution = async (clientId) => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'Client daily mood tracking'),
+        where('clientId', '==', clientId)
+      ));
+      const counts = {};
+      snap.docs.forEach(d => {
+        const label = d.data().moodLabel || 'Unknown';
+        counts[label] = (counts[label] || 0) + 1;
+      });
+      const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+      const dist = Object.entries(counts).map(([label, count], i) => ({
+        name: label,
+        population: count,
+        color: colors[i % colors.length],
+        legendFontColor: '#374151',
+        legendFontSize: 12,
+      }));
+      setMoodDistribution(dist);
+    } catch (e) {
+      console.error('Mood distribution load error:', e);
+    }
+  };
+
+  const handleCrisisCall = (hotline) => {
+    if (hotline.sms) {
+      Linking.openURL(`sms:${hotline.sms}${hotline.body ? `?body=${hotline.body}` : ''}`);
+    } else {
+      Linking.openURL(`tel:${hotline.tel}`);
+    }
+  };
+
   const quickActions = [
     { icon: 'chatbubbles-outline', label: 'Messages', screen: 'Messages', color: Colors.primary },
     { icon: 'videocam-outline', label: 'Video Call', screen: 'Video', color: '#10B981' },
-    { icon: 'calendar-outline', label: 'Schedule', screen: 'Schedule', color: '#F59E0B' },
+    { icon: 'calendar-outline', label: 'Book Session', screen: 'Schedule', color: '#F59E0B' },
     { icon: 'book-outline', label: 'Resources', screen: 'Resources', color: '#8B5CF6' },
   ];
 
@@ -327,10 +441,109 @@ const ClientHomeScreen = ({ navigation }) => {
           <Text style={styles.greeting}>Welcome back!</Text>
           <Text style={styles.name}>{clientData?.name || 'Client'}</Text>
         </View>
-        <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
-          <Ionicons name="settings-outline" size={24} color={Colors.text} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.moodCheckBtn} onPress={() => setShowMoodModal(true)}>
+            <Ionicons name="happy-outline" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
+            <Ionicons name="settings-outline" size={24} color={Colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Emergency Banner */}
+      <TouchableOpacity style={styles.emergencyBanner} onPress={() => setShowEmergencyModal(true)} activeOpacity={0.85}>
+        <Ionicons name="warning" size={18} color="#dc2626" />
+        <Text style={styles.emergencyBannerText}>In crisis? Tap for immediate help</Text>
+        <Ionicons name="chevron-forward" size={18} color="#dc2626" />
+      </TouchableOpacity>
+
+      {/* Emergency Modal */}
+      <Modal visible={showEmergencyModal} transparent animationType="slide" onRequestClose={() => setShowEmergencyModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.emergencyModal}>
+            <View style={styles.emergencyModalHeader}>
+              <Ionicons name="warning" size={28} color="#dc2626" />
+              <Text style={styles.emergencyModalTitle}>Crisis & Emergency Support</Text>
+              <TouchableOpacity onPress={() => setShowEmergencyModal(false)}>
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.emergencyModalSubtitle}>You are not alone. Reach out now:</Text>
+            {CRISIS_HOTLINES.map((h, i) => (
+              <TouchableOpacity key={i} style={styles.hotlineRow} onPress={() => handleCrisisCall(h)}>
+                <View style={styles.hotlineIcon}>
+                  <Ionicons name={h.icon} size={22} color="#dc2626" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.hotlineName}>{h.name}</Text>
+                  <Text style={styles.hotlineDesc}>{h.desc}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.messageTherapistBtn} onPress={() => { setShowEmergencyModal(false); navigation.navigate('Messages'); }}>
+              <Ionicons name="chatbubbles-outline" size={18} color="#fff" />
+              <Text style={styles.messageTherapistText}>Message My Therapist</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Mood Check-in Modal */}
+      <Modal visible={showMoodModal} transparent animationType="slide" onRequestClose={() => setShowMoodModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.moodModal}>
+            <Text style={styles.moodModalTitle}>Daily Mood Check-in</Text>
+            <Text style={styles.moodModalSubtitle}>How are you feeling today?</Text>
+            {moodStep === 0 ? (
+              <>
+                <View style={styles.moodGrid}>
+                  {MOOD_OPTIONS.map((m, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[styles.moodOption, selectedMood?.label === m.label && styles.moodOptionSelected]}
+                      onPress={() => setSelectedMood(m)}
+                    >
+                      <Text style={styles.moodEmoji}>{m.emoji}</Text>
+                      <Text style={styles.moodLabel}>{m.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.moodModalFooter}>
+                  <TouchableOpacity style={styles.moodSkipBtn} onPress={async () => { await AsyncStorage.setItem('lastMoodCheck', new Date().toISOString()); setShowMoodModal(false); }}>
+                    <Text style={styles.moodSkipText}>Skip</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.moodNextBtn, !selectedMood && styles.moodNextBtnDisabled]} onPress={() => selectedMood && setMoodStep(1)}>
+                    <Text style={styles.moodNextText}>Next</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.moodJournalLabel}>Anything on your mind? (optional)</Text>
+                <TextInput
+                  style={styles.moodJournalInput}
+                  multiline
+                  numberOfLines={4}
+                  placeholder="Write your thoughts..."
+                  value={moodJournal}
+                  onChangeText={setMoodJournal}
+                  textAlignVertical="top"
+                />
+                <View style={styles.moodModalFooter}>
+                  <TouchableOpacity style={styles.moodSkipBtn} onPress={() => setMoodStep(0)}>
+                    <Text style={styles.moodSkipText}>Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.moodNextBtn} onPress={handleMoodSubmit} disabled={submittingMood}>
+                    {submittingMood ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.moodNextText}>Submit</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Therapist Card */}
       {therapistData && (
@@ -553,6 +766,26 @@ const ClientHomeScreen = ({ navigation }) => {
               fromZero
               yAxisSuffix="/10"
               bezier
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Daily Mood Distribution Pie Chart */}
+      {moodDistribution.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Daily Mood Distribution</Text>
+          <View style={styles.chartCard}>
+            <PieChart
+              data={moodDistribution}
+              width={width - 80}
+              height={200}
+              chartConfig={chartConfig}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft="10"
+              center={[0, 0]}
+              absolute={false}
             />
           </View>
         </View>
@@ -964,6 +1197,207 @@ const styles = StyleSheet.create({
     color: Colors.surface,
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Header actions
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  moodCheckBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: `${Colors.primary}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Emergency banner
+  emergencyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff1f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2626',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  emergencyBannerText: {
+    flex: 1,
+    color: '#991b1b',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  // Modals
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  emergencyModal: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  emergencyModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  emergencyModalTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  emergencyModalSubtitle: {
+    color: '#4b5563',
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  hotlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  hotlineIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff1f2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hotlineName: {
+    fontWeight: '600',
+    color: '#1f2937',
+    fontSize: 14,
+  },
+  hotlineDesc: {
+    color: '#6b7280',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  messageTherapistBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+  },
+  messageTherapistText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  // Mood modal
+  moodModal: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  moodModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  moodModalSubtitle: {
+    color: '#4b5563',
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  moodGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  moodOption: {
+    width: '30%',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  moodOptionSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: `${Colors.primary}12`,
+  },
+  moodEmoji: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  moodLabel: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  moodModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  moodSkipBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    alignItems: 'center',
+  },
+  moodSkipText: {
+    color: '#374151',
+    fontWeight: '600',
+  },
+  moodNextBtn: {
+    flex: 2,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+  },
+  moodNextBtnDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  moodNextText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  moodJournalLabel: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  moodJournalInput: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    color: '#1f2937',
+    height: 100,
+    marginBottom: 20,
   },
 });
 

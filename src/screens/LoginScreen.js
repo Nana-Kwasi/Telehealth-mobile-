@@ -43,17 +43,7 @@ const LoginScreen = ({ navigation }) => {
       setLoading(true);
       const { role, profile } = await signInWithEmailOrUsername(identifier, password);
 
-      if (role === 'therapist') {
-        setError('This app is for clients only. Please use the web app for therapists.');
-        return;
-      }
-
-      if (role === 'doctor') {
-        setError('This app is for clients only. Please use the web app for doctors.');
-        return;
-      }
-
-      if (role !== 'client') {
+      if (role !== 'client' && role !== 'therapist' && role !== 'admin' && role !== 'doctor') {
         setError('Unable to determine your account type. Please contact support.');
         return;
       }
@@ -63,6 +53,20 @@ const LoginScreen = ({ navigation }) => {
       await AsyncStorage.setItem('userId', profile?.id || '');
       await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
       await AsyncStorage.setItem('isAuthenticated', 'true');
+
+      // Therapists and admins go to therapist dashboard
+      if (role === 'therapist' || role === 'admin') {
+        await AsyncStorage.setItem('userIntent', 'therapist');
+        navigation.replace('TherapistMain');
+        return;
+      }
+
+      // Doctors go to the dedicated Doctor Portal
+      if (role === 'doctor') {
+        await AsyncStorage.setItem('userIntent', 'doctor');
+        navigation.replace('DoctorMain');
+        return;
+      }
 
       if (profile?.clientId) {
         await AsyncStorage.setItem('th.clientId', profile.clientId);

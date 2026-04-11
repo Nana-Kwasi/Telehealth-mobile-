@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, query, where, getDocs, addDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
@@ -383,6 +384,33 @@ const ClientSupportScreen = ({ navigation }) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Emergency & Crisis Section */}
+        <View style={styles.crisisSection}>
+          <View style={styles.crisisSectionHeader}>
+            <Ionicons name="warning" size={22} color="#dc2626" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.crisisTitle}>Crisis & Emergency Support</Text>
+              <Text style={styles.crisisSubtitle}>Immediate help is available 24/7</Text>
+            </View>
+          </View>
+          {[
+            { name: '988 Suicide & Crisis Lifeline', desc: 'Call or text 988', url: 'tel:988', color: '#dc2626' },
+            { name: 'Crisis Text Line', desc: 'Text HOME to 741741', url: 'sms:741741?body=HOME', color: '#7c3aed' },
+            { name: 'Emergency Services', desc: 'Call 911', url: 'tel:911', color: '#ea580c' },
+            { name: 'NAMI Helpline', desc: '1-800-950-6264', url: 'tel:18009506264', color: '#16a34a' },
+          ].map((h, i) => (
+            <TouchableOpacity key={i} style={styles.crisisHotlineRow} onPress={() => Linking.openURL(h.url)}>
+              <View style={[styles.crisisHotlineDot, { backgroundColor: h.color }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.crisisHotlineName}>{h.name}</Text>
+                <Text style={styles.crisisHotlineDesc}>{h.desc}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+            </TouchableOpacity>
+          ))}
+          <Text style={styles.crisisSafetyNote}>This platform is not for emergencies. Call 911 if in danger.</Text>
+        </View>
+
         {/* Quick Actions */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity
@@ -1180,6 +1208,64 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 16,
     color: Colors.text,
+  },
+  // Crisis section
+  crisisSection: {
+    backgroundColor: '#fff1f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2626',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  crisisSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 12,
+  },
+  crisisTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#dc2626',
+    marginBottom: 2,
+  },
+  crisisSubtitle: {
+    fontSize: 13,
+    color: '#4b5563',
+  },
+  crisisHotlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 6,
+    gap: 10,
+  },
+  crisisHotlineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    flexShrink: 0,
+  },
+  crisisHotlineName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  crisisHotlineDesc: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  crisisSafetyNote: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginTop: 8,
   },
 });
 

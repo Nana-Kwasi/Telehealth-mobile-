@@ -9,11 +9,14 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { reauthenticateWithCredential, EmailAuthProvider, updatePassword } from 'firebase/auth';
-import { db, auth } from '../../services/firebaseConfig';
+import * as ImagePicker from 'expo-image-picker';
+import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, deleteUser } from 'firebase/auth';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, auth, storage } from '../../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
@@ -37,11 +40,18 @@ const ClientSettingsScreen = ({ navigation }) => {
     confirmPassword: ''
   });
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
   const sections = [
-    { id: 'basic', name: 'Basic Information', icon: 'person-outline' },
-    { id: 'therapy', name: 'Therapy Details', icon: 'heart-outline' },
-    { id: 'health', name: 'Health Information', icon: 'fitness-outline' },
+    { id: 'basic', name: 'Basic Info', icon: 'person-outline' },
+    { id: 'therapy', name: 'Therapy', icon: 'heart-outline' },
+    { id: 'health', name: 'Health', icon: 'fitness-outline' },
+    { id: 'privacy', name: 'Privacy', icon: 'shield-outline' },
     { id: 'security', name: 'Security', icon: 'lock-closed-outline' },
+    { id: 'account', name: 'Account', icon: 'trash-outline' },
   ];
 
   useEffect(() => {
@@ -157,11 +167,79 @@ const ClientSettingsScreen = ({ navigation }) => {
     if (!clientData?.phq9) return 'Not assessed';
     const scores = Object.values(clientData.phq9).filter(score => typeof score === 'number');
     const total = scores.reduce((sum, score) => sum + score, 0);
-    const severity = total <= 4 ? 'Minimal' : 
-                     total <= 9 ? 'Mild' : 
-                     total <= 14 ? 'Moderate' : 
+    const severity = total <= 4 ? 'Minimal' :
+                     total <= 9 ? 'Mild' :
+                     total <= 14 ? 'Moderate' :
                      total <= 19 ? 'Moderately Severe' : 'Severe';
     return `${total}/27 (${severity})`;
+  };
+
+  const handleProfilePhotoUpload = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo library access.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (result.canceled) return;
+    setUploadingPhoto(true);
+    try {
+      const uri = result.assets[0].uri;
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const uid = auth.currentUser?.uid;
+      const storageRef = ref(storage, `profile-images/${uid}`);
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+      const clientId = await AsyncStorage.getItem('th.clientId') || uid;
+      await updateDoc(doc(db, 'clients', clientId), { photoURL: downloadURL });
+      setClientData(prev => ({ ...prev, photoURL: downloadURL }));
+      setSuccessMessage('Profile photo updated!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setPasswordError('Failed to upload photo: ' + err.message);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleSavePreferences = async (updates) => {
+    if (!auth.currentUser) return;
+    try {
+      setSaving(true);
+      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser.uid;
+      await updateDoc(doc(db, 'clients', clientId), updates);
+      setClientData(prev => ({ ...prev, ...updates }));
+      setSuccessMessage('Saved!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setPasswordError('Failed to save: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!auth.currentUser || !deletePassword) return;
+    setDeletingAccount(true);
+    try {
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, deletePassword);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser.uid;
+      await deleteDoc(doc(db, 'clients', clientId));
+      await deleteDoc(doc(db, 'auth', auth.currentUser.uid));
+      await deleteUser(auth.currentUser);
+      await AsyncStorage.clear();
+    } catch (err) {
+      setPasswordError(err.code === 'auth/wrong-password' ? 'Incorrect password' : 'Failed to delete account.');
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   if (isLoading) {
@@ -242,7 +320,22 @@ const ClientSettingsScreen = ({ navigation }) => {
                 <Text style={styles.sectionTitle}>Basic Information</Text>
                 <Text style={styles.sectionSubtitle}>Your personal details and contact information</Text>
               </View>
-              
+
+              {/* Profile Photo */}
+              <TouchableOpacity style={styles.photoContainer} onPress={handleProfilePhotoUpload}>
+                {clientData?.photoURL ? (
+                  <Image source={{ uri: clientData.photoURL }} style={styles.photoImage} />
+                ) : (
+                  <View style={styles.photoPlaceholder}>
+                    <Text style={styles.photoInitials}>{clientData?.name ? clientData.name.charAt(0).toUpperCase() : 'C'}</Text>
+                  </View>
+                )}
+                <View style={styles.photoOverlay}>
+                  <Ionicons name="camera" size={20} color="#fff" />
+                  <Text style={styles.photoOverlayText}>{uploadingPhoto ? 'Uploading...' : 'Change'}</Text>
+                </View>
+              </TouchableOpacity>
+
               <View style={styles.form}>
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Full Name *</Text>
@@ -551,6 +644,136 @@ const ClientSettingsScreen = ({ navigation }) => {
               )}
             </View>
           )}
+
+          {/* Privacy Section */}
+          {activeSection === 'privacy' && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Privacy & Data</Text>
+                <Text style={styles.sectionSubtitle}>Control your profile visibility and data sharing</Text>
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Profile Visibility</Text>
+                {['therapist-only', 'private', 'public'].map(v => (
+                  <TouchableOpacity
+                    key={v}
+                    style={styles.radioRow}
+                    onPress={() => setClientData({ ...clientData, profileVisibility: v })}
+                  >
+                    <View style={[styles.radioCircle, clientData?.profileVisibility === v && styles.radioCircleSelected]} />
+                    <Text style={styles.radioLabel}>{v === 'therapist-only' ? 'Therapist Only (Recommended)' : v.charAt(0).toUpperCase() + v.slice(1)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Share progress with therapist</Text>
+                  <Text style={styles.toggleDesc}>Allow therapist to view mood check-ins</Text>
+                </View>
+                <Switch
+                  value={clientData?.shareProgressWithTherapist !== false}
+                  onValueChange={(v) => setClientData({ ...clientData, shareProgressWithTherapist: v })}
+                  trackColor={{ false: '#d1d5db', true: Colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Anonymous research data</Text>
+                  <Text style={styles.toggleDesc}>Contribute anonymised data to research</Text>
+                </View>
+                <Switch
+                  value={clientData?.allowAnonymousResearch === true}
+                  onValueChange={(v) => setClientData({ ...clientData, allowAnonymousResearch: v })}
+                  trackColor={{ false: '#d1d5db', true: Colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Language</Text>
+                {[['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ar', 'Arabic']].map(([code, name]) => (
+                  <TouchableOpacity
+                    key={code}
+                    style={styles.radioRow}
+                    onPress={() => setClientData({ ...clientData, language: code })}
+                  >
+                    <View style={[styles.radioCircle, (clientData?.language || 'en') === code && styles.radioCircleSelected]} />
+                    <Text style={styles.radioLabel}>{name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+                onPress={() => handleSavePreferences({
+                  profileVisibility: clientData?.profileVisibility || 'therapist-only',
+                  shareProgressWithTherapist: clientData?.shareProgressWithTherapist !== false,
+                  allowAnonymousResearch: clientData?.allowAnonymousResearch === true,
+                  language: clientData?.language || 'en',
+                })}
+                disabled={saving}
+              >
+                {saving ? <ActivityIndicator color={Colors.surface} /> : <Text style={styles.saveButtonText}>Save Privacy Settings</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Account Section */}
+          {activeSection === 'account' && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Account</Text>
+                <Text style={styles.sectionSubtitle}>Manage or permanently delete your account</Text>
+              </View>
+
+              {!showDeleteConfirm ? (
+                <View style={styles.dangerZone}>
+                  <View style={styles.dangerInfo}>
+                    <Ionicons name="warning" size={24} color="#dc2626" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dangerTitle}>Delete Account</Text>
+                      <Text style={styles.dangerDesc}>This permanently deletes your account and all data. Cannot be undone.</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity style={styles.deleteButton} onPress={() => setShowDeleteConfirm(true)}>
+                    <Ionicons name="trash-outline" size={18} color="#fff" />
+                    <Text style={styles.deleteButtonText}>Delete My Account</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View>
+                  <Text style={styles.deleteWarning}>Enter your password to confirm permanent deletion:</Text>
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Current Password</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={deletePassword}
+                      onChangeText={setDeletePassword}
+                      placeholder="Enter your password"
+                      placeholderTextColor={Colors.textSecondary}
+                      secureTextEntry
+                    />
+                  </View>
+                  <View style={styles.passwordFormActions}>
+                    <TouchableOpacity style={styles.cancelButton} onPress={() => { setShowDeleteConfirm(false); setDeletePassword(''); }}>
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.deleteButton, (!deletePassword || deletingAccount) && styles.deleteButtonDisabled]}
+                      onPress={handleDeleteAccount}
+                      disabled={!deletePassword || deletingAccount}
+                    >
+                      {deletingAccount ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.deleteButtonText}>Confirm Delete</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
         </ScrollView>
       </View>
     </View>
@@ -833,6 +1056,139 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: Colors.surface,
+  },
+  // Profile photo
+  photoContainer: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    alignSelf: 'center',
+    marginBottom: 20,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  photoImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+  },
+  photoPlaceholder: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoInitials: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  photoOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 32,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  photoOverlayText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  // Privacy
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    gap: 12,
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+  },
+  radioCircleSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  radioLabel: {
+    fontSize: 14,
+    color: Colors.text,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    gap: 12,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  toggleDesc: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  // Danger zone
+  dangerZone: {
+    backgroundColor: '#fff1f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  dangerInfo: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  dangerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#dc2626',
+    marginBottom: 4,
+  },
+  dangerDesc: {
+    fontSize: 13,
+    color: '#4b5563',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#dc2626',
+    padding: 14,
+    borderRadius: 10,
+    flex: 1,
+  },
+  deleteButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  deleteWarning: {
+    color: '#dc2626',
+    fontWeight: '600',
+    marginBottom: 16,
+    fontSize: 14,
   },
 });
 
