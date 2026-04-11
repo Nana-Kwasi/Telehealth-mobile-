@@ -120,7 +120,11 @@ export default function DoctorPatientsScreen({ navigation }) {
     const sc = STATUS_COLORS[item.status] || STATUS_COLORS.active;
     return (
       <View style={styles.patientCard}>
-        <View style={styles.cardTop}>
+        <TouchableOpacity
+          style={styles.cardTop}
+          onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name })}
+          activeOpacity={0.7}
+        >
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
           </View>
@@ -132,10 +136,13 @@ export default function DoctorPatientsScreen({ navigation }) {
               {item.lastVisit ? <Text style={styles.meta}>· Last: {item.lastVisit}</Text> : null}
             </View>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-            <Text style={[styles.statusText, { color: sc.text }]}>{item.status || 'active'}</Text>
+          <View style={styles.cardTopRight}>
+            <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+              <Text style={[styles.statusText, { color: sc.text }]}>{item.status || 'active'}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" style={{ marginTop: 6 }} />
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Action buttons */}
         <View style={styles.actions}>
@@ -249,7 +256,8 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
-  cardTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, activeOpacity: 0.7 },
+  cardTopRight: { alignItems: 'flex-end' },
   avatar: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: DoctorColors.primaryLight,

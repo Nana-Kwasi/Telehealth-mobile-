@@ -74,6 +74,7 @@ import DoctorPrescriptionsScreen from '../screens/doctor-dashboard/DoctorPrescri
 import DoctorReviewsScreen from '../screens/doctor-dashboard/DoctorReviewsScreen';
 import DoctorAnalyticsScreen from '../screens/doctor-dashboard/DoctorAnalyticsScreen';
 import DoctorSettingsScreen from '../screens/doctor-dashboard/DoctorSettingsScreen';
+import DoctorPatientDetailScreen from '../screens/doctor-dashboard/DoctorPatientDetailScreen';
 
 // Drawer content components
 import CustomDrawerContent from '../components/CustomDrawerContent';
@@ -398,6 +399,13 @@ const AppNavigator = () => {
           name="Support"
           component={SupportScreen}
           options={{ title: 'Support & Report', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }}
+        />
+
+        {/* ── Doctor Patient Detail ── */}
+        <Stack.Screen
+          name="DoctorPatientDetail"
+          component={DoctorPatientDetailScreen}
+          options={{ title: 'Patient Detail', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }}
         />
       </Stack.Navigator>
     </NavigationContainer>
