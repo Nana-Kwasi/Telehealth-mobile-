@@ -1,20 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Image,
-  Dimensions,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, RefreshControl, Image, Dimensions,
+  Modal, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../services/firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { fetchClientAppointments, fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 
@@ -60,6 +54,17 @@ const MedicalHomeScreen = ({ navigation }) => {
   const [newBookingDoctor, setNewBookingDoctor] = useState(null);
   const [primaryDoctor, setPrimaryDoctor] = useState(null);
   const [patientStatus, setPatientStatus] = useState('active'); // 'active' | 'discharged'
+
+  // "Tell doctor what's wrong" — for patients who skipped onboarding
+  const [showIntakeBtn, setShowIntakeBtn] = useState(false);
+  const [showIntakeModal, setShowIntakeModal] = useState(false);
+  const [intakeForm, setIntakeForm] = useState({ complaint: '', duration: '', severity: '', symptoms: '', notes: '' });
+  const [submittingIntake, setSubmittingIntake] = useState(false);
+
+  // Daily feeling modal
+  const [showFeelingModal, setShowFeelingModal] = useState(false);
+  const [feelingForm, setFeelingForm] = useState({ mood: '', painLevel: '', symptoms: '', medications: '', notes: '' });
+  const [submittingFeeling, setSubmittingFeeling] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -125,11 +130,68 @@ const MedicalHomeScreen = ({ navigation }) => {
           if (cached) setNewBookingDoctor(JSON.parse(cached));
         }
       }
+      // Check if intake button should show
+      if (currentUser) {
+        try {
+          const intakeSnap = await getDoc(doc(db, 'patientIntake', currentUser.uid));
+          const intakeDone = await AsyncStorage.getItem('intakeSubmitted');
+          setShowIntakeBtn(!intakeSnap.exists() && !intakeDone);
+        } catch (_) {}
+      }
+
+      // Check daily feeling (show if > 24 hours since last submission)
+      try {
+        const lastFeeling = await AsyncStorage.getItem('lastDailyFeeling');
+        if (!lastFeeling || Date.now() - parseInt(lastFeeling) > 24 * 60 * 60 * 1000) {
+          // Delay 2s so screen loads first
+          setTimeout(() => setShowFeelingModal(true), 2000);
+        }
+      } catch (_) {}
     } catch (error) {
       console.error('Error loading medical home data:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const submitIntake = async () => {
+    if (!intakeForm.complaint.trim()) { Alert.alert('Required', 'Please describe your main complaint.'); return; }
+    setSubmittingIntake(true);
+    try {
+      const uid = auth.currentUser?.uid;
+      await setDoc(doc(db, 'patientIntake', uid), {
+        ...intakeForm,
+        patientId: uid,
+        submittedAt: serverTimestamp(),
+      });
+      await AsyncStorage.setItem('intakeSubmitted', '1');
+      setShowIntakeBtn(false);
+      setShowIntakeModal(false);
+      Alert.alert('Submitted', 'Your doctor has been notified. They will review your complaint soon.');
+    } catch { Alert.alert('Error', 'Could not submit. Please try again.'); }
+    finally { setSubmittingIntake(false); }
+  };
+
+  const submitFeeling = async () => {
+    if (!feelingForm.mood) { Alert.alert('Required', 'Please select how you are feeling.'); return; }
+    setSubmittingFeeling(true);
+    try {
+      const uid = auth.currentUser?.uid;
+      await addDoc(collection(db, 'patientDailyFeelings'), {
+        patientId: uid,
+        mood: feelingForm.mood,
+        painLevel: parseInt(feelingForm.painLevel) || 0,
+        symptoms: feelingForm.symptoms.split(',').map(s => s.trim()).filter(Boolean),
+        medications: feelingForm.medications,
+        notes: feelingForm.notes,
+        createdAt: serverTimestamp(),
+      });
+      await AsyncStorage.setItem('lastDailyFeeling', String(Date.now()));
+      setShowFeelingModal(false);
+      setFeelingForm({ mood: '', painLevel: '', symptoms: '', medications: '', notes: '' });
+      Alert.alert('Thank you!', 'Your daily check-in has been recorded and shared with your doctor.');
+    } catch { Alert.alert('Error', 'Could not submit. Please try again.'); }
+    finally { setSubmittingFeeling(false); }
   };
 
   const onRefresh = async () => {
@@ -210,6 +272,7 @@ const MedicalHomeScreen = ({ navigation }) => {
   }
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
@@ -276,6 +339,20 @@ const MedicalHomeScreen = ({ navigation }) => {
             <Text style={styles.fdbTitle}>You haven't found a doctor yet</Text>
             <Text style={styles.fdbSub}>Tap to search our network of licensed physicians →</Text>
           </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Tell doctor what's wrong — for patients who skipped onboarding */}
+      {showIntakeBtn && primaryDoctor && (
+        <TouchableOpacity style={styles.intakeBtn} onPress={() => setShowIntakeModal(true)}>
+          <View style={styles.intakeBtnIcon}>
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color="#dc2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.intakeBtnTitle}>Tell your doctor what's wrong</Text>
+            <Text style={styles.intakeBtnSub}>Let Dr. {primaryDoctor?.name} know your symptoms</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#dc2626" />
         </TouchableOpacity>
       )}
 
@@ -527,6 +604,143 @@ const MedicalHomeScreen = ({ navigation }) => {
       )}
       <View style={{ height: 32 }} />
     </ScrollView>
+
+    {/* Intake Modal — Tell doctor what's wrong */}
+    <Modal visible={showIntakeModal} transparent animationType="slide" onRequestClose={() => setShowIntakeModal(false)}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+      >
+        <View style={styles.modalCard}>
+          {/* Fixed header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <Ionicons name="chatbubble-ellipses" size={20} color="#dc2626" />
+            <Text style={styles.modalTitle}>Tell Your Doctor What's Wrong</Text>
+            <TouchableOpacity onPress={() => setShowIntakeModal(false)} style={{ marginLeft: 'auto' }}>
+              <Ionicons name="close" size={22} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.modalSub}>Describe your symptoms so Dr. {primaryDoctor?.name} can prepare for your visit.</Text>
+
+          {/* Scrollable fields */}
+          <ScrollView
+            style={{ maxHeight: '75%' }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {[
+              { key: 'complaint', label: 'Main Complaint *', placeholder: 'e.g. Chest pain, headache, fatigue...', multiline: true },
+              { key: 'duration', label: 'How long?', placeholder: 'e.g. 3 days, 2 weeks...' },
+              { key: 'severity', label: 'Severity (1–10)', placeholder: 'e.g. 7', keyboardType: 'numeric' },
+              { key: 'symptoms', label: 'Other Symptoms', placeholder: 'e.g. Nausea, dizziness...', multiline: true },
+              { key: 'notes', label: 'Additional Notes', placeholder: 'Anything else your doctor should know...', multiline: true },
+            ].map(f => (
+              <View key={f.key} style={{ marginBottom: 12 }}>
+                <Text style={styles.modalFieldLabel}>{f.label}</Text>
+                <TextInput
+                  style={[styles.modalInput, f.multiline && { minHeight: 70, textAlignVertical: 'top' }]}
+                  value={intakeForm[f.key]}
+                  onChangeText={v => setIntakeForm(p => ({ ...p, [f.key]: v }))}
+                  placeholder={f.placeholder}
+                  placeholderTextColor="#94a3b8"
+                  multiline={f.multiline}
+                  keyboardType={f.keyboardType || 'default'}
+                />
+              </View>
+            ))}
+            <View style={{ height: 8 }} />
+          </ScrollView>
+
+          {/* Fixed submit button */}
+          <TouchableOpacity
+            style={[styles.modalSubmitBtn, { marginTop: 12 }, submittingIntake && { opacity: 0.6 }]}
+            onPress={submitIntake}
+            disabled={submittingIntake}
+          >
+            {submittingIntake ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.modalSubmitText}>Submit to Doctor</Text>}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+
+    {/* Daily Feeling Modal */}
+    <Modal visible={showFeelingModal} transparent animationType="slide" onRequestClose={() => setShowFeelingModal(false)}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+      >
+        <View style={styles.modalCard}>
+          {/* Fixed header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+            <Ionicons name="happy-outline" size={20} color={MedicalColors.primary} />
+            <Text style={styles.modalTitle}>Daily Check-In</Text>
+            <TouchableOpacity onPress={() => setShowFeelingModal(false)} style={{ marginLeft: 'auto' }}>
+              <Ionicons name="close" size={22} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.modalSub}>Tell your doctor how you're feeling today.</Text>
+
+          {/* Scrollable fields */}
+          <ScrollView
+            style={{ maxHeight: '75%' }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Mood selector */}
+            <Text style={styles.modalFieldLabel}>How are you feeling? *</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+              {['Great', 'Good', 'Okay', 'Poor', 'Bad'].map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.moodChip, feelingForm.mood === m && styles.moodChipActive]}
+                  onPress={() => setFeelingForm(p => ({ ...p, mood: m }))}
+                >
+                  <Text style={[styles.moodChipText, feelingForm.mood === m && styles.moodChipTextActive]}>{m}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {[
+              { key: 'painLevel', label: 'Pain Level (0–10)', placeholder: '0 = no pain, 10 = severe', keyboardType: 'numeric' },
+              { key: 'symptoms', label: 'Symptoms Today', placeholder: 'e.g. Headache, nausea (comma-separated)' },
+              { key: 'medications', label: 'Medications Taken Today', placeholder: 'e.g. Amoxicillin 500mg' },
+              { key: 'notes', label: 'Additional Notes', placeholder: 'Any other concerns for your doctor...', multiline: true },
+            ].map(f => (
+              <View key={f.key} style={{ marginBottom: 10 }}>
+                <Text style={styles.modalFieldLabel}>{f.label}</Text>
+                <TextInput
+                  style={[styles.modalInput, f.multiline && { minHeight: 60, textAlignVertical: 'top' }]}
+                  value={feelingForm[f.key]}
+                  onChangeText={v => setFeelingForm(p => ({ ...p, [f.key]: v }))}
+                  placeholder={f.placeholder}
+                  placeholderTextColor="#94a3b8"
+                  multiline={f.multiline}
+                  keyboardType={f.keyboardType || 'default'}
+                />
+              </View>
+            ))}
+            <View style={{ height: 8 }} />
+          </ScrollView>
+
+          {/* Fixed action buttons */}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+            <TouchableOpacity style={[styles.modalSkipBtn]} onPress={() => setShowFeelingModal(false)}>
+              <Text style={styles.modalSkipText}>Skip for Now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, { flex: 2 }, submittingFeeling && { opacity: 0.6 }]}
+              onPress={submitFeeling}
+              disabled={submittingFeeling}
+            >
+              {submittingFeeling ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.modalSubmitText}>Submit Check-In</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+    </>
   );
 };
 
@@ -993,6 +1207,46 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  // Intake button
+  intakeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginHorizontal: 16, marginBottom: 12,
+    borderWidth: 1.5, borderColor: '#fca5a5',
+  },
+  intakeBtnIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff1f2',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  intakeBtnTitle: { fontSize: 14, fontWeight: '700', color: '#dc2626' },
+  intakeBtnSub: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  // Modals
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90%' },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginLeft: 8 },
+  modalSub: { fontSize: 13, color: '#64748b', marginBottom: 16, lineHeight: 18 },
+  modalFieldLabel: { fontSize: 12, fontWeight: '600', color: '#475569', marginBottom: 5 },
+  modalInput: {
+    backgroundColor: '#f8fafc', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: '#1e293b', borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  modalSubmitBtn: {
+    flex: 1, backgroundColor: MedicalColors.primary, borderRadius: 12,
+    paddingVertical: 13, alignItems: 'center',
+  },
+  modalSubmitText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  modalSkipBtn: {
+    flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12,
+    paddingVertical: 13, alignItems: 'center',
+  },
+  modalSkipText: { color: '#64748b', fontSize: 14, fontWeight: '600' },
+  // Mood chips
+  moodChip: {
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  moodChipActive: { backgroundColor: MedicalColors.primary, borderColor: MedicalColors.primary },
+  moodChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  moodChipTextActive: { color: '#fff' },
 });
 
 export default MedicalHomeScreen;

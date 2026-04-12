@@ -57,7 +57,7 @@ function DonutChart({ segments }) {
               fill="none"
               stroke={seg.color}
               strokeWidth={DONUT_STROKE}
-              strokeDasharray={`${arc} ${DONUT_C}`}
+              strokeDasharray={`${arc} ${DONUT_C - arc}`}
               strokeDashoffset={offset}
               strokeLinecap="butt"
             />
@@ -286,14 +286,14 @@ export default function DoctorHomeScreen({ navigation }) {
       {/* Stats — horizontal scroll */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll} contentContainerStyle={styles.statsScrollContent}>
         {[
-          { label: 'Patients',    value: stats.patients,                        icon: 'people',           bg: '#dbeafe', color: '#1e40af' },
-          { label: 'Today',       value: stats.todayAppts,                      icon: 'calendar',         bg: '#dcfce7', color: '#166534' },
-          { label: 'Pending',     value: stats.pending,                         icon: 'time',             bg: '#fef9c3', color: '#92400e' },
-          { label: 'Completed',   value: stats.completed,                       icon: 'checkmark-circle', bg: '#ede9fe', color: '#4c1d95' },
-          { label: 'Revenue',     value: `₵${stats.revenue.toLocaleString()}`,  icon: 'trending-up',      bg: '#ccfbf1', color: '#0f766e' },
-          { label: 'This Week',   value: stats.weekAppts,                       icon: 'pulse',            bg: '#e0f2fe', color: '#075985' },
+          { label: 'Patients',    value: stats.patients,                        icon: 'people',           color: '#1e40af' },
+          { label: 'Today',       value: stats.todayAppts,                      icon: 'calendar',         color: '#166534' },
+          { label: 'Pending',     value: stats.pending,                         icon: 'time',             color: '#92400e' },
+          { label: 'Completed',   value: stats.completed,                       icon: 'checkmark-circle', color: '#4c1d95' },
+          { label: 'Revenue',     value: `₵${stats.revenue.toLocaleString()}`,  icon: 'trending-up',      color: '#0f766e' },
+          { label: 'This Week',   value: stats.weekAppts,                       icon: 'pulse',            color: '#075985' },
         ].map((s, i) => (
-          <View key={i} style={[styles.statCard, { backgroundColor: s.bg }]}>
+          <View key={i} style={styles.statCard}>
             <Ionicons name={`${s.icon}-outline`} size={22} color={s.color} style={{ marginBottom: 6 }} />
             <Text style={[styles.statValue, { color: s.color }]}>{s.value}</Text>
             <Text style={[styles.statLabel, { color: s.color + 'aa' }]}>{s.label}</Text>

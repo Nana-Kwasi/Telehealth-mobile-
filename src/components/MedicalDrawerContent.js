@@ -1,18 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Image,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth, db } from '../services/firebaseConfig';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { MedicalColors } from '../constants/colors';
 import { signOut } from '../services/authService';
 
 const MedicalDrawerContent = ({ navigation, profile }) => {
+  const [hasPrimaryDoctor, setHasPrimaryDoctor] = useState(false);
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    getDocs(query(collection(db, 'doctorAppointments'), where('clientId', '==', uid), where('status', 'in', ['pending', 'confirmed', 'completed'])))
+      .then(snap => setHasPrimaryDoctor(snap.size > 0))
+      .catch(() => {});
+  }, []);
   const handleLogout = async () => {
     try {
       await AsyncStorage.clear();
@@ -98,17 +104,19 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
         {/* Divider */}
         <View style={styles.divider} />
 
-        {/* Find Doctor shortcut */}
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => {
-            navigation.getParent()?.navigate('DoctorSearch');
-            navigation.closeDrawer();
-          }}
-        >
-          <Ionicons name="search-outline" size={22} color={MedicalColors.primary} />
-          <Text style={[styles.menuText, { color: MedicalColors.primary }]}>Find a Doctor</Text>
-        </TouchableOpacity>
+        {/* Find Doctor shortcut — hidden when patient already has a doctor */}
+        {!hasPrimaryDoctor && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              navigation.getParent()?.navigate('DoctorSearch');
+              navigation.closeDrawer();
+            }}
+          >
+            <Ionicons name="search-outline" size={22} color={MedicalColors.primary} />
+            <Text style={[styles.menuText, { color: MedicalColors.primary }]}>Find a Doctor</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Support shortcut */}
         <TouchableOpacity

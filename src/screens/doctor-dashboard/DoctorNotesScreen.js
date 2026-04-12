@@ -102,6 +102,7 @@ export default function DoctorNotesScreen() {
   };
 
   const handleSave = async () => {
+    if (!form.patientId) { Alert.alert('Validation', 'Please select a patient.'); return; }
     if (!form.title.trim()) { Alert.alert('Validation', 'Title is required.'); return; }
     if (!form.content.trim()) { Alert.alert('Validation', 'Content is required.'); return; }
     setSaving(true);
@@ -282,14 +283,8 @@ export default function DoctorNotesScreen() {
               {/* Patient selector */}
               {!editing && (
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Patient (optional)</Text>
+                  <Text style={styles.fieldLabel}>Patient *</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
-                    <TouchableOpacity
-                      style={[styles.patientChip, !form.patientId && styles.patientChipActive]}
-                      onPress={() => setForm(p => ({ ...p, patientId: '', patientName: 'General' }))}
-                    >
-                      <Text style={[styles.patientChipText, !form.patientId && styles.patientChipTextActive]}>General</Text>
-                    </TouchableOpacity>
                     {patients.map(p => (
                       <TouchableOpacity
                         key={p.id}

@@ -134,14 +134,14 @@ const DoctorDetailScreen = ({ route, navigation }) => {
         <View style={styles.heroActions}>
           <TouchableOpacity
             style={styles.heroBtn}
-            onPress={() => navigation.navigate('MedicalAppointments')}
+            onPress={() => navigation.navigate('MedicalMain', { screen: 'MedicalAppointments' })}
           >
             <Ionicons name="calendar-outline" size={16} color="#fff" />
             <Text style={styles.heroBtnText}>Book Appointment</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.heroBtn, styles.heroBtnOutline]}
-            onPress={() => navigation.navigate('MedicalMessages')}
+            onPress={() => navigation.navigate('MedicalMain', { screen: 'MedicalMessages' })}
           >
             <Ionicons name="chatbubbles-outline" size={16} color={MedicalColors.primary} />
             <Text style={[styles.heroBtnText, { color: MedicalColors.primary }]}>Message</Text>

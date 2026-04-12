@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, TextInput, Modal,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
@@ -13,7 +13,7 @@ import {
 import { DoctorColors } from '../../constants/colors';
 
 const TODAY = new Date().toISOString().split('T')[0];
-const TABS = ['Overview', 'Appointments', 'Notes', 'Prescriptions', 'Patient Info'];
+const TABS = ['Overview', 'Appointments', 'Notes', 'Prescriptions', 'Patient Info', 'Daily Feeling'];
 
 const NOTE_TYPES = [
   { value: 'consultation', label: 'Consultation', color: '#1e6bb8', bg: '#dbeafe' },
@@ -49,6 +49,9 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
   const [appointments, setAppointments] = useState([]);
   const [notes, setNotes] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
+  const [healthRecords, setHealthRecords] = useState([]);
+  const [dailyFeelings, setDailyFeelings] = useState([]);
+  const [intakeData, setIntakeData] = useState(null);
   const [doctorProfile, setDoctorProfile] = useState(null);
 
   // Note form
@@ -108,7 +111,28 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
       // Patient profile (insurance, emergency, health records)
       try {
         const ppSnap = await getDoc(doc(db, 'patientProfiles', patientId));
-        if (ppSnap.exists()) setPatientProfile(ppSnap.data());
+        if (ppSnap.exists()) {
+          const ppData = ppSnap.data();
+          setPatientProfile(ppData);
+          setHealthRecords(ppData.healthRecords || []);
+        }
+      } catch {}
+
+      // Intake / questionnaire data
+      try {
+        const intakeSnap = await getDoc(doc(db, 'patientIntake', patientId));
+        if (intakeSnap.exists()) setIntakeData(intakeSnap.data());
+      } catch {}
+
+      // Daily feelings
+      try {
+        const feelSnap = await getDocs(query(
+          collection(db, 'patientDailyFeelings'),
+          where('patientId', '==', patientId)
+        ));
+        const feelings = feelSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setDailyFeelings(feelings);
       } catch {}
 
       // Appointments
@@ -610,11 +634,107 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               </>
             )}
 
-            {!patient.bloodType && !patientProfile && (
+            {/* Initial complaint / intake data */}
+            {intakeData && (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Initial Complaint</Text>
+                <View style={styles.infoCard}>
+                  {intakeData.complaint && <View style={styles.infoRow}><Text style={styles.infoLabel}>Complaint</Text><Text style={[styles.infoValue, { flex: 1, textAlign: 'right' }]}>{intakeData.complaint}</Text></View>}
+                  {intakeData.duration && <View style={styles.infoRow}><Text style={styles.infoLabel}>Duration</Text><Text style={styles.infoValue}>{intakeData.duration}</Text></View>}
+                  {intakeData.severity && <View style={styles.infoRow}><Text style={styles.infoLabel}>Severity</Text><Text style={styles.infoValue}>{intakeData.severity}</Text></View>}
+                  {intakeData.symptoms && <View style={styles.infoRow}><Text style={styles.infoLabel}>Symptoms</Text><Text style={[styles.infoValue, { flex: 1, textAlign: 'right' }]}>{Array.isArray(intakeData.symptoms) ? intakeData.symptoms.join(', ') : intakeData.symptoms}</Text></View>}
+                  {intakeData.submittedAt?.seconds && <View style={styles.infoRow}><Text style={styles.infoLabel}>Reported on</Text><Text style={styles.infoValue}>{new Date(intakeData.submittedAt.seconds * 1000).toLocaleDateString()}</Text></View>}
+                </View>
+              </>
+            )}
+
+            {/* Health Records / Medical Files */}
+            {healthRecords.length > 0 && (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Health Records & Medical Files</Text>
+                {healthRecords.map((rec, i) => (
+                  <View key={i} style={[styles.infoCard, { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 }]}>
+                    <View style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: DoctorColors.primaryLight, justifyContent: 'center', alignItems: 'center' }}>
+                      <Ionicons name="document-outline" size={18} color={DoctorColors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: DoctorColors.text }}>{rec.name || rec.type || 'Record'}</Text>
+                      <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{rec.type}{rec.date ? '  ·  ' + rec.date : ''}</Text>
+                      {rec.notes ? <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }} numberOfLines={1}>{rec.notes}</Text> : null}
+                    </View>
+                    {rec.fileUrl ? (
+                      <TouchableOpacity
+                        style={{ padding: 8, backgroundColor: DoctorColors.primaryLight, borderRadius: 8 }}
+                        onPress={() => Linking.openURL(rec.fileUrl)}
+                      >
+                        <Ionicons name="download-outline" size={18} color={DoctorColors.primary} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ))}
+              </>
+            )}
+
+            {!patient.bloodType && !patientProfile && healthRecords.length === 0 && !intakeData && (
               <Text style={styles.emptyText}>No additional patient information available</Text>
             )}
           </>
         )}
+        {/* ── DAILY FEELING ── */}
+        {activeTab === 'Daily Feeling' && (
+          <>
+            {dailyFeelings.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                <Ionicons name="happy-outline" size={52} color="#cbd5e1" />
+                <Text style={[styles.emptyText, { marginTop: 12 }]}>No daily check-ins yet</Text>
+                <Text style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', marginTop: 4 }}>
+                  The patient has not submitted any daily feeling reports.
+                </Text>
+              </View>
+            ) : (
+              dailyFeelings.map(f => {
+                const moodColors = { great: '#22c55e', good: '#84cc16', okay: '#f59e0b', poor: '#ef4444', bad: '#dc2626' };
+                const moodColor = moodColors[f.mood?.toLowerCase()] || '#64748b';
+                const dateStr = f.createdAt?.seconds ? new Date(f.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                return (
+                  <View key={f.id} style={[styles.miniCard, { flexDirection: 'column', gap: 8 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: moodColor + '20', justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name="happy-outline" size={20} color={moodColor} />
+                        </View>
+                        <View>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: DoctorColors.text, textTransform: 'capitalize' }}>{f.mood || 'Check-in'}</Text>
+                          <Text style={{ fontSize: 11, color: '#94a3b8' }}>{dateStr}</Text>
+                        </View>
+                      </View>
+                      {f.painLevel != null && (
+                        <View style={{ alignItems: 'center' }}>
+                          <Text style={{ fontSize: 11, color: '#64748b' }}>Pain</Text>
+                          <Text style={{ fontSize: 16, fontWeight: '800', color: f.painLevel >= 7 ? '#ef4444' : f.painLevel >= 4 ? '#f59e0b' : '#22c55e' }}>{f.painLevel}/10</Text>
+                        </View>
+                      )}
+                    </View>
+                    {f.symptoms?.length > 0 && (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {(Array.isArray(f.symptoms) ? f.symptoms : [f.symptoms]).map((s, i) => (
+                          <View key={i} style={{ backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                            <Text style={{ fontSize: 11, color: '#475569' }}>{s}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    {f.notes ? <Text style={{ fontSize: 13, color: '#475569', lineHeight: 18 }}>{f.notes}</Text> : null}
+                    {f.medications?.length > 0 && (
+                      <Text style={{ fontSize: 12, color: '#94a3b8' }}>Medications taken: {Array.isArray(f.medications) ? f.medications.join(', ') : f.medications}</Text>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </>
+        )}
+
       </ScrollView>
 
       {/* Note Reading Modal */}

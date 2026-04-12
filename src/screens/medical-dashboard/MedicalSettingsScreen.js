@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../services/firebaseConfig';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { MedicalColors } from '../../constants/colors';
 
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -24,9 +25,11 @@ const MedicalSettingsScreen = ({ navigation }) => {
     dob: '',
     bloodType: '',
     allergies: '',
-    emergencyContact: '',
   });
   const [saving, setSaving] = useState(false);
+  const [showPwdModal, setShowPwdModal] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ current: '', next: '', confirm: '' });
+  const [changingPwd, setChangingPwd] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -46,7 +49,6 @@ const MedicalSettingsScreen = ({ navigation }) => {
           dob: data.dob || '',
           bloodType: data.bloodType || '',
           allergies: data.allergies || '',
-          emergencyContact: data.emergencyContact || '',
         });
         if (data.name) await AsyncStorage.setItem('userName', data.name);
       }
@@ -66,7 +68,6 @@ const MedicalSettingsScreen = ({ navigation }) => {
         dob: form.dob,
         bloodType: form.bloodType,
         allergies: form.allergies,
-        emergencyContact: form.emergencyContact,
       }, { merge: true });
       if (form.name) await AsyncStorage.setItem('userName', form.name);
       Alert.alert('Saved', 'Your profile has been updated successfully.');
@@ -75,6 +76,27 @@ const MedicalSettingsScreen = ({ navigation }) => {
       console.error(err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    const { current, next, confirm } = pwdForm;
+    if (!current || !next || !confirm) { Alert.alert('Error', 'Please fill all password fields.'); return; }
+    if (next.length < 6) { Alert.alert('Error', 'New password must be at least 6 characters.'); return; }
+    if (next !== confirm) { Alert.alert('Error', 'New passwords do not match.'); return; }
+    setChangingPwd(true);
+    try {
+      const user = auth.currentUser;
+      const credential = EmailAuthProvider.credential(user.email, current);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, next);
+      setShowPwdModal(false);
+      setPwdForm({ current: '', next: '', confirm: '' });
+      Alert.alert('Success', 'Password changed successfully.');
+    } catch (err) {
+      Alert.alert('Error', err.code === 'auth/wrong-password' ? 'Current password is incorrect.' : 'Could not change password. Try again.');
+    } finally {
+      setChangingPwd(false);
     }
   };
 
@@ -161,7 +183,6 @@ const MedicalSettingsScreen = ({ navigation }) => {
           />
         </View>
 
-        {field('Emergency Contact', 'emergencyContact', { placeholder: 'Name · Relationship · Phone' })}
       </View>
 
       {/* Save Button */}
@@ -172,6 +193,13 @@ const MedicalSettingsScreen = ({ navigation }) => {
       >
         <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
         <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
+      </TouchableOpacity>
+
+      {/* Change Password */}
+      <TouchableOpacity style={styles.changePwdBtn} onPress={() => setShowPwdModal(true)}>
+        <Ionicons name="lock-closed-outline" size={18} color={MedicalColors.primary} />
+        <Text style={styles.changePwdText}>Change Password</Text>
+        <Ionicons name="chevron-forward" size={16} color={MedicalColors.textLight} style={{ marginLeft: 'auto' }} />
       </TouchableOpacity>
 
       {/* My Records */}
@@ -203,6 +231,45 @@ const MedicalSettingsScreen = ({ navigation }) => {
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />
+
+      {/* Password Change Modal */}
+      {showPwdModal && (
+        <View style={styles.pwdOverlay}>
+          <View style={styles.pwdCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <Ionicons name="lock-closed" size={20} color={MedicalColors.primary} />
+              <Text style={styles.pwdTitle}>Change Password</Text>
+              <TouchableOpacity onPress={() => { setShowPwdModal(false); setPwdForm({ current: '', next: '', confirm: '' }); }} style={{ marginLeft: 'auto' }}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            {[
+              { key: 'current', label: 'Current Password', placeholder: 'Enter current password' },
+              { key: 'next',    label: 'New Password',     placeholder: 'At least 6 characters' },
+              { key: 'confirm', label: 'Confirm New Password', placeholder: 'Repeat new password' },
+            ].map(f => (
+              <View key={f.key} style={{ marginBottom: 12 }}>
+                <Text style={styles.label}>{f.label}</Text>
+                <TextInput
+                  style={styles.input}
+                  value={pwdForm[f.key]}
+                  onChangeText={v => setPwdForm(p => ({ ...p, [f.key]: v }))}
+                  placeholder={f.placeholder}
+                  placeholderTextColor={MedicalColors.textLight}
+                  secureTextEntry
+                />
+              </View>
+            ))}
+            <TouchableOpacity
+              style={[styles.saveBtn, changingPwd && { opacity: 0.7 }]}
+              onPress={handleChangePassword}
+              disabled={changingPwd}
+            >
+              <Text style={styles.saveBtnText}>{changingPwd ? 'Changing…' : 'Update Password'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 };
@@ -360,6 +427,42 @@ const styles = StyleSheet.create({
     color: MedicalColors.error,
     fontSize: 16,
     fontWeight: '600',
+  },
+  changePwdBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: MedicalColors.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: MedicalColors.border,
+  },
+  changePwdText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: MedicalColors.text,
+  },
+  pwdOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  pwdCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+  },
+  pwdTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: MedicalColors.text,
+    marginLeft: 8,
   },
 });
 

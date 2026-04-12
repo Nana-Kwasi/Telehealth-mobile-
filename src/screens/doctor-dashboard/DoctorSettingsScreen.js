@@ -13,6 +13,7 @@ import {
   collection, getDocs, addDoc, deleteDoc, query, where, orderBy,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 
 const TABS = ['Profile', 'Availability'];
 
@@ -37,6 +38,11 @@ export default function DoctorSettingsScreen() {
   const [availSlots, setAvailSlots] = useState([]);
   const [newSlot, setNewSlot] = useState({ date: '', startTime: '09:00', endTime: '17:00' });
   const [doctorName, setDoctorName] = useState('');
+
+  // Password change
+  const [showPwdModal, setShowPwdModal] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ current: '', next: '', confirm: '' });
+  const [changingPwd, setChangingPwd] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -102,6 +108,27 @@ export default function DoctorSettingsScreen() {
       Alert.alert('Error', 'Could not save profile.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    const { current, next, confirm } = pwdForm;
+    if (!current || !next || !confirm) { Alert.alert('Error', 'Please fill all password fields.'); return; }
+    if (next.length < 6) { Alert.alert('Error', 'New password must be at least 6 characters.'); return; }
+    if (next !== confirm) { Alert.alert('Error', 'New passwords do not match.'); return; }
+    setChangingPwd(true);
+    try {
+      const user = auth.currentUser;
+      const credential = EmailAuthProvider.credential(user.email, current);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, next);
+      setShowPwdModal(false);
+      setPwdForm({ current: '', next: '', confirm: '' });
+      showSuccess('Password changed successfully.');
+    } catch (err) {
+      Alert.alert('Error', err.code === 'auth/wrong-password' ? 'Current password is incorrect.' : 'Could not change password. Try again.');
+    } finally {
+      setChangingPwd(false);
     }
   };
 
@@ -327,6 +354,52 @@ export default function DoctorSettingsScreen() {
           >
             {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>Save Profile</Text>}
           </TouchableOpacity>
+
+          {/* Change Password */}
+          <TouchableOpacity style={styles.changePwdBtn} onPress={() => setShowPwdModal(true)}>
+            <Ionicons name="lock-closed-outline" size={18} color={DoctorColors.primary} />
+            <Text style={styles.changePwdText}>Change Password</Text>
+            <Ionicons name="chevron-forward" size={16} color="#94a3b8" style={{ marginLeft: 'auto' }} />
+          </TouchableOpacity>
+
+          {/* Password Modal */}
+          {showPwdModal && (
+            <View style={styles.pwdOverlay}>
+              <View style={styles.pwdCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <Ionicons name="lock-closed" size={20} color={DoctorColors.primary} />
+                  <Text style={[styles.sectionLabel, { marginLeft: 8, marginBottom: 0 }]}>Change Password</Text>
+                  <TouchableOpacity onPress={() => { setShowPwdModal(false); setPwdForm({ current: '', next: '', confirm: '' }); }} style={{ marginLeft: 'auto' }}>
+                    <Ionicons name="close" size={22} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+                {[
+                  { key: 'current', label: 'Current Password', placeholder: 'Enter current password' },
+                  { key: 'next',    label: 'New Password',     placeholder: 'At least 6 characters' },
+                  { key: 'confirm', label: 'Confirm New Password', placeholder: 'Repeat new password' },
+                ].map(f => (
+                  <View key={f.key} style={{ marginBottom: 12 }}>
+                    <Text style={styles.fieldLabel}>{f.label}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={pwdForm[f.key]}
+                      onChangeText={v => setPwdForm(p => ({ ...p, [f.key]: v }))}
+                      placeholder={f.placeholder}
+                      placeholderTextColor="#94a3b8"
+                      secureTextEntry
+                    />
+                  </View>
+                ))}
+                <TouchableOpacity
+                  style={[styles.saveBtn, changingPwd && { opacity: 0.7 }]}
+                  onPress={handleChangePassword}
+                  disabled={changingPwd}
+                >
+                  {changingPwd ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>Update Password</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </ScrollView>
       )}
 
@@ -521,4 +594,15 @@ const styles = StyleSheet.create({
   slotTime: { fontSize: 13, color: DoctorColors.textSecondary, marginTop: 2 },
   slotInfo: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
   removeBtn: { padding: 6 },
+  changePwdBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: DoctorColors.primaryLight, borderRadius: 12, padding: 14, marginTop: 8,
+    borderWidth: 1, borderColor: DoctorColors.primary + '30',
+  },
+  changePwdText: { fontSize: 14, fontWeight: '600', color: DoctorColors.text },
+  pwdOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 20,
+  },
+  pwdCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%' },
 });
