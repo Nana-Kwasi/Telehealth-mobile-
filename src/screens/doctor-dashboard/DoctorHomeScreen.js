@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Dimensions,
+  ActivityIndicator, RefreshControl, Dimensions, Image, DeviceEventEmitter,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
@@ -86,13 +86,32 @@ export default function DoctorHomeScreen({ navigation }) {
 
   useEffect(() => { loadData(); }, []);
 
+  // Reload profile photo immediately when updated from Settings
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('refreshProfile', async () => {
+      const cu = auth.currentUser;
+      if (!cu) return;
+      try {
+        const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
+        if (dSnap.exists()) {
+          const dData = dSnap.data();
+          setProfile(prev => ({ ...(prev || {}), ...dData, id: cu.uid, photoURL: dData.photoURL || cu.photoURL || null }));
+        }
+      } catch (_) {}
+    });
+    return () => sub.remove();
+  }, []);
+
   const loadData = async () => {
     try {
       const cu = auth.currentUser;
       if (!cu) return;
 
       const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      if (dSnap.exists()) setProfile({ id: cu.uid, ...dSnap.data() });
+      if (dSnap.exists()) {
+        const dData = dSnap.data();
+        setProfile({ id: cu.uid, ...dData, photoURL: dData.photoURL || cu.photoURL || null });
+      }
 
       const apptSnap = await getDocs(
         query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
@@ -233,9 +252,20 @@ export default function DoctorHomeScreen({ navigation }) {
           <Text style={styles.doctorName}>Dr. {profile?.name || 'Doctor'}</Text>
           <Text style={styles.specialty}>{profile?.specialty || profile?.specialization || 'General Practice'}</Text>
         </View>
-        <View style={styles.verifiedPill}>
-          <Ionicons name="shield-checkmark" size={13} color="#10b981" />
-          <Text style={styles.verifiedText}>Verified</Text>
+        <View style={{ alignItems: 'flex-end', gap: 10 }}>
+          {profile?.photoURL ? (
+            <Image source={{ uri: profile.photoURL }} style={styles.headerAvatar} />
+          ) : (
+            <View style={styles.headerAvatarPlaceholder}>
+              <Text style={styles.headerAvatarInitials}>
+                {(profile?.name || 'D')[0].toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View style={styles.verifiedPill}>
+            <Ionicons name="shield-checkmark" size={13} color="#10b981" />
+            <Text style={styles.verifiedText}>Verified</Text>
+          </View>
         </View>
       </View>
 
@@ -256,17 +286,17 @@ export default function DoctorHomeScreen({ navigation }) {
       {/* Stats — horizontal scroll */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll} contentContainerStyle={styles.statsScrollContent}>
         {[
-          { label: 'Patients',    value: stats.patients,                            icon: 'people',           bg: '#1e40af' },
-          { label: "Today",       value: stats.todayAppts,                          icon: 'calendar',         bg: '#065f46' },
-          { label: 'Pending',     value: stats.pending,                             icon: 'time',             bg: '#92400e' },
-          { label: 'Completed',   value: stats.completed,                           icon: 'checkmark-circle', bg: '#4c1d95' },
-          { label: 'Revenue',     value: `₵${stats.revenue.toLocaleString()}`,      icon: 'trending-up',      bg: '#0f766e' },
-          { label: 'This Week',   value: stats.weekAppts,                           icon: 'pulse',            bg: '#0c4a6e' },
+          { label: 'Patients',    value: stats.patients,                        icon: 'people',           bg: '#dbeafe', color: '#1e40af' },
+          { label: 'Today',       value: stats.todayAppts,                      icon: 'calendar',         bg: '#dcfce7', color: '#166534' },
+          { label: 'Pending',     value: stats.pending,                         icon: 'time',             bg: '#fef9c3', color: '#92400e' },
+          { label: 'Completed',   value: stats.completed,                       icon: 'checkmark-circle', bg: '#ede9fe', color: '#4c1d95' },
+          { label: 'Revenue',     value: `₵${stats.revenue.toLocaleString()}`,  icon: 'trending-up',      bg: '#ccfbf1', color: '#0f766e' },
+          { label: 'This Week',   value: stats.weekAppts,                       icon: 'pulse',            bg: '#e0f2fe', color: '#075985' },
         ].map((s, i) => (
           <View key={i} style={[styles.statCard, { backgroundColor: s.bg }]}>
-            <Ionicons name={`${s.icon}-outline`} size={22} color="rgba(255,255,255,0.8)" style={{ marginBottom: 6 }} />
-            <Text style={styles.statValue}>{s.value}</Text>
-            <Text style={styles.statLabel}>{s.label}</Text>
+            <Ionicons name={`${s.icon}-outline`} size={22} color={s.color} style={{ marginBottom: 6 }} />
+            <Text style={[styles.statValue, { color: s.color }]}>{s.value}</Text>
+            <Text style={[styles.statLabel, { color: s.color + 'aa' }]}>{s.label}</Text>
           </View>
         ))}
       </ScrollView>
@@ -518,6 +548,17 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 3 },
   doctorName: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 2 },
   specialty: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
+  headerAvatar: {
+    width: 52, height: 52, borderRadius: 26,
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)',
+  },
+  headerAvatarPlaceholder: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
+  },
+  headerAvatarInitials: { fontSize: 20, fontWeight: '800', color: '#fff' },
   verifiedPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(16,185,129,0.15)',
@@ -535,11 +576,11 @@ const styles = StyleSheet.create({
   statsScrollContent: { paddingHorizontal: 14, gap: 10 },
   statCard: {
     width: 96, borderRadius: 16, padding: 14, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
-  statValue: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 2 },
-  statLabel: { fontSize: 10, color: 'rgba(255,255,255,0.75)', textAlign: 'center', fontWeight: '600' },
+  statValue: { fontSize: 22, fontWeight: '900', marginBottom: 2 },
+  statLabel: { fontSize: 10, textAlign: 'center', fontWeight: '600' },
   section: { paddingHorizontal: 16, marginBottom: 20 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: DoctorColors.text, marginBottom: 12 },

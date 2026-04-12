@@ -1,17 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, TextInput, KeyboardAvoidingView,
-  Platform, ScrollView, RefreshControl,
+  ActivityIndicator, TextInput, KeyboardAvoidingView, Platform,
+  ScrollView, RefreshControl, Image, Modal, Linking, Alert,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { auth, db } from '../../services/firebaseConfig';
 import {
   collection, query, where, getDocs, addDoc, onSnapshot,
-  orderBy, serverTimestamp, getDoc, doc,
+  orderBy, serverTimestamp, getDoc, doc, updateDoc,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
+import {
+  setPresenceOnline, setPresenceOffline, markMessagesAsSeen,
+  formatMsgTime, formatDateLabel, formatLastSeen, formatAudioDuration,
+  formatFileSize, groupWithDateSeparators, uploadMedia, EMOJI_LIST,
+} from '../../utils/chatUtils';
+
+// Try to load expo-av for voice recording
+let Audio = null;
+try { Audio = require('expo-av').Audio; } catch (_) {}
 
 function getInitials(name) {
   if (!name) return 'P';
@@ -19,56 +31,150 @@ function getInitials(name) {
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
 }
 
-function timeAgo(ts) {
-  if (!ts) return '';
-  const d = ts?.toDate ? ts.toDate() : new Date(ts);
-  const diff = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// ── Tick icon for message status ──────────────────────────────────────────────
+function TickIcon({ status, isMine }) {
+  if (!isMine) return null;
+  if (status === 'seen') {
+    return (
+      <View style={{ flexDirection: 'row', marginLeft: 3 }}>
+        <Ionicons name="checkmark" size={12} color="#fff" style={{ marginRight: -5 }} />
+        <Ionicons name="checkmark" size={12} color="#fff" />
+      </View>
+    );
+  }
+  if (status === 'delivered') {
+    return (
+      <View style={{ flexDirection: 'row', marginLeft: 3 }}>
+        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" style={{ marginRight: -5 }} />
+        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" />
+      </View>
+    );
+  }
+  // sent
+  return <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" style={{ marginLeft: 3 }} />;
 }
+
+// ── Date separator ────────────────────────────────────────────────────────────
+function DateSeparator({ label }) {
+  return (
+    <View style={sep.row}>
+      <View style={sep.line} />
+      <Text style={sep.label}>{label}</Text>
+      <View style={sep.line} />
+    </View>
+  );
+}
+const sep = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', marginVertical: 10, paddingHorizontal: 16 },
+  line: { flex: 1, height: 1, backgroundColor: '#e2e8f0' },
+  label: {
+    fontSize: 11, color: '#94a3b8', fontWeight: '600',
+    backgroundColor: '#f0f6fc', paddingHorizontal: 10, paddingVertical: 3,
+    borderRadius: 10, marginHorizontal: 8,
+  },
+});
+
+// ── Emoji Picker ──────────────────────────────────────────────────────────────
+function EmojiPicker({ onSelect, onClose }) {
+  return (
+    <View style={emojiStyles.container}>
+      <View style={emojiStyles.header}>
+        <Text style={emojiStyles.title}>Emojis</Text>
+        <TouchableOpacity onPress={onClose}><Ionicons name="close" size={20} color="#64748b" /></TouchableOpacity>
+      </View>
+      <ScrollView contentContainerStyle={emojiStyles.grid}>
+        {EMOJI_LIST.map((e, i) => (
+          <TouchableOpacity key={i} style={emojiStyles.cell} onPress={() => onSelect(e)}>
+            <Text style={emojiStyles.emoji}>{e}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+const emojiStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    maxHeight: 280, paddingBottom: 8,
+  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, paddingBottom: 8 },
+  title: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 8 },
+  cell: { width: '12.5%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+  emoji: { fontSize: 24 },
+});
 
 export default function DoctorMessagesScreen({ route }) {
   const [patients, setPatients] = useState([]);
   const [activePatient, setActivePatient] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [grouped, setGrouped] = useState([]);
   const [msgText, setMsgText] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingPatients, setLoadingPatients] = useState(true);
   const [search, setSearch] = useState('');
   const [doctorProfile, setDoctorProfile] = useState(null);
+
+  // Presence
+  const [otherPresence, setOtherPresence] = useState({ online: false, lastSeen: null });
+
+  // Media
+  const [uploading, setUploading] = useState(false);
+  const [viewingImage, setViewingImage] = useState(null);
+
+  // Emoji
+  const [showEmoji, setShowEmoji] = useState(false);
+
+  // Audio recording
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingRef = useRef(null);
+  const recordTimerRef = useRef(null);
+
   const listRef = useRef(null);
   const unsubRef = useRef(null);
+  const presenceUnsubRef = useRef(null);
+
+  const cu = auth.currentUser;
 
   useEffect(() => {
     loadPatients();
-    return () => { if (unsubRef.current) unsubRef.current(); };
+    if (cu) setPresenceOnline(cu.uid);
+    return () => {
+      if (cu) setPresenceOffline(cu.uid);
+      if (unsubRef.current) unsubRef.current();
+      if (presenceUnsubRef.current) presenceUnsubRef.current();
+    };
   }, []);
 
-  // Auto-open chat if navigated with a patientId param
+  // Auto-open chat if navigated with patientId
   useEffect(() => {
     const { patientId, patientName } = route?.params || {};
     if (patientId && patients.length > 0) {
       const found = patients.find(p => p.id === patientId);
-      if (found) {
-        setActivePatient(found);
-      } else {
-        setActivePatient({ id: patientId, name: patientName || 'Patient' });
-      }
+      setActivePatient(found || { id: patientId, name: patientName || 'Patient' });
     }
   }, [patients, route?.params?.patientId]);
 
   useEffect(() => {
-    if (!activePatient) { setMessages([]); return; }
+    if (!activePatient) { setMessages([]); setGrouped([]); return; }
     subscribeMessages(activePatient.id);
+    subscribePresence(activePatient.id);
   }, [activePatient]);
+
+  useEffect(() => {
+    setGrouped(groupWithDateSeparators(messages));
+    // Mark messages as seen
+    if (activePatient && cu && messages.length > 0) {
+      const chatId = [cu.uid, activePatient.id].sort().join('_');
+      markMessagesAsSeen(chatId, messages, cu.uid);
+    }
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+  }, [messages]);
 
   const loadPatients = async () => {
     try {
-      const cu = auth.currentUser;
       if (!cu) return;
-
       const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
       const profile = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
       setDoctorProfile(profile);
@@ -82,72 +188,189 @@ export default function DoctorMessagesScreen({ route }) {
         if (!data.clientId) return;
         const existing = patMap.get(data.clientId);
         if (!existing || (data.date || '') > (existing.lastVisit || '')) {
-          patMap.set(data.clientId, {
-            id: data.clientId,
-            name: data.clientName || '',
-            email: data.clientEmail || '',
-            lastVisit: data.date || '',
-          });
+          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || '', lastVisit: data.date || '' });
         }
       });
       const enriched = await enrichPatientNames(patMap);
       setPatients(Array.from(enriched.values()));
-    } catch (err) {
-      console.error('DoctorMessages patients error:', err);
-    } finally {
-      setLoadingPatients(false);
-    }
+    } catch (err) { console.error('DoctorMessages load error:', err); }
+    finally { setLoadingPatients(false); }
   };
 
   const subscribeMessages = (patientId) => {
     if (unsubRef.current) unsubRef.current();
-    const cu = auth.currentUser;
     if (!cu) return;
-
     const chatId = [cu.uid, patientId].sort().join('_');
-    const q = query(
-      collection(db, 'doctor_chats', chatId, 'messages'),
-      orderBy('timestamp', 'asc')
-    );
+    const q = query(collection(db, 'doctor_chats', chatId, 'messages'), orderBy('timestamp', 'asc'));
     unsubRef.current = onSnapshot(q, snap => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-    }, err => {
-      console.error('Messages subscribe error:', err);
+    }, err => console.error('Messages error:', err));
+  };
+
+  const subscribePresence = (userId) => {
+    if (presenceUnsubRef.current) presenceUnsubRef.current();
+    presenceUnsubRef.current = onSnapshot(doc(db, 'presence', userId), snap => {
+      if (snap.exists()) setOtherPresence(snap.data());
+      else setOtherPresence({ online: false, lastSeen: null });
     });
   };
 
-  const sendMessage = async () => {
-    if (!msgText.trim() || !activePatient) return;
-    setSending(true);
-    const text = msgText.trim();
-    setMsgText('');
+  const getInitialStatus = async (recipientId) => {
     try {
-      const cu = auth.currentUser;
+      const snap = await getDoc(doc(db, 'presence', recipientId));
+      return snap.exists() && snap.data().online ? 'delivered' : 'sent';
+    } catch (_) { return 'sent'; }
+  };
+
+  const sendMessage = async (overrides = {}) => {
+    if (!activePatient || !cu) return;
+    const text = (overrides.text ?? msgText).trim();
+    if (!overrides.type && !text) return;
+    setSending(true);
+    if (!overrides.type) setMsgText('');
+    try {
       const chatId = [cu.uid, activePatient.id].sort().join('_');
+      const status = await getInitialStatus(activePatient.id);
       await addDoc(collection(db, 'doctor_chats', chatId, 'messages'), {
-        text,
+        text: text || '',
         from: cu.uid,
         fromName: `Dr. ${doctorProfile?.name || 'Doctor'}`,
         to: activePatient.id,
         toName: activePatient.name,
         timestamp: serverTimestamp(),
         type: 'text',
+        status,
+        ...overrides,
       });
-    } catch (err) {
-      console.error('Send message error:', err);
-    } finally {
-      setSending(false);
-    }
+    } catch (err) { console.error('Send error:', err); }
+    finally { setSending(false); }
   };
+
+  // ── Image picker ────────────────────────────────────────────────────────────
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow access to photos.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    setUploading(true);
+    try {
+      const asset = result.assets[0];
+      const ext = asset.uri.split('.').pop();
+      const url = await uploadMedia(asset.uri, `chat-media/${cu.uid}/${Date.now()}.${ext}`);
+      await sendMessage({ type: 'image', mediaUrl: url, text: '' });
+    } catch { Alert.alert('Error', 'Could not send image.'); }
+    finally { setUploading(false); }
+  };
+
+  // ── File picker ─────────────────────────────────────────────────────────────
+  const pickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: false });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      setUploading(true);
+      const url = await uploadMedia(asset.uri, `chat-files/${cu.uid}/${Date.now()}_${asset.name}`);
+      await sendMessage({
+        type: 'file', mediaUrl: url, fileName: asset.name,
+        fileSize: asset.size || 0, mimeType: asset.mimeType || '', text: '',
+      });
+    } catch { Alert.alert('Error', 'Could not send file.'); }
+    finally { setUploading(false); }
+  };
+
+  // ── Voice recording ─────────────────────────────────────────────────────────
+  const startRecording = async () => {
+    if (!Audio) { Alert.alert('Not available', 'Install expo-av to enable voice messages:\nnpx expo install expo-av'); return; }
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const rec = new Audio.Recording();
+      await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await rec.startAsync();
+      recordingRef.current = rec;
+      setIsRecording(true);
+      setRecordingDuration(0);
+      recordTimerRef.current = setInterval(() => setRecordingDuration(p => p + 1), 1000);
+    } catch (e) { Alert.alert('Error', 'Could not start recording: ' + e.message); }
+  };
+
+  const stopAndSendRecording = async () => {
+    if (!recordingRef.current) return;
+    clearInterval(recordTimerRef.current);
+    setIsRecording(false);
+    const duration = recordingDuration;
+    setRecordingDuration(0);
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+      setUploading(true);
+      const url = await uploadMedia(uri, `chat-audio/${cu.uid}/${Date.now()}.m4a`);
+      await sendMessage({ type: 'audio', mediaUrl: url, duration, text: '' });
+    } catch { Alert.alert('Error', 'Could not send voice message.'); }
+    finally { setUploading(false); }
+  };
+
+  const cancelRecording = async () => {
+    clearInterval(recordTimerRef.current);
+    setIsRecording(false);
+    setRecordingDuration(0);
+    try {
+      if (recordingRef.current) {
+        await recordingRef.current.stopAndUnloadAsync();
+        recordingRef.current = null;
+      }
+    } catch (_) {}
+  };
+
+  // ── Render message ──────────────────────────────────────────────────────────
+  const renderItem = useCallback(({ item }) => {
+    if (item.isSeparator) return <DateSeparator label={item.label} />;
+
+    const isMine = item.from === cu?.uid;
+    return (
+      <View style={[styles.msgRow, isMine && styles.msgRowMine]}>
+        {!isMine && (
+          <View style={styles.msgAvatar}>
+            <Text style={styles.msgAvatarText}>{getInitials(activePatient?.name)}</Text>
+          </View>
+        )}
+        <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
+          {item.type === 'image' ? (
+            <TouchableOpacity onPress={() => setViewingImage(item.mediaUrl)}>
+              <Image source={{ uri: item.mediaUrl }} style={styles.bubbleImage} resizeMode="cover" />
+            </TouchableOpacity>
+          ) : item.type === 'audio' ? (
+            <AudioBubble item={item} isMine={isMine} />
+          ) : item.type === 'file' ? (
+            <FileBubble item={item} isMine={isMine} />
+          ) : (
+            <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>{item.text}</Text>
+          )}
+          <View style={styles.bubbleFooter}>
+            <Text style={[styles.bubbleTime, isMine && { color: 'rgba(255,255,255,0.6)' }]}>
+              {formatMsgTime(item.timestamp)}
+            </Text>
+            <TickIcon status={item.status} isMine={isMine} />
+          </View>
+        </View>
+      </View>
+    );
+  }, [cu, activePatient]);
 
   const filteredPatients = patients.filter(p =>
     !search.trim() || (p.name || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const cu = auth.currentUser;
-
+  // ── Chat view ───────────────────────────────────────────────────────────────
   if (activePatient) {
+    const statusText = otherPresence.online
+      ? 'Online'
+      : formatLastSeen(otherPresence.lastSeen);
+
     return (
       <KeyboardAvoidingView
         style={styles.chatContainer}
@@ -159,12 +382,17 @@ export default function DoctorMessagesScreen({ route }) {
           <TouchableOpacity onPress={() => setActivePatient(null)} style={{ marginRight: 10 }}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-          <View style={styles.chatAvatar}>
-            <Text style={styles.chatAvatarText}>{getInitials(activePatient.name)}</Text>
+          <View style={styles.chatAvatarWrap}>
+            <View style={styles.chatAvatar}>
+              <Text style={styles.chatAvatarText}>{getInitials(activePatient.name)}</Text>
+            </View>
+            {otherPresence.online && <View style={styles.onlineDot} />}
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.chatName}>{activePatient.name}</Text>
-            <Text style={styles.chatSub}>Patient · Secure channel</Text>
+            <Text style={[styles.chatSub, otherPresence.online && { color: '#86efac' }]}>
+              {statusText}
+            </Text>
           </View>
         </View>
 
@@ -172,61 +400,109 @@ export default function DoctorMessagesScreen({ route }) {
         <ScrollView
           ref={listRef}
           style={styles.messageList}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={{ paddingVertical: 8 }}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         >
-          {messages.length === 0 && (
+          {grouped.length === 0 && (
             <View style={styles.emptyChat}>
               <Ionicons name="chatbubbles-outline" size={40} color="#cbd5e1" />
-              <Text style={styles.emptyChatText}>No messages yet. Say hello!</Text>
+              <Text style={styles.emptyChatText}>Say hello to {activePatient.name}!</Text>
             </View>
           )}
-          {messages.map(msg => {
-            const isMine = msg.from === cu?.uid;
-            return (
-              <View key={msg.id} style={[styles.msgRow, isMine && styles.msgRowMine]}>
-                {!isMine && (
-                  <View style={styles.msgAvatar}>
-                    <Text style={styles.msgAvatarText}>{getInitials(activePatient.name)}</Text>
-                  </View>
-                )}
-                <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                  <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>{msg.text}</Text>
-                  <Text style={[styles.bubbleTime, isMine && { color: 'rgba(255,255,255,0.65)' }]}>
-                    {timeAgo(msg.timestamp)}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
+          {grouped.map(item => (
+            <React.Fragment key={item.id}>
+              {renderItem({ item })}
+            </React.Fragment>
+          ))}
         </ScrollView>
 
-        {/* Input */}
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.msgInput}
-            placeholder="Type a message..."
-            placeholderTextColor="#94a3b8"
-            value={msgText}
-            onChangeText={setMsgText}
-            multiline
-            maxLength={1000}
+        {/* Uploading indicator */}
+        {uploading && (
+          <View style={styles.uploadingBar}>
+            <ActivityIndicator size="small" color={DoctorColors.primary} />
+            <Text style={styles.uploadingText}>Uploading...</Text>
+          </View>
+        )}
+
+        {/* Emoji picker */}
+        {showEmoji && (
+          <EmojiPicker
+            onSelect={e => { setMsgText(p => p + e); setShowEmoji(false); }}
+            onClose={() => setShowEmoji(false)}
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, (!msgText.trim() || sending) && { opacity: 0.4 }]}
-            onPress={sendMessage}
-            disabled={!msgText.trim() || sending}
-          >
-            <Ionicons name="send" size={18} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        )}
+
+        {/* Recording indicator */}
+        {isRecording && (
+          <View style={styles.recordingBar}>
+            <TouchableOpacity onPress={cancelRecording} style={styles.cancelRecBtn}>
+              <Ionicons name="trash-outline" size={18} color="#ef4444" />
+            </TouchableOpacity>
+            <View style={styles.recordingPulse}>
+              <Ionicons name="mic" size={14} color="#ef4444" />
+              <Text style={styles.recordingText}>Recording {formatAudioDuration(recordingDuration)}</Text>
+            </View>
+            <TouchableOpacity style={styles.sendRecBtn} onPress={stopAndSendRecording}>
+              <Ionicons name="send" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Input row */}
+        {!isRecording && (
+          <View style={styles.inputRow}>
+            <TouchableOpacity style={styles.attachBtn} onPress={() => setShowEmoji(p => !p)}>
+              <Text style={{ fontSize: 20 }}>😊</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.attachBtn} onPress={pickImage}>
+              <Ionicons name="image-outline" size={22} color="#64748b" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.attachBtn} onPress={pickFile}>
+              <Ionicons name="attach-outline" size={22} color="#64748b" />
+            </TouchableOpacity>
+            <TextInput
+              style={styles.msgInput}
+              placeholder="Type a message..."
+              placeholderTextColor="#94a3b8"
+              value={msgText}
+              onChangeText={setMsgText}
+              multiline
+              maxLength={2000}
+            />
+            {msgText.trim() ? (
+              <TouchableOpacity
+                style={[styles.sendBtn, sending && { opacity: 0.5 }]}
+                onPress={() => sendMessage()}
+                disabled={sending}
+              >
+                <Ionicons name="send" size={18} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.sendBtn} onPress={startRecording}>
+                <Ionicons name="mic-outline" size={18} color="#fff" />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Full-screen image viewer */}
+        <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
+          <View style={styles.imageViewerBg}>
+            <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+            {viewingImage && (
+              <Image source={{ uri: viewingImage }} style={styles.imageViewerImg} resizeMode="contain" />
+            )}
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     );
   }
 
+  // ── Patient list view ───────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Search */}
       <View style={styles.searchBar}>
         <Ionicons name="search-outline" size={16} color="#94a3b8" style={{ marginRight: 6 }} />
         <TextInput
@@ -237,7 +513,6 @@ export default function DoctorMessagesScreen({ route }) {
           onChangeText={setSearch}
         />
       </View>
-
       {loadingPatients ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
@@ -254,7 +529,7 @@ export default function DoctorMessagesScreen({ route }) {
               <View style={styles.patientInfo}>
                 <Text style={styles.patientName}>{item.name}</Text>
                 <Text style={styles.patientMeta}>
-                  {item.email || 'Patient'}{item.lastVisit ? ` · ${item.lastVisit}` : ''}
+                  {item.lastVisit ? `Last visit · ${item.lastVisit}` : 'Patient'}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
@@ -273,15 +548,124 @@ export default function DoctorMessagesScreen({ route }) {
   );
 }
 
+// ── Audio bubble ──────────────────────────────────────────────────────────────
+function AudioBubble({ item, isMine }) {
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const soundRef = useRef(null);
+
+  const togglePlay = async () => {
+    if (!Audio) { Alert.alert('Not available', 'Install expo-av: npx expo install expo-av'); return; }
+    try {
+      if (playing) {
+        await soundRef.current?.pauseAsync();
+        setPlaying(false);
+      } else {
+        if (!soundRef.current) {
+          const { sound } = await Audio.Sound.createAsync({ uri: item.mediaUrl }, {}, (status) => {
+            if (status.isLoaded) setCurrentTime(Math.floor((status.positionMillis || 0) / 1000));
+            if (status.didJustFinish) { setPlaying(false); setCurrentTime(0); soundRef.current = null; }
+          });
+          soundRef.current = sound;
+        }
+        await soundRef.current.playAsync();
+        setPlaying(true);
+      }
+    } catch (e) { console.error('Audio play error:', e); }
+  };
+
+  const duration = item.duration || 0;
+  const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
+
+  return (
+    <TouchableOpacity style={audioBubble.row} onPress={togglePlay} activeOpacity={0.85}>
+      <View style={[audioBubble.playBtn, isMine ? audioBubble.playBtnMine : audioBubble.playBtnTheirs]}>
+        <Ionicons name={playing ? 'pause' : 'play'} size={18} color={isMine ? '#fff' : DoctorColors.primary} />
+      </View>
+      <View style={{ flex: 1, gap: 4 }}>
+        {/* Waveform bars */}
+        <View style={audioBubble.waveform}>
+          {Array.from({ length: 28 }).map((_, i) => {
+            const h = 4 + Math.abs(Math.sin(i * 0.8)) * 14;
+            const filled = i / 28 <= progress;
+            return (
+              <View
+                key={i}
+                style={[audioBubble.bar, { height: h },
+                  filled
+                    ? (isMine ? audioBubble.barFilledMine : audioBubble.barFilledTheirs)
+                    : (isMine ? audioBubble.barEmptyMine : audioBubble.barEmptyTheirs),
+                ]}
+              />
+            );
+          })}
+        </View>
+        <Text style={[audioBubble.dur, isMine && { color: 'rgba(255,255,255,0.75)' }]}>
+          {playing ? formatAudioDuration(currentTime) : formatAudioDuration(duration)}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+const audioBubble = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 180 },
+  playBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  playBtnMine: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  playBtnTheirs: { backgroundColor: DoctorColors.primaryLight },
+  waveform: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 24 },
+  bar: { width: 3, borderRadius: 2 },
+  barFilledMine: { backgroundColor: '#fff' },
+  barEmptyMine: { backgroundColor: 'rgba(255,255,255,0.35)' },
+  barFilledTheirs: { backgroundColor: DoctorColors.primary },
+  barEmptyTheirs: { backgroundColor: '#cbd5e1' },
+  dur: { fontSize: 10, color: '#94a3b8' },
+});
+
+// ── File bubble ───────────────────────────────────────────────────────────────
+function FileBubble({ item, isMine }) {
+  const ext = (item.fileName || '').split('.').pop().toUpperCase();
+  const extColor = { PDF: '#ef4444', DOC: '#3b82f6', DOCX: '#3b82f6', XLS: '#22c55e', XLSX: '#22c55e', PNG: '#a855f7', JPG: '#a855f7' };
+  const color = extColor[ext] || '#64748b';
+
+  return (
+    <TouchableOpacity
+      style={[fileBubble.row, isMine && fileBubble.rowMine]}
+      onPress={() => Linking.openURL(item.mediaUrl)}
+      activeOpacity={0.85}
+    >
+      <View style={[fileBubble.icon, { backgroundColor: color + '22' }]}>
+        <Text style={[fileBubble.ext, { color }]}>{ext || 'FILE'}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[fileBubble.name, isMine && { color: '#fff' }]} numberOfLines={1}>{item.fileName || 'File'}</Text>
+        <Text style={[fileBubble.size, isMine && { color: 'rgba(255,255,255,0.65)' }]}>
+          {formatFileSize(item.fileSize)} · Tap to open
+        </Text>
+      </View>
+      <Ionicons name="download-outline" size={18} color={isMine ? 'rgba(255,255,255,0.7)' : '#94a3b8'} />
+    </TouchableOpacity>
+  );
+}
+const fileBubble = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 200 },
+  rowMine: {},
+  icon: { width: 40, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  ext: { fontSize: 10, fontWeight: '800' },
+  name: { fontSize: 13, fontWeight: '600', color: '#1e293b' },
+  size: { fontSize: 11, color: '#94a3b8', marginTop: 1 },
+});
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+const C = DoctorColors;
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DoctorColors.background },
+  container: { flex: 1, backgroundColor: C.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', margin: 12, marginBottom: 6,
     backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
-    borderWidth: 1, borderColor: DoctorColors.border,
+    borderWidth: 1, borderColor: C.border,
   },
-  searchInput: { flex: 1, fontSize: 14, color: DoctorColors.text },
+  searchInput: { flex: 1, fontSize: 14, color: C.text },
   patientRow: {
     backgroundColor: '#fff', borderRadius: 12, padding: 13, marginBottom: 8,
     flexDirection: 'row', alignItems: 'center',
@@ -290,66 +674,98 @@ const styles = StyleSheet.create({
   },
   patientAvatar: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: DoctorColors.primaryLight,
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
+    backgroundColor: C.primaryLight, justifyContent: 'center', alignItems: 'center', marginRight: 12,
   },
-  patientAvatarText: { fontSize: 16, fontWeight: '700', color: DoctorColors.primary },
+  patientAvatarText: { fontSize: 16, fontWeight: '700', color: C.primary },
   patientInfo: { flex: 1 },
-  patientName: { fontSize: 15, fontWeight: '600', color: DoctorColors.text },
-  patientMeta: { fontSize: 12, color: DoctorColors.textSecondary, marginTop: 2 },
+  patientName: { fontSize: 15, fontWeight: '600', color: C.text },
+  patientMeta: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 6 },
   emptyText: { fontSize: 16, fontWeight: '600', color: '#94a3b8' },
   emptySub: { fontSize: 12, color: '#cbd5e1', textAlign: 'center', paddingHorizontal: 32 },
   // Chat
-  chatContainer: { flex: 1, backgroundColor: DoctorColors.background },
+  chatContainer: { flex: 1, backgroundColor: '#eef2f8' },
   chatHeader: {
-    backgroundColor: DoctorColors.primaryDark, paddingHorizontal: 14, paddingVertical: 14,
+    backgroundColor: C.primaryDark, paddingHorizontal: 14, paddingVertical: 12,
     flexDirection: 'row', alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 54 : 14,
+    paddingTop: Platform.OS === 'ios' ? 54 : 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12, shadowRadius: 4, elevation: 4,
   },
+  chatAvatarWrap: { position: 'relative', marginRight: 10 },
   chatAvatar: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+    justifyContent: 'center', alignItems: 'center',
   },
   chatAvatarText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  onlineDot: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 11, height: 11, borderRadius: 6,
+    backgroundColor: '#22c55e', borderWidth: 2, borderColor: C.primaryDark,
+  },
   chatName: { fontSize: 15, fontWeight: '700', color: '#fff' },
   chatSub: { fontSize: 11, color: 'rgba(255,255,255,0.65)' },
   messageList: { flex: 1 },
-  emptyChat: { alignItems: 'center', paddingTop: 40, gap: 8 },
+  emptyChat: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyChatText: { fontSize: 14, color: '#94a3b8' },
-  msgRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'flex-end' },
+  msgRow: { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-end', paddingHorizontal: 12 },
   msgRowMine: { justifyContent: 'flex-end' },
   msgAvatar: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: DoctorColors.primaryLight,
-    justifyContent: 'center', alignItems: 'center', marginRight: 8,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: C.primaryLight, justifyContent: 'center', alignItems: 'center', marginRight: 6, marginBottom: 2,
   },
-  msgAvatarText: { fontSize: 10, fontWeight: '700', color: DoctorColors.primary },
+  msgAvatarText: { fontSize: 9, fontWeight: '700', color: C.primary },
   bubble: {
-    maxWidth: '75%', padding: 11, borderRadius: 16,
-    backgroundColor: '#f1f5f9', borderBottomLeftRadius: 4,
+    maxWidth: '78%', padding: 10, borderRadius: 18,
+    backgroundColor: '#fff', borderBottomLeftRadius: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 2, elevation: 1,
   },
   bubbleMine: {
-    backgroundColor: DoctorColors.primary, borderBottomLeftRadius: 16, borderBottomRightRadius: 4,
+    backgroundColor: C.primary, borderBottomLeftRadius: 18, borderBottomRightRadius: 4,
   },
-  bubbleTheirs: {},
   bubbleText: { fontSize: 14, color: '#1e293b', lineHeight: 20 },
   bubbleTextMine: { color: '#fff' },
-  bubbleTime: { fontSize: 10, color: '#94a3b8', marginTop: 3, textAlign: 'right' },
+  bubbleImage: { width: 200, height: 160, borderRadius: 12 },
+  bubbleFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 3, gap: 2 },
+  bubbleTime: { fontSize: 10, color: '#94a3b8' },
+  // Input
   inputRow: {
-    flexDirection: 'row', alignItems: 'flex-end', padding: 12, gap: 8,
+    flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 8, paddingVertical: 8, gap: 4,
     backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f1f5f9',
   },
+  attachBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   msgInput: {
     flex: 1, backgroundColor: '#f8fafc', borderRadius: 20,
-    paddingHorizontal: 16, paddingVertical: 10, fontSize: 15,
-    color: DoctorColors.text, borderWidth: 1, borderColor: '#e2e8f0',
-    maxHeight: 100,
+    paddingHorizontal: 14, paddingVertical: 8, fontSize: 15,
+    color: C.text, borderWidth: 1, borderColor: '#e2e8f0', maxHeight: 100,
   },
   sendBtn: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: DoctorColors.primary,
-    justifyContent: 'center', alignItems: 'center',
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: C.primary, justifyContent: 'center', alignItems: 'center',
   },
+  uploadingBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
+    backgroundColor: '#f0fdf4', paddingVertical: 6,
+  },
+  uploadingText: { fontSize: 13, color: '#15803d', fontWeight: '600' },
+  recordingBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f1f5f9',
+  },
+  cancelRecBtn: { padding: 6 },
+  recordingPulse: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff1f2', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  recordingText: { fontSize: 13, color: '#ef4444', fontWeight: '600' },
+  sendRecBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#22c55e', justifyContent: 'center', alignItems: 'center',
+  },
+  // Image viewer
+  imageViewerBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  imageViewerClose: { position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 8 },
+  imageViewerImg: { width: '100%', height: '80%' },
 });

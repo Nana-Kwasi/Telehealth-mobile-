@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, ActivityIndicator, Alert, Switch,
+  Image, DeviceEventEmitter,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
+import * as ImagePicker from 'expo-image-picker';
+import { auth, db, storage } from '../../services/firebaseConfig';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   doc, getDoc, updateDoc, serverTimestamp,
   collection, getDocs, addDoc, deleteDoc, query, where, orderBy,
@@ -27,6 +30,8 @@ export default function DoctorSettingsScreen() {
     experience: '',
     consultationTypes: { video: false, chat: false, inPerson: false },
   });
+  const [photoURL, setPhotoURL] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Availability
   const [availSlots, setAvailSlots] = useState([]);
@@ -43,6 +48,7 @@ export default function DoctorSettingsScreen() {
       if (snap.exists()) {
         const data = snap.data();
         setDoctorName(data.name || '');
+        setPhotoURL(data.photoURL || null);
         setForm({
           name: data.name || '',
           specialty: data.specialty || data.specialization || '',
@@ -149,6 +155,70 @@ export default function DoctorSettingsScreen() {
     ]);
   };
 
+  const pickAndUploadPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow access to your photo library to upload a profile picture.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (result.canceled) return;
+
+    setUploadingPhoto(true);
+    try {
+      const cu = auth.currentUser;
+      const uri = result.assets[0].uri;
+
+      // Upload to Firebase Storage
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const storageRef = ref(storage, `doctor-photos/${cu.uid}`);
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+
+      // Save to Firestore
+      await updateDoc(doc(db, 'doctors', cu.uid), { photoURL: downloadURL, updatedAt: serverTimestamp() });
+      setPhotoURL(downloadURL);
+
+      // Notify all screens to refresh profile
+      DeviceEventEmitter.emit('refreshProfile');
+      showSuccess('Profile photo updated!');
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      Alert.alert('Upload failed', 'Could not upload photo. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const removePhoto = () => {
+    Alert.alert('Remove Photo', 'Remove your profile picture?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        setUploadingPhoto(true);
+        try {
+          const cu = auth.currentUser;
+          // Remove from Storage (ignore error if not there)
+          try { await deleteObject(ref(storage, `doctor-photos/${cu.uid}`)); } catch (_) {}
+          // Clear in Firestore
+          await updateDoc(doc(db, 'doctors', cu.uid), { photoURL: null, updatedAt: serverTimestamp() });
+          setPhotoURL(null);
+          DeviceEventEmitter.emit('refreshProfile');
+          showSuccess('Profile photo removed.');
+        } catch (err) {
+          Alert.alert('Error', 'Could not remove photo.');
+        } finally {
+          setUploadingPhoto(false);
+        }
+      }},
+    ]);
+  };
+
   const showSuccess = (msg) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(''), 3000);
@@ -191,11 +261,36 @@ export default function DoctorSettingsScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Header */}
           <View style={styles.profileHeader}>
-            <View style={styles.avatarLarge}>
-              <Text style={styles.avatarText}>{(form.name || 'D')[0].toUpperCase()}</Text>
+            <View style={styles.avatarWrapper}>
+              {photoURL ? (
+                <Image source={{ uri: photoURL }} style={styles.avatarLargeImg} />
+              ) : (
+                <View style={styles.avatarLarge}>
+                  <Text style={styles.avatarText}>{(form.name || 'D')[0].toUpperCase()}</Text>
+                </View>
+              )}
+              {uploadingPhoto && (
+                <View style={styles.avatarOverlay}>
+                  <ActivityIndicator color="#fff" size="small" />
+                </View>
+              )}
             </View>
+
             <Text style={styles.headerName}>Dr. {form.name || 'Doctor'}</Text>
             <Text style={styles.headerSpecialty}>{form.specialty || 'General Practice'}</Text>
+
+            <View style={styles.photoActions}>
+              <TouchableOpacity style={styles.photoBtn} onPress={pickAndUploadPhoto} disabled={uploadingPhoto}>
+                <Ionicons name={photoURL ? 'camera' : 'camera-outline'} size={15} color={DoctorColors.primary} />
+                <Text style={styles.photoBtnText}>{photoURL ? 'Change Photo' : 'Upload Photo'}</Text>
+              </TouchableOpacity>
+              {photoURL && (
+                <TouchableOpacity style={[styles.photoBtn, styles.photoBtnRemove]} onPress={removePhoto} disabled={uploadingPhoto}>
+                  <Ionicons name="trash-outline" size={15} color="#ef4444" />
+                  <Text style={[styles.photoBtnText, { color: '#ef4444' }]}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           <Field label="Full Name *" value={form.name} onChange={v => setField('name', v)} placeholder="Dr. Full Name" />
@@ -356,14 +451,36 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05, shadowRadius: 6, elevation: 1,
   },
-  avatarLarge: {
-    width: 68, height: 68, borderRadius: 34,
-    backgroundColor: DoctorColors.primary,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 10,
+  avatarWrapper: { position: 'relative', marginBottom: 10 },
+  avatarLargeImg: {
+    width: 86, height: 86, borderRadius: 43,
+    borderWidth: 3, borderColor: DoctorColors.primaryLight,
   },
-  avatarText: { fontSize: 26, fontWeight: '800', color: '#fff' },
+  avatarLarge: {
+    width: 86, height: 86, borderRadius: 43,
+    backgroundColor: DoctorColors.primary,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 3, borderColor: DoctorColors.primaryLight,
+  },
+  avatarOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 43, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  avatarText: { fontSize: 28, fontWeight: '800', color: '#fff' },
   headerName: { fontSize: 17, fontWeight: '800', color: DoctorColors.text, marginBottom: 2 },
-  headerSpecialty: { fontSize: 13, color: DoctorColors.textSecondary },
+  headerSpecialty: { fontSize: 13, color: DoctorColors.textSecondary, marginBottom: 12 },
+  photoActions: { flexDirection: 'row', gap: 8 },
+  photoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: DoctorColors.primaryLight,
+    borderWidth: 1, borderColor: DoctorColors.primary + '30',
+  },
+  photoBtnRemove: {
+    backgroundColor: '#fff1f2', borderColor: '#fecdd3',
+  },
+  photoBtnText: { fontSize: 13, color: DoctorColors.primary, fontWeight: '600' },
   sectionLabel: {
     fontSize: 12, fontWeight: '700', color: DoctorColors.textSecondary,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 14,

@@ -43,26 +43,28 @@ export const MedicalColors = {
   rating: '#f59e0b',        // Star rating gold
 };
 
-// Doctor theme colors (teal + deep green — medical professional)
+// Doctor theme colors — matches patient (Medical) portal blue theme
 export const DoctorColors = {
-  primary: '#0d9488',          // Teal
-  primaryDark: '#0f3d38',      // Deep teal
-  primaryLight: '#f0fdfa',     // Light teal tint
-  secondary: '#1e6bb8',        // Blue
+  primary: '#1e6bb8',          // Medical blue (same as patient portal)
+  primaryDark: '#155a9c',      // Darker blue for headers
+  primaryLight: '#e8f1fb',     // Light blue tint
+  secondary: '#0891b2',        // Teal accent
   accent: '#6366f1',           // Indigo accent
-  background: '#f0fdfb',       // Soft teal-gray
+  background: '#f0f6fc',       // Soft blue-gray (same as patient portal)
   surface: '#ffffff',          // White
-  text: '#0f172a',             // Slate dark
-  textSecondary: '#475569',    // Slate medium
+  text: '#1e293b',             // Slate dark
+  textSecondary: '#64748b',    // Slate medium
   textLight: '#94a3b8',        // Slate light
   success: '#10b981',          // Emerald
   warning: '#f59e0b',          // Amber
-  error: '#f43f5e',            // Rose
-  info: '#0ea5e9',             // Sky
-  border: '#ccfbf1',           // Teal border
+  error: '#ef4444',            // Red
+  info: '#3b82f6',             // Blue
+  border: '#cbd5e1',           // Slate border
   shadow: 'rgba(0, 0, 0, 0.08)',
   overlay: 'rgba(0, 0, 0, 0.5)',
   cardBg: '#f8fafc',
+  verified: '#059669',
+  rating: '#f59e0b',
 };
 
 // Therapist theme colors (deep indigo + teal)

@@ -54,6 +54,7 @@ const MedicalHomeScreen = ({ navigation }) => {
   const [appointments, setAppointments] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [userName, setUserName] = useState('');
+  const [userPhotoURL, setUserPhotoURL] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [newBookingDoctor, setNewBookingDoctor] = useState(null);
@@ -71,6 +72,21 @@ const MedicalHomeScreen = ({ navigation }) => {
       setUserName(name || 'Patient');
 
       const currentUser = auth.currentUser;
+      // Load patient profile photo: Firebase Auth photoURL or Firestore auth doc
+      if (currentUser) {
+        const photoFromAuth = currentUser.photoURL;
+        if (photoFromAuth) {
+          setUserPhotoURL(photoFromAuth);
+        } else {
+          try {
+            const authSnap = await getDoc(doc(db, 'auth', currentUser.uid));
+            if (authSnap.exists()) {
+              const pd = authSnap.data().photoURL || null;
+              if (pd) setUserPhotoURL(pd);
+            }
+          } catch (_) {}
+        }
+      }
       if (currentUser) {
         const clientId = currentUser.uid;
         const [appts, rxs] = await Promise.all([
@@ -207,7 +223,16 @@ const MedicalHomeScreen = ({ navigation }) => {
           <Text style={styles.welcomeGreeting}>Hello, {userName.split(' ')[0]}</Text>
           <Text style={styles.welcomeSubtitle}>How are you feeling today?</Text>
         </View>
-        <View style={{ alignItems: 'flex-end', gap: 8 }}>
+        <View style={{ alignItems: 'center', gap: 8 }}>
+          {userPhotoURL ? (
+            <Image source={{ uri: userPhotoURL }} style={styles.welcomeAvatar} />
+          ) : (
+            <View style={styles.welcomeAvatarPlaceholder}>
+              <Text style={styles.welcomeAvatarInitials}>
+                {(userName || 'P')[0].toUpperCase()}
+              </Text>
+            </View>
+          )}
           {/* Patient status badge */}
           <View style={[
             styles.statusBadgeWelcome,
@@ -538,6 +563,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.8)',
   },
+  welcomeAvatar: {
+    width: 54, height: 54, borderRadius: 27,
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
+  },
+  welcomeAvatarPlaceholder: {
+    width: 54, height: 54, borderRadius: 27,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)',
+  },
+  welcomeAvatarInitials: { fontSize: 20, fontWeight: '800', color: '#fff' },
   statusBadgeWelcome: {
     flexDirection: 'row',
     alignItems: 'center',

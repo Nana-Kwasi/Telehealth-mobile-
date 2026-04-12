@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
@@ -233,11 +233,17 @@ const AppNavigator = () => {
           return;
         }
 
+        // Merge Firebase Auth photoURL as fallback (covers Google sign-in users)
+        const mergedProfile = resolvedProfile
+          ? { ...resolvedProfile, photoURL: resolvedProfile.photoURL || user.photoURL || null }
+          : resolvedProfile;
+
         // Sync resolved profile to AsyncStorage
         await AsyncStorage.setItem('isAuthenticated', 'true');
-        await AsyncStorage.setItem('userProfile', JSON.stringify(resolvedProfile));
+        await AsyncStorage.setItem('userProfile', JSON.stringify(mergedProfile));
         await AsyncStorage.setItem('userRole', role);
-        await AsyncStorage.setItem('userId', resolvedProfile?.id || user.uid);
+        await AsyncStorage.setItem('userId', mergedProfile?.id || user.uid);
+        if (mergedProfile?.name) await AsyncStorage.setItem('userName', mergedProfile.name);
 
         // Determine intent based on role
         let intent;
@@ -250,7 +256,7 @@ const AppNavigator = () => {
         }
         await AsyncStorage.setItem('userIntent', intent);
 
-        setProfile(resolvedProfile);
+        setProfile(mergedProfile);
         setIsAuthenticated(true);
         setUserIntent(intent);
       } catch (err) {
@@ -264,6 +270,24 @@ const AppNavigator = () => {
     });
 
     return unsub;
+  }, []);
+
+  // Listen for profile refresh requests (e.g. after photo upload)
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('refreshProfile', async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const { role, profile: resolvedProfile } = await resolveRole(user.uid);
+        const merged = resolvedProfile
+          ? { ...resolvedProfile, photoURL: resolvedProfile.photoURL || user.photoURL || null }
+          : resolvedProfile;
+        setProfile(merged);
+        await AsyncStorage.setItem('userProfile', JSON.stringify(merged));
+        if (merged?.name) await AsyncStorage.setItem('userName', merged.name);
+      } catch (_) {}
+    });
+    return () => sub.remove();
   }, []);
 
   // Determine initial route

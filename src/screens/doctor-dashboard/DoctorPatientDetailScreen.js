@@ -61,6 +61,16 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
   const [rxForm, setRxForm] = useState({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
   const [savingRx, setSavingRx] = useState(false);
 
+  // Note reading popup
+  const [viewingNote, setViewingNote] = useState(null);
+
+  // Reschedule
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleAppt, setRescheduleAppt] = useState(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
+
   // Discharge
   const [showDischarge, setShowDischarge] = useState(false);
   const [dischargeReason, setDischargeReason] = useState('');
@@ -253,6 +263,34 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
     } catch { Alert.alert('Error', 'Could not update appointment.'); }
   };
 
+  const openReschedule = (appt) => {
+    setRescheduleAppt(appt);
+    setRescheduleDate(appt.date || '');
+    setRescheduleTime(appt.time || '');
+    setShowReschedule(true);
+  };
+
+  const doReschedule = async () => {
+    if (!rescheduleDate.trim()) { Alert.alert('Validation', 'Please enter a date (YYYY-MM-DD).'); return; }
+    setRescheduling(true);
+    try {
+      await updateDoc(doc(db, 'doctorAppointments', rescheduleAppt.id), {
+        date: rescheduleDate.trim(),
+        time: rescheduleTime.trim() || rescheduleAppt.time,
+        status: 'confirmed',
+        rescheduledAt: serverTimestamp(),
+      });
+      setAppointments(prev => prev.map(a =>
+        a.id === rescheduleAppt.id
+          ? { ...a, date: rescheduleDate.trim(), time: rescheduleTime.trim() || a.time, status: 'confirmed' }
+          : a
+      ));
+      setShowReschedule(false);
+      Alert.alert('Rescheduled', 'Appointment has been rescheduled and confirmed.');
+    } catch { Alert.alert('Error', 'Could not reschedule appointment.'); }
+    finally { setRescheduling(false); }
+  };
+
   if (loading) return <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>;
 
   return (
@@ -335,7 +373,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             {notes.slice(0, 3).map(n => {
               const tm = getTypeMeta(n.type);
               return (
-                <View key={n.id} style={[styles.miniCard, { borderLeftWidth: 3, borderLeftColor: tm.color }]}>
+                <TouchableOpacity key={n.id} style={[styles.miniCard, { borderLeftWidth: 3, borderLeftColor: tm.color }]} onPress={() => setViewingNote(n)} activeOpacity={0.8}>
                   <View style={{ flex: 1 }}>
                     <View style={styles.noteMetaRow}>
                       <View style={[styles.typeBadge, { backgroundColor: tm.bg }]}>
@@ -345,7 +383,8 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                     <Text style={styles.miniCardTitle}>{n.title}</Text>
                     <Text style={styles.miniCardSub} numberOfLines={2}>{n.content}</Text>
                   </View>
-                </View>
+                  <Ionicons name="chevron-forward" size={14} color="#cbd5e1" />
+                </TouchableOpacity>
               );
             })}
             {notes.length === 0 && (
@@ -388,6 +427,11 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                     {appt.status === 'confirmed' && (
                       <TouchableOpacity style={[styles.apptBtn, { backgroundColor: '#f1f5f9' }]} onPress={() => updateApptStatus(appt.id, 'completed')}>
                         <Text style={{ color: '#475569', fontSize: 12, fontWeight: '700' }}>Mark Completed</Text>
+                      </TouchableOpacity>
+                    )}
+                    {(appt.status === 'pending' || appt.status === 'confirmed') && (
+                      <TouchableOpacity style={[styles.apptBtn, { backgroundColor: '#eff6ff' }]} onPress={() => openReschedule(appt)}>
+                        <Text style={{ color: '#1e6bb8', fontSize: 12, fontWeight: '700' }}>Reschedule</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -437,7 +481,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             {notes.map(n => {
               const tm = getTypeMeta(n.type);
               return (
-                <View key={n.id} style={[styles.noteCard, { borderLeftColor: tm.color }]}>
+                <TouchableOpacity key={n.id} style={[styles.noteCard, { borderLeftColor: tm.color }]} onPress={() => setViewingNote(n)} activeOpacity={0.8}>
                   <View style={styles.noteHeader}>
                     <View style={{ flex: 1 }}>
                       <View style={[styles.typeBadge, { backgroundColor: tm.bg }]}>
@@ -449,8 +493,9 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                       <Ionicons name="trash-outline" size={16} color="#ef4444" />
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.noteContent}>{n.content}</Text>
-                </View>
+                  <Text style={styles.noteContent} numberOfLines={3}>{n.content}</Text>
+                  <Text style={styles.tapHint}>Tap to read full note</Text>
+                </TouchableOpacity>
               );
             })}
           </>
@@ -571,6 +616,82 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
           </>
         )}
       </ScrollView>
+
+      {/* Note Reading Modal */}
+      {viewingNote && (() => {
+        const tm = getTypeMeta(viewingNote.type);
+        return (
+          <Modal visible={!!viewingNote} transparent animationType="fade" onRequestClose={() => setViewingNote(null)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.dischargeCard, { padding: 0, overflow: 'hidden' }]}>
+                <View style={{ padding: 20, paddingBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1 }}>
+                      <View style={[styles.typeBadge, { backgroundColor: tm.bg, alignSelf: 'flex-start', marginBottom: 8 }]}>
+                        <Text style={[styles.typeText, { color: tm.color }]}>{tm.label}</Text>
+                      </View>
+                      <Text style={[styles.dischargeTitle, { textAlign: 'left', fontSize: 16 }]}>{viewingNote.title}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setViewingNote(null)} style={{ padding: 4, marginLeft: 8 }}>
+                      <Ionicons name="close" size={22} color="#64748b" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={{ height: 3, backgroundColor: tm.color + '33', borderTopWidth: 2, borderTopColor: tm.color }} />
+                <ScrollView style={{ maxHeight: 260, paddingHorizontal: 20, paddingVertical: 14 }}>
+                  <Text style={{ fontSize: 15, color: DoctorColors.text, lineHeight: 24 }}>{viewingNote.content}</Text>
+                </ScrollView>
+                <View style={{ flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
+                  <TouchableOpacity style={[styles.saveBtn, { flex: 1, backgroundColor: DoctorColors.primaryLight }]} onPress={() => setViewingNote(null)}>
+                    <Text style={[styles.saveBtnText, { color: DoctorColors.primary }]}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
+
+      {/* Reschedule Modal */}
+      <Modal visible={showReschedule} transparent animationType="fade" onRequestClose={() => setShowReschedule(false)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.dischargeCard}>
+            <View style={styles.dischargeIcon}>
+              <Ionicons name="calendar-outline" size={28} color={DoctorColors.primary} />
+            </View>
+            <Text style={styles.dischargeTitle}>Reschedule Appointment</Text>
+            <Text style={[styles.dischargeSub, { marginBottom: 12 }]}>
+              Update the date and time for this appointment.
+            </Text>
+            <Text style={styles.formLabel}>New Date (YYYY-MM-DD) *</Text>
+            <TextInput
+              style={[styles.formInput, { marginBottom: 12 }]}
+              placeholder="e.g. 2026-05-15"
+              placeholderTextColor="#94a3b8"
+              value={rescheduleDate}
+              onChangeText={setRescheduleDate}
+              keyboardType="numbers-and-punctuation"
+            />
+            <Text style={styles.formLabel}>New Time (HH:MM)</Text>
+            <TextInput
+              style={[styles.formInput, { marginBottom: 16 }]}
+              placeholder="e.g. 10:30"
+              placeholderTextColor="#94a3b8"
+              value={rescheduleTime}
+              onChangeText={setRescheduleTime}
+              keyboardType="numbers-and-punctuation"
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity style={[styles.saveBtn, { flex: 1, backgroundColor: '#f1f5f9' }]} onPress={() => setShowReschedule(false)}>
+                <Text style={[styles.saveBtnText, { color: '#64748b' }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, { flex: 1 }, rescheduling && { opacity: 0.6 }]} onPress={doReschedule} disabled={rescheduling}>
+                {rescheduling ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>Confirm</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Discharge Modal */}
       <Modal visible={showDischarge} transparent animationType="fade" onRequestClose={() => setShowDischarge(false)}>
@@ -730,4 +851,5 @@ const styles = StyleSheet.create({
   },
   dischargeTitle: { fontSize: 18, fontWeight: '800', color: DoctorColors.text, textAlign: 'center', marginBottom: 8 },
   dischargeSub: { fontSize: 13, color: DoctorColors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+  tapHint: { fontSize: 11, color: '#cbd5e1', marginTop: 4, fontStyle: 'italic' },
 });

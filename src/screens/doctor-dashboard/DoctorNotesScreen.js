@@ -35,6 +35,7 @@ export default function DoctorNotesScreen() {
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [doctorProfile, setDoctorProfile] = useState(null);
+  const [viewingNote, setViewingNote] = useState(null);
 
   const [form, setForm] = useState({
     patientId: '', patientName: 'General',
@@ -160,7 +161,11 @@ export default function DoctorNotesScreen() {
   const renderNote = ({ item }) => {
     const meta = getTypeMeta(item.type);
     return (
-      <View style={[styles.noteCard, { borderLeftColor: meta.color }]}>
+      <TouchableOpacity
+        style={[styles.noteCard, { borderLeftColor: meta.color }]}
+        onPress={() => setViewingNote(item)}
+        activeOpacity={0.8}
+      >
         <View style={styles.noteHeader}>
           <View style={{ flex: 1 }}>
             <Text style={styles.noteTitle}>{item.title}</Text>
@@ -181,7 +186,8 @@ export default function DoctorNotesScreen() {
           </View>
         </View>
         <Text style={styles.noteContent} numberOfLines={3}>{item.content}</Text>
-      </View>
+        <Text style={styles.tapHint}>Tap to read full note</Text>
+      </TouchableOpacity>
     );
   };
 
@@ -222,6 +228,44 @@ export default function DoctorNotesScreen() {
           }
         />
       )}
+
+      {/* Note Reading Modal */}
+      {viewingNote && (() => {
+        const meta = getTypeMeta(viewingNote.type);
+        return (
+          <Modal visible={!!viewingNote} transparent animationType="fade" onRequestClose={() => setViewingNote(null)}>
+            <View style={styles.readOverlay}>
+              <View style={styles.readCard}>
+                <View style={styles.readHeader}>
+                  <View style={{ flex: 1 }}>
+                    <View style={[styles.typeBadge, { backgroundColor: meta.bg, alignSelf: 'flex-start', marginBottom: 6 }]}>
+                      <Text style={[styles.typeText, { color: meta.color }]}>{meta.label}</Text>
+                    </View>
+                    <Text style={styles.readTitle}>{viewingNote.title}</Text>
+                    <Text style={styles.readPatient}>{viewingNote.patientName || 'General'}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setViewingNote(null)} style={styles.readClose}>
+                    <Ionicons name="close" size={22} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.readDivider, { borderLeftColor: meta.color }]} />
+                <ScrollView style={styles.readBody}>
+                  <Text style={styles.readContent}>{viewingNote.content}</Text>
+                </ScrollView>
+                <View style={styles.readFooter}>
+                  <TouchableOpacity style={styles.readEditBtn} onPress={() => { setViewingNote(null); openEdit(viewingNote); }}>
+                    <Ionicons name="pencil-outline" size={15} color={DoctorColors.primary} />
+                    <Text style={styles.readEditBtnText}>Edit Note</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.readCloseBtn} onPress={() => setViewingNote(null)}>
+                    <Text style={styles.readCloseBtnText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
 
       {/* Note Form Modal */}
       <Modal visible={showModal} animationType="slide" onRequestClose={() => setShowModal(false)}>
@@ -394,4 +438,31 @@ const styles = StyleSheet.create({
     backgroundColor: DoctorColors.primary,
   },
   saveBtnText: { fontSize: 15, color: '#fff', fontWeight: '700' },
+  tapHint: { fontSize: 11, color: '#cbd5e1', marginTop: 4, fontStyle: 'italic' },
+  // Read modal
+  readOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  readCard: {
+    backgroundColor: '#fff', borderRadius: 20, width: '100%', maxHeight: '80%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 12,
+    overflow: 'hidden',
+  },
+  readHeader: { flexDirection: 'row', padding: 20, paddingBottom: 12 },
+  readTitle: { fontSize: 18, fontWeight: '800', color: DoctorColors.text, lineHeight: 24, marginBottom: 4 },
+  readPatient: { fontSize: 13, color: DoctorColors.textSecondary, fontWeight: '500' },
+  readClose: { padding: 4, marginLeft: 8 },
+  readDivider: { height: 3, backgroundColor: '#f1f5f9', borderLeftWidth: 4, borderLeftColor: DoctorColors.primary, marginBottom: 0 },
+  readBody: { paddingHorizontal: 20, paddingTop: 16, maxHeight: 300 },
+  readContent: { fontSize: 15, color: DoctorColors.text, lineHeight: 24, paddingBottom: 20 },
+  readFooter: { flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  readEditBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 12, borderRadius: 10,
+    backgroundColor: DoctorColors.primaryLight, borderWidth: 1, borderColor: DoctorColors.primary + '40',
+  },
+  readEditBtnText: { fontSize: 14, color: DoctorColors.primary, fontWeight: '700' },
+  readCloseBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center',
+    backgroundColor: DoctorColors.primary,
+  },
+  readCloseBtnText: { fontSize: 14, color: '#fff', fontWeight: '700' },
 });
