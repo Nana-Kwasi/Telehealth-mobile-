@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, TextInput, Modal, Alert, ScrollView,
   RefreshControl, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import {
@@ -34,7 +35,7 @@ export default function DoctorPrescriptionsScreen() {
     followUpDate: '', medications: [{ ...EMPTY_MED }],
   });
 
-  useEffect(() => { loadAll(); }, []);
+  useFocusEffect(useCallback(() => { loadAll(); }, []));
 
   const loadAll = async () => {
     try {
@@ -77,12 +78,37 @@ export default function DoctorPrescriptionsScreen() {
             medications = [];
           }
         }
-        const patientName = data.patientName || (data.patientId && nameById[data.patientId]) || 'Patient';
+        // Treat stored "Patient" as missing — it was a placeholder saved at creation time
+        const storedName = data.patientName && data.patientName !== 'Patient' ? data.patientName : null;
+        const patientName = storedName || (data.patientId && nameById[data.patientId]) || '';
         // Fallback diagnosis for old flat-format records that stored text in `instructions`
         const diagnosis = data.diagnosis || data.instructions || '';
         return { id: d.id, ...data, medications, patientName, diagnosis };
       });
       rxList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+      // For any prescription still missing a real name, fetch directly from auth collection
+      const isNameMissing = r => !r.patientName || r.patientName === 'Patient';
+      const missingIds = [...new Set(
+        rxList.filter(isNameMissing).map(r => r.patientId).filter(Boolean)
+      )];
+      if (missingIds.length > 0) {
+        await Promise.all(missingIds.map(async id => {
+          try {
+            const snap = await getDoc(doc(db, 'auth', id));
+            if (snap.exists()) {
+              const d = snap.data();
+              const name = d.name || d.displayName || d.fullName || null;
+              if (name) {
+                rxList.forEach(r => { if (r.patientId === id && isNameMissing(r)) r.patientName = name; });
+              }
+            }
+          } catch {}
+        }));
+      }
+      // Final fallback label
+      rxList.forEach(r => { if (!r.patientName) r.patientName = 'Patient'; });
+
       setPrescriptions(rxList);
     } catch (err) {
       console.error('DoctorPrescriptions load error:', err);
@@ -177,42 +203,57 @@ export default function DoctorPrescriptionsScreen() {
            (r.date || '').includes(q);
   });
 
-  const renderRx = ({ item }) => (
-    <View style={styles.rxCard}>
-      <View style={styles.rxHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.rxPatient}>{item.patientName || 'Patient'}</Text>
-          <Text style={styles.rxDiagnosis}>{item.diagnosis}</Text>
-        </View>
-        <View style={styles.rxActions}>
-          <TouchableOpacity onPress={() => openEdit(item)} style={styles.actionIcon}>
-            <Ionicons name="pencil-outline" size={17} color={DoctorColors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionIcon}>
-            <Ionicons name="trash-outline" size={17} color="#ef4444" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.medsPreview}>
-        {(item.medications || []).slice(0, 2).map((m, i) => (
-          <View key={i} style={styles.medPill}>
-            <Text style={styles.medPillText}>{m.name} {m.dosage}</Text>
+  const renderRx = ({ item }) => {
+    const isDone = item.status === 'completed';
+    return (
+      <View style={[styles.rxCard, isDone && { borderLeftWidth: 3, borderLeftColor: '#22c55e' }]}>
+        <View style={styles.rxHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rxPatient}>{item.patientName || 'Patient'}</Text>
+            <Text style={styles.rxDiagnosis}>{item.diagnosis}</Text>
           </View>
-        ))}
-        {(item.medications || []).length > 2 && (
-          <View style={styles.medPill}>
-            <Text style={styles.medPillText}>+{item.medications.length - 2} more</Text>
+          <View style={{ alignItems: 'flex-end', gap: 6 }}>
+            {isDone ? (
+              <View style={styles.statusBadgeDone}>
+                <Ionicons name="checkmark-circle" size={12} color="#16a34a" />
+                <Text style={styles.statusBadgeDoneText}>Completed</Text>
+              </View>
+            ) : (
+              <View style={styles.statusBadgeActive}>
+                <Text style={styles.statusBadgeActiveText}>Active</Text>
+              </View>
+            )}
+            <View style={styles.rxActions}>
+              <TouchableOpacity onPress={() => openEdit(item)} style={styles.actionIcon}>
+                <Ionicons name="pencil-outline" size={17} color={DoctorColors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionIcon}>
+                <Ionicons name="trash-outline" size={17} color="#ef4444" />
+              </TouchableOpacity>
+            </View>
           </View>
-        )}
-      </View>
+        </View>
 
-      <View style={styles.rxFooter}>
-        <Text style={styles.rxDate}>📅 {item.date}</Text>
-        {item.followUpDate ? <Text style={styles.rxDate}>🔄 Follow-up: {item.followUpDate}</Text> : null}
+        <View style={styles.medsPreview}>
+          {(item.medications || []).slice(0, 2).map((m, i) => (
+            <View key={i} style={styles.medPill}>
+              <Text style={styles.medPillText}>{m.name} {m.dosage}</Text>
+            </View>
+          ))}
+          {(item.medications || []).length > 2 && (
+            <View style={styles.medPill}>
+              <Text style={styles.medPillText}>+{item.medications.length - 2} more</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.rxFooter}>
+          <Text style={styles.rxDate}>📅 {item.date}</Text>
+          {item.followUpDate ? <Text style={styles.rxDate}>🔄 Follow-up: {item.followUpDate}</Text> : null}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -402,6 +443,17 @@ const styles = StyleSheet.create({
   medPillText: { fontSize: 11, color: DoctorColors.primary, fontWeight: '600' },
   rxFooter: { flexDirection: 'row', gap: 16 },
   rxDate: { fontSize: 12, color: DoctorColors.textSecondary },
+  statusBadgeDone: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#f0fdf4', paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 20, borderWidth: 1, borderColor: '#bbf7d0',
+  },
+  statusBadgeDoneText: { fontSize: 11, fontWeight: '700', color: '#16a34a' },
+  statusBadgeActive: {
+    backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 20, borderWidth: 1, borderColor: '#bfdbfe',
+  },
+  statusBadgeActiveText: { fontSize: 11, fontWeight: '700', color: '#1d4ed8' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyText: { fontSize: 15, color: '#94a3b8' },
   // Modal

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, TextInput, Modal,
@@ -67,6 +68,9 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
   // Note reading popup
   const [viewingNote, setViewingNote] = useState(null);
 
+  // Daily feeling detail popup
+  const [viewingFeeling, setViewingFeeling] = useState(null);
+
   // Reschedule
   const [showReschedule, setShowReschedule] = useState(false);
   const [rescheduleAppt, setRescheduleAppt] = useState(null);
@@ -80,6 +84,37 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
   const [discharging, setDischarging] = useState(false);
 
   useEffect(() => { loadAll(); }, [patientId]);
+
+  // Re-fetch prescriptions whenever the Prescriptions tab becomes active
+  // (useFocusEffect only fires on screen focus, not on tab switch within the same screen)
+  useEffect(() => {
+    if (activeTab !== 'Prescriptions' || !patientId) return;
+    const cu = auth.currentUser;
+    if (!cu) return;
+    getDocs(query(
+      collection(db, 'doctorPrescriptions'),
+      where('doctorId', '==', cu.uid),
+      where('patientId', '==', patientId)
+    )).then(snap => {
+      setPrescriptions(snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    }).catch(() => {});
+  }, [activeTab, patientId]);
+
+  // Also re-fetch prescriptions when screen regains focus from navigation
+  useFocusEffect(useCallback(() => {
+    if (!patientId) return;
+    const cu = auth.currentUser;
+    if (!cu) return;
+    getDocs(query(
+      collection(db, 'doctorPrescriptions'),
+      where('doctorId', '==', cu.uid),
+      where('patientId', '==', patientId)
+    )).then(snap => {
+      setPrescriptions(snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    }).catch(() => {});
+  }, [patientId]));
 
   const loadAll = async () => {
     try {
@@ -216,11 +251,23 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
     setSavingRx(true);
     try {
       const cu = auth.currentUser;
+      // If patient.name is still a placeholder, fetch the real name before saving
+      let resolvedPatientName = patient.name && patient.name !== 'Patient' ? patient.name : null;
+      if (!resolvedPatientName) {
+        try {
+          const authSnap = await getDoc(doc(db, 'auth', patientId));
+          if (authSnap.exists()) {
+            const d = authSnap.data();
+            resolvedPatientName = d.name || d.displayName || d.fullName || 'Patient';
+          }
+        } catch {}
+        resolvedPatientName = resolvedPatientName || 'Patient';
+      }
       const rxPayload = {
         doctorId: cu.uid,
         doctorName: doctorProfile?.name || 'Doctor',
         patientId,
-        patientName: patient.name,
+        patientName: resolvedPatientName,
         diagnosis: rxForm.instructions.trim() || 'See instructions',
         instructions: rxForm.instructions.trim(),
         medications: [{
@@ -568,20 +615,39 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             )}
 
             {prescriptions.length === 0 && <Text style={styles.emptyText}>No prescriptions issued yet</Text>}
-            {prescriptions.map(rx => (
-              <View key={rx.id} style={styles.rxCard}>
-                <Text style={styles.rxMed}>{rx.medication || rx.medications?.[0]?.name || 'Medication'}</Text>
-                <Text style={styles.rxMeta}>
-                  {[rx.dosage, rx.frequency, rx.duration].filter(Boolean).join(' · ')}
-                </Text>
-                {rx.instructions ? <Text style={styles.rxInstructions}>{rx.instructions}</Text> : null}
-                {rx.createdAt?.seconds && (
-                  <Text style={styles.rxDate}>
-                    {new Date(rx.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </Text>
-                )}
-              </View>
-            ))}
+            {prescriptions.map(rx => {
+              const isDone = rx.status === 'completed';
+              const medName = rx.medication || rx.medications?.[0]?.name || 'Medication';
+              const metaLine = [
+                rx.dosage || rx.medications?.[0]?.dosage,
+                rx.frequency || rx.medications?.[0]?.frequency,
+                rx.duration || rx.medications?.[0]?.duration,
+              ].filter(Boolean).join(' · ');
+              return (
+                <View key={rx.id} style={[styles.rxCard, isDone && { borderLeftWidth: 3, borderLeftColor: '#22c55e' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <Text style={[styles.rxMed, { flex: 1 }]}>{medName}</Text>
+                    {isDone ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1, borderColor: '#bbf7d0', marginLeft: 8 }}>
+                        <Ionicons name="checkmark-circle" size={12} color="#16a34a" />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#16a34a' }}>Completed</Text>
+                      </View>
+                    ) : (
+                      <View style={{ backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1, borderColor: '#bfdbfe', marginLeft: 8 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#1d4ed8' }}>Active</Text>
+                      </View>
+                    )}
+                  </View>
+                  {metaLine ? <Text style={styles.rxMeta}>{metaLine}</Text> : null}
+                  {rx.instructions ? <Text style={styles.rxInstructions}>{rx.instructions}</Text> : null}
+                  {rx.createdAt?.seconds && (
+                    <Text style={styles.rxDate}>
+                      {new Date(rx.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
           </>
         )}
 
@@ -693,41 +759,72 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               </View>
             ) : (
               dailyFeelings.map(f => {
-                const moodColors = { great: '#22c55e', good: '#84cc16', okay: '#f59e0b', poor: '#ef4444', bad: '#dc2626' };
-                const moodColor = moodColors[f.mood?.toLowerCase()] || '#64748b';
-                const dateStr = f.createdAt?.seconds ? new Date(f.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                const MOOD_META = {
+                  great: { color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', icon: 'happy' },
+                  good:  { color: '#65a30d', bg: '#f7fee7', border: '#d9f99d', icon: 'happy-outline' },
+                  okay:  { color: '#d97706', bg: '#fffbeb', border: '#fde68a', icon: 'remove-circle-outline' },
+                  poor:  { color: '#dc2626', bg: '#fff7ed', border: '#fed7aa', icon: 'sad-outline' },
+                  bad:   { color: '#b91c1c', bg: '#fff1f2', border: '#fecdd3', icon: 'sad' },
+                };
+                const meta = MOOD_META[f.mood?.toLowerCase()] || { color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', icon: 'help-circle-outline' };
+                const dateStr = f.createdAt?.seconds
+                  ? new Date(f.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                  : '';
+                const timeStr = f.createdAt?.seconds
+                  ? new Date(f.createdAt.seconds * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                  : '';
+                const painColor = f.painLevel >= 7 ? '#ef4444' : f.painLevel >= 4 ? '#f59e0b' : '#22c55e';
+                const symptomList = Array.isArray(f.symptoms) ? f.symptoms.filter(Boolean) : [];
                 return (
-                  <View key={f.id} style={[styles.miniCard, { flexDirection: 'column', gap: 8 }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: moodColor + '20', justifyContent: 'center', alignItems: 'center' }}>
-                          <Ionicons name="happy-outline" size={20} color={moodColor} />
+                  <View key={f.id} style={[styles.feelingCard, { borderColor: meta.border, backgroundColor: meta.bg }]}>
+                    {/* Header row */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: meta.color + '18', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: meta.border }}>
+                          <Ionicons name={meta.icon} size={24} color={meta.color} />
                         </View>
                         <View>
-                          <Text style={{ fontSize: 14, fontWeight: '700', color: DoctorColors.text, textTransform: 'capitalize' }}>{f.mood || 'Check-in'}</Text>
-                          <Text style={{ fontSize: 11, color: '#94a3b8' }}>{dateStr}</Text>
+                          <Text style={{ fontSize: 16, fontWeight: '800', color: meta.color, textTransform: 'capitalize' }}>{f.mood || 'Check-in'}</Text>
+                          <Text style={{ fontSize: 11, color: '#94a3b8' }}>{dateStr}{timeStr ? `  •  ${timeStr}` : ''}</Text>
                         </View>
                       </View>
                       {f.painLevel != null && (
-                        <View style={{ alignItems: 'center' }}>
-                          <Text style={{ fontSize: 11, color: '#64748b' }}>Pain</Text>
-                          <Text style={{ fontSize: 16, fontWeight: '800', color: f.painLevel >= 7 ? '#ef4444' : f.painLevel >= 4 ? '#f59e0b' : '#22c55e' }}>{f.painLevel}/10</Text>
+                        <View style={{ alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                          <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600', marginBottom: 1 }}>PAIN</Text>
+                          <Text style={{ fontSize: 18, fontWeight: '900', color: painColor }}>{f.painLevel}<Text style={{ fontSize: 11, fontWeight: '600', color: '#94a3b8' }}>/10</Text></Text>
                         </View>
                       )}
                     </View>
-                    {f.symptoms?.length > 0 && (
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {(Array.isArray(f.symptoms) ? f.symptoms : [f.symptoms]).map((s, i) => (
-                          <View key={i} style={{ backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-                            <Text style={{ fontSize: 11, color: '#475569' }}>{s}</Text>
+
+                    {/* Symptoms chips (max 3 shown) */}
+                    {symptomList.length > 0 && (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                        {symptomList.slice(0, 3).map((s, i) => (
+                          <View key={i} style={{ backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                            <Text style={{ fontSize: 11, color: '#475569', fontWeight: '500' }}>{s}</Text>
                           </View>
                         ))}
+                        {symptomList.length > 3 && (
+                          <View style={{ backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', fontWeight: '500' }}>+{symptomList.length - 3} more</Text>
+                          </View>
+                        )}
                       </View>
                     )}
-                    {f.notes ? <Text style={{ fontSize: 13, color: '#475569', lineHeight: 18 }}>{f.notes}</Text> : null}
-                    {f.medications?.length > 0 && (
-                      <Text style={{ fontSize: 12, color: '#94a3b8' }}>Medications taken: {Array.isArray(f.medications) ? f.medications.join(', ') : f.medications}</Text>
-                    )}
+
+                    {/* Notes preview */}
+                    {f.notes ? (
+                      <Text style={{ fontSize: 12, color: '#64748b', lineHeight: 17, marginBottom: 10 }} numberOfLines={2}>{f.notes}</Text>
+                    ) : null}
+
+                    {/* View full details button */}
+                    <TouchableOpacity
+                      style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: meta.color + '50' }}
+                      onPress={() => setViewingFeeling(f)}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: meta.color }}>View Details</Text>
+                      <Ionicons name="chevron-forward" size={13} color={meta.color} />
+                    </TouchableOpacity>
                   </View>
                 );
               })
@@ -764,6 +861,124 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                 <View style={{ flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
                   <TouchableOpacity style={[styles.saveBtn, { flex: 1, backgroundColor: DoctorColors.primaryLight }]} onPress={() => setViewingNote(null)}>
                     <Text style={[styles.saveBtnText, { color: DoctorColors.primary }]}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
+
+      {/* Daily Feeling Detail Modal */}
+      {viewingFeeling && (() => {
+        const MOOD_META = {
+          great: { color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', icon: 'happy' },
+          good:  { color: '#65a30d', bg: '#f7fee7', border: '#d9f99d', icon: 'happy-outline' },
+          okay:  { color: '#d97706', bg: '#fffbeb', border: '#fde68a', icon: 'remove-circle-outline' },
+          poor:  { color: '#dc2626', bg: '#fff7ed', border: '#fed7aa', icon: 'sad-outline' },
+          bad:   { color: '#b91c1c', bg: '#fff1f2', border: '#fecdd3', icon: 'sad' },
+        };
+        const meta = MOOD_META[viewingFeeling.mood?.toLowerCase()] || { color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', icon: 'help-circle-outline' };
+        const dateStr = viewingFeeling.createdAt?.seconds
+          ? new Date(viewingFeeling.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+          : 'Unknown date';
+        const timeStr = viewingFeeling.createdAt?.seconds
+          ? new Date(viewingFeeling.createdAt.seconds * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        const painColor = viewingFeeling.painLevel >= 7 ? '#ef4444' : viewingFeeling.painLevel >= 4 ? '#f59e0b' : '#22c55e';
+        const symptomList = Array.isArray(viewingFeeling.symptoms) ? viewingFeeling.symptoms.filter(Boolean) : [];
+        return (
+          <Modal visible={!!viewingFeeling} transparent animationType="slide" onRequestClose={() => setViewingFeeling(null)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.dischargeCard, { padding: 0, overflow: 'hidden', maxHeight: '85%' }]}>
+                {/* Coloured header */}
+                <View style={{ backgroundColor: meta.bg, padding: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: meta.border }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: meta.color + '20', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: meta.border }}>
+                        <Ionicons name={meta.icon} size={28} color={meta.color} />
+                      </View>
+                      <View>
+                        <Text style={{ fontSize: 20, fontWeight: '800', color: meta.color, textTransform: 'capitalize' }}>{viewingFeeling.mood || 'Check-in'}</Text>
+                        <Text style={{ fontSize: 12, color: '#64748b' }}>{dateStr}</Text>
+                        {timeStr ? <Text style={{ fontSize: 11, color: '#94a3b8' }}>{timeStr}</Text> : null}
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => setViewingFeeling(null)} style={{ padding: 4 }}>
+                      <Ionicons name="close" size={22} color="#64748b" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <ScrollView style={{ paddingHorizontal: 20 }} contentContainerStyle={{ paddingVertical: 16, gap: 16 }}>
+                  {/* Pain level */}
+                  {viewingFeeling.painLevel != null && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="pulse-outline" size={20} color={painColor} />
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: DoctorColors.text }}>Pain Level</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
+                        <Text style={{ fontSize: 28, fontWeight: '900', color: painColor }}>{viewingFeeling.painLevel}</Text>
+                        <Text style={{ fontSize: 14, color: '#94a3b8', fontWeight: '600' }}>/10</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Symptoms */}
+                  {symptomList.length > 0 && (
+                    <View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <Ionicons name="medical-outline" size={16} color={DoctorColors.textSecondary} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: DoctorColors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>Symptoms</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        {symptomList.map((s, i) => (
+                          <View key={i} style={{ backgroundColor: '#fff0f0', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: '#fecaca' }}>
+                            <Text style={{ fontSize: 13, color: '#b91c1c', fontWeight: '600' }}>{s}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Medications taken */}
+                  {viewingFeeling.medications ? (
+                    <View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <Ionicons name="medkit-outline" size={16} color={DoctorColors.textSecondary} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: DoctorColors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>Medications Taken</Text>
+                      </View>
+                      <View style={{ backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                        <Text style={{ fontSize: 14, color: DoctorColors.text, lineHeight: 20 }}>
+                          {Array.isArray(viewingFeeling.medications) ? viewingFeeling.medications.join(', ') : viewingFeeling.medications}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* Notes */}
+                  {viewingFeeling.notes ? (
+                    <View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <Ionicons name="document-text-outline" size={16} color={DoctorColors.textSecondary} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: DoctorColors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>Patient Notes</Text>
+                      </View>
+                      <View style={{ backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                        <Text style={{ fontSize: 14, color: DoctorColors.text, lineHeight: 22 }}>{viewingFeeling.notes}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  <View style={{ height: 4 }} />
+                </ScrollView>
+
+                <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
+                  <TouchableOpacity
+                    style={[styles.saveBtn, { backgroundColor: meta.color }]}
+                    onPress={() => setViewingFeeling(null)}
+                  >
+                    <Text style={styles.saveBtnText}>Close</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -889,6 +1104,10 @@ const styles = StyleSheet.create({
     backgroundColor: DoctorColors.primaryLight, borderRadius: 10, padding: 12,
   },
   qBtnText: { fontSize: 13, color: DoctorColors.primary, fontWeight: '700' },
+  feelingCard: {
+    borderRadius: 14, padding: 16, marginBottom: 12,
+    borderWidth: 1,
+  },
   miniCard: {
     backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8,
     flexDirection: 'row', alignItems: 'center',
