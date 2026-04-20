@@ -31,6 +31,22 @@ export async function signInWithEmailOrUsername(identifier, password) {
 }
 
 export async function resolveRole(uid) {
+  // Check pharmacies collection
+  const pharmacyRef = doc(db, 'pharmacies', uid);
+  const pharmacySnap = await getDoc(pharmacyRef);
+  if (pharmacySnap.exists()) {
+    const data = pharmacySnap.data();
+    return { role: 'pharmacy', profile: { id: pharmacySnap.id, ...data, role: 'pharmacy' } };
+  }
+
+  // Check pharmacy branches
+  const branchRef = doc(db, 'pharmacyBranches', uid);
+  const branchSnap = await getDoc(branchRef);
+  if (branchSnap.exists()) {
+    const data = branchSnap.data();
+    return { role: 'branch_user', profile: { id: branchSnap.id, ...data, role: 'branch_user' } };
+  }
+
   // Check doctors collection
   const doctorRef = doc(db, 'doctors', uid);
   const doctorSnap = await getDoc(doctorRef);
@@ -110,7 +126,7 @@ export async function findUserByUsernameOrEmail(identifier) {
   const cRE = await getDocs(cQE);
   if (!cRE.empty) return { id: cRE.docs[0].id, ...cRE.docs[0].data() };
 
-  // Check doctors collection (to detect and reject on mobile)
+  // Check doctors collection
   const dQ = query(collection(db, 'doctors'), where('username', '==', identifier));
   const dR = await getDocs(dQ);
   if (!dR.empty) return { id: dR.docs[0].id, ...dR.docs[0].data() };
@@ -118,6 +134,24 @@ export async function findUserByUsernameOrEmail(identifier) {
   const dQE = query(collection(db, 'doctors'), where('email', '==', identifier));
   const dRE = await getDocs(dQE);
   if (!dRE.empty) return { id: dRE.docs[0].id, ...dRE.docs[0].data() };
+
+  // Check pharmacies
+  const phQ = query(collection(db, 'pharmacies'), where('username', '==', identifier));
+  const phR = await getDocs(phQ);
+  if (!phR.empty) return { id: phR.docs[0].id, ...phR.docs[0].data() };
+
+  const phQE = query(collection(db, 'pharmacies'), where('email', '==', identifier));
+  const phRE = await getDocs(phQE);
+  if (!phRE.empty) return { id: phRE.docs[0].id, ...phRE.docs[0].data() };
+
+  // Check pharmacy branches
+  const brQ = query(collection(db, 'pharmacyBranches'), where('username', '==', identifier));
+  const brR = await getDocs(brQ);
+  if (!brR.empty) return { id: brR.docs[0].id, ...brR.docs[0].data() };
+
+  const brQE = query(collection(db, 'pharmacyBranches'), where('email', '==', identifier));
+  const brRE = await getDocs(brQE);
+  if (!brRE.empty) return { id: brRE.docs[0].id, ...brRE.docs[0].data() };
 
   return null;
 }

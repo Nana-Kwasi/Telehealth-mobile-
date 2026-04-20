@@ -11,6 +11,7 @@ import { DoctorColors } from '../constants/colors';
 const drawerItems = [
   { screen: 'DoctorHome',          icon: 'home-outline',            label: 'Dashboard' },
   { screen: 'DoctorPatients',      icon: 'people-outline',          label: 'My Patients' },
+  { screen: 'DoctorPatientPanel',  icon: 'grid-outline',            label: 'Patient Panel' },
   { screen: 'DoctorAppointments',  icon: 'calendar-outline',        label: 'Appointments' },
   { screen: 'DoctorVideo',         icon: 'videocam-outline',        label: 'Video Calls' },
   { screen: 'DoctorMessages',      icon: 'chatbubbles-outline',     label: 'Messages' },

@@ -21,6 +21,49 @@ const NOTE_TYPES = [
   { value: 'general',      label: 'General',      color: '#64748b', bg: '#f1f5f9' },
 ];
 
+const NOTE_TEMPLATES = [
+  {
+    id: 'soap',
+    name: 'General Consultation (SOAP)',
+    icon: 'document-text-outline',
+    type: 'consultation',
+    title: 'Consultation Note',
+    content: `SUBJECTIVE:\n[Chief complaint and patient-reported symptoms]\n\nOBJECTIVE:\n[Physical exam findings, vital signs, test results]\n\nASSESSMENT:\n[Diagnosis / differential diagnosis]\n\nPLAN:\n[Treatment plan, medications, referrals, follow-up]`,
+  },
+  {
+    id: 'hypertension',
+    name: 'Hypertension',
+    icon: 'heart-outline',
+    type: 'consultation',
+    title: 'Hypertension Follow-up',
+    content: `BLOOD PRESSURE READING:\nSystolic: ___ mmHg  |  Diastolic: ___ mmHg\n\nCURRENT MEDICATIONS:\n[List antihypertensives and dosages]\n\nSYMPTOMS:\n[Headache, dizziness, chest pain, shortness of breath, edema]\n\nCOMPLIANCE:\n[Medication adherence, dietary compliance, exercise]\n\nASSESSMENT:\n[BP control status: controlled / uncontrolled]\n\nPLAN:\n[Medication adjustments, lifestyle advice, next visit]`,
+  },
+  {
+    id: 'diabetes',
+    name: 'Diabetes',
+    icon: 'cellular-outline',
+    type: 'consultation',
+    title: 'Diabetes Management Note',
+    content: `BLOOD GLUCOSE READINGS:\nFasting: ___ mg/dL  |  Post-prandial: ___ mg/dL\nHbA1c: ___ %\n\nCURRENT MEDICATIONS:\n[Insulin type/dose, oral hypoglycemics]\n\nSYMPTOMS:\n[Polyuria, polydipsia, blurred vision, numbness/tingling, wound healing]\n\nCOMPLICATION SCREENING:\n[Retinopathy, nephropathy, neuropathy, cardiovascular]\n\nASSESSMENT:\n[Diabetes control: well-controlled / poorly-controlled]\n\nPLAN:\n[Medication adjustments, dietary advice, monitoring frequency, referrals]`,
+  },
+  {
+    id: 'respiratory',
+    name: 'Respiratory Infection',
+    icon: 'cloud-outline',
+    type: 'consultation',
+    title: 'Respiratory Infection Note',
+    content: `PRESENTING COMPLAINT:\n[Cough, fever, sore throat, runny nose, shortness of breath]\n\nDURATION: ___ days\n\nVITALS:\nTemp: ___  |  SpO2: ___  |  RR: ___\n\nEXAMINATION:\n[Throat inspection, chest auscultation findings]\n\nDIAGNOSIS:\n[ ] URTI  [ ] Pharyngitis  [ ] Bronchitis  [ ] Pneumonia  [ ] Other: ___\n\nPLAN:\n[Antibiotics if indicated, symptomatic treatment, rest, hydration, follow-up]`,
+  },
+  {
+    id: 'pediatric',
+    name: 'Pediatric',
+    icon: 'happy-outline',
+    type: 'consultation',
+    title: 'Pediatric Consultation',
+    content: `PATIENT AGE / WEIGHT: ___ years  |  ___ kg\n\nPRESENTING COMPLAINT:\n[Symptom description from parent/guardian]\n\nDEVELOPMENTAL HISTORY:\n[Milestones appropriate for age? Any concerns?]\n\nIMMUNIZATION STATUS:\n[Up to date / Overdue — list outstanding vaccines]\n\nEXAMINATION:\n[General appearance, growth parameters, systems review]\n\nASSESSMENT:\n[Diagnosis]\n\nPLAN:\n[Treatment, parent counseling, follow-up, referrals]`,
+  },
+];
+
 function getTypeMeta(type) {
   return NOTE_TYPES.find(t => t.value === type) || NOTE_TYPES[4];
 }
@@ -41,6 +84,7 @@ export default function DoctorNotesScreen() {
     patientId: '', patientName: 'General',
     type: 'consultation', title: '', content: '',
   });
+  const [showTemplates, setShowTemplates] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -86,7 +130,13 @@ export default function DoctorNotesScreen() {
   const openNew = () => {
     setEditing(null);
     setForm({ patientId: '', patientName: 'General', type: 'consultation', title: '', content: '' });
+    setShowTemplates(false);
     setShowModal(true);
+  };
+
+  const applyTemplate = (tpl) => {
+    setForm(p => ({ ...p, type: tpl.type, title: tpl.title, content: tpl.content }));
+    setShowTemplates(false);
   };
 
   const openEdit = (note) => {
@@ -298,6 +348,39 @@ export default function DoctorNotesScreen() {
                 </View>
               )}
 
+              {/* Templates */}
+              {!editing && (
+                <View style={styles.fieldGroup}>
+                  <TouchableOpacity
+                    style={styles.templateToggleBtn}
+                    onPress={() => setShowTemplates(v => !v)}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="layers-outline" size={16} color={DoctorColors.primary} />
+                    <Text style={styles.templateToggleBtnText}>
+                      {showTemplates ? 'Hide Templates' : 'Use a Template'}
+                    </Text>
+                    <Ionicons name={showTemplates ? 'chevron-up' : 'chevron-down'} size={14} color={DoctorColors.primary} style={{ marginLeft: 'auto' }} />
+                  </TouchableOpacity>
+                  {showTemplates && (
+                    <View style={styles.templateList}>
+                      {NOTE_TEMPLATES.map(tpl => (
+                        <TouchableOpacity
+                          key={tpl.id}
+                          style={styles.templateItem}
+                          onPress={() => applyTemplate(tpl)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name={tpl.icon} size={18} color={DoctorColors.primary} />
+                          <Text style={styles.templateItemText}>{tpl.name}</Text>
+                          <Ionicons name="arrow-forward-circle-outline" size={18} color={DoctorColors.primary} />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
               {/* Type selector */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Note Type</Text>
@@ -460,4 +543,19 @@ const styles = StyleSheet.create({
     backgroundColor: DoctorColors.primary,
   },
   readCloseBtnText: { fontSize: 14, color: '#fff', fontWeight: '700' },
+
+  // Templates
+  templateToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: DoctorColors.primaryLight, borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: DoctorColors.primary + '40',
+  },
+  templateToggleBtnText: { fontSize: 13, fontWeight: '700', color: DoctorColors.primary },
+  templateList: { marginTop: 10, gap: 6 },
+  templateItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff', borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  templateItemText: { flex: 1, fontSize: 13, fontWeight: '600', color: DoctorColors.text },
 });

@@ -67,6 +67,28 @@ export const DoctorColors = {
   rating: '#f59e0b',
 };
 
+// Pharmacy theme colors (dark navy + teal)
+export const PharmacyColors = {
+  primary: '#0c4a6e',
+  primaryDark: '#082f49',
+  primaryLight: '#e0f2fe',
+  secondary: '#0891b2',
+  accent: '#7c3aed',
+  background: '#f0f9ff',
+  surface: '#ffffff',
+  text: '#0f172a',
+  textSecondary: '#64748b',
+  textLight: '#94a3b8',
+  success: '#16a34a',
+  warning: '#d97706',
+  error: '#dc2626',
+  info: '#0369a1',
+  border: '#bae6fd',
+  shadow: 'rgba(0,0,0,0.08)',
+  overlay: 'rgba(0,0,0,0.5)',
+  cardBg: '#f8fafc',
+};
+
 // Therapist theme colors (deep indigo + teal)
 export const TherapistColors = {
   primary: '#4f46e5',         // Indigo

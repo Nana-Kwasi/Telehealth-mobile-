@@ -8,12 +8,24 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../../services/firebaseConfig';
+import { auth, db } from '../../services/firebaseConfig';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { createAppointment } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+
+const EMPTY_VITALS = {
+  bpSystolic: '',
+  bpDiastolic: '',
+  heartRate: '',
+  respiratoryRate: '',
+  spo2: '',
+  temperature: '',
+  tempUnit: 'C',
+};
 
 const consultationTypes = [
   { key: 'video', label: 'Video Call', icon: 'videocam-outline', description: 'Face-to-face via video' },
@@ -38,6 +50,8 @@ const BookAppointmentScreen = ({ route, navigation }) => {
   const [selectedTime, setSelectedTime] = useState(preselectedStart || '');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [vitals, setVitals] = useState({ ...EMPTY_VITALS });
+  const [showVitals, setShowVitals] = useState(false);
 
   // Generate next 14 days for date selection if no preselected date
   const getDateOptions = () => {
@@ -85,6 +99,19 @@ const BookAppointmentScreen = ({ route, navigation }) => {
       const clientId = currentUser.uid;
       const clientName = (await AsyncStorage.getItem('userName')) || 'Patient';
 
+      // Build vitals payload (only include non-empty values)
+      const hasVitals = showVitals && Object.entries(vitals).some(([k, v]) => k !== 'tempUnit' && v.trim() !== '');
+      const vitalsPayload = hasVitals ? {
+        bpSystolic: vitals.bpSystolic.trim(),
+        bpDiastolic: vitals.bpDiastolic.trim(),
+        heartRate: vitals.heartRate.trim(),
+        respiratoryRate: vitals.respiratoryRate.trim(),
+        spo2: vitals.spo2.trim(),
+        temperature: vitals.temperature.trim(),
+        tempUnit: vitals.tempUnit,
+        recordedAt: new Date().toISOString(),
+      } : null;
+
       await createAppointment({
         doctorId,
         doctorName: doctorName || 'Doctor',
@@ -97,7 +124,19 @@ const BookAppointmentScreen = ({ route, navigation }) => {
         consultationFee: consultationFee || 0,
         notes: notes.trim(),
         slotId: slotId || null,
+        vitals: vitalsPayload,
       });
+
+      // Save latest vitals to patientProfiles
+      if (vitalsPayload) {
+        try {
+          await setDoc(
+            doc(db, 'patientProfiles', clientId),
+            { vitals: { latest: { ...vitalsPayload, recordedAt: serverTimestamp() } }, updatedAt: serverTimestamp() },
+            { merge: true }
+          );
+        } catch (_) {}
+      }
 
       Alert.alert(
         'Appointment Booked',
@@ -221,6 +260,117 @@ const BookAppointmentScreen = ({ route, navigation }) => {
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+        )}
+      </View>
+
+      {/* Vitals Section */}
+      <View style={styles.section}>
+        <TouchableOpacity
+          style={styles.vitalsToggleRow}
+          onPress={() => setShowVitals(v => !v)}
+          activeOpacity={0.75}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="pulse-outline" size={20} color="#dc2626" />
+            <Text style={styles.sectionTitle}>Patient Vitals (optional)</Text>
+          </View>
+          <Switch
+            value={showVitals}
+            onValueChange={setShowVitals}
+            trackColor={{ false: MedicalColors.border, true: '#fca5a5' }}
+            thumbColor={showVitals ? '#dc2626' : '#f1f5f9'}
+          />
+        </TouchableOpacity>
+
+        {showVitals && (
+          <View style={styles.vitalsCard}>
+            {/* Blood Pressure */}
+            <Text style={styles.vitalsGroupLabel}>Blood Pressure</Text>
+            <View style={styles.vitalsRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.vitalsFieldLabel}>Systolic (mmHg)</Text>
+                <TextInput
+                  style={styles.vitalsInput}
+                  placeholder="e.g. 120"
+                  placeholderTextColor={MedicalColors.textLight}
+                  keyboardType="numeric"
+                  value={vitals.bpSystolic}
+                  onChangeText={v => setVitals(p => ({ ...p, bpSystolic: v }))}
+                />
+              </View>
+              <View style={styles.vitalsDivider}>
+                <Text style={styles.vitalsDividerText}>/</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.vitalsFieldLabel}>Diastolic (mmHg)</Text>
+                <TextInput
+                  style={styles.vitalsInput}
+                  placeholder="e.g. 80"
+                  placeholderTextColor={MedicalColors.textLight}
+                  keyboardType="numeric"
+                  value={vitals.bpDiastolic}
+                  onChangeText={v => setVitals(p => ({ ...p, bpDiastolic: v }))}
+                />
+              </View>
+            </View>
+
+            {/* Heart Rate */}
+            <Text style={styles.vitalsFieldLabel}>Heart Rate (bpm)</Text>
+            <TextInput
+              style={styles.vitalsInput}
+              placeholder="e.g. 72"
+              placeholderTextColor={MedicalColors.textLight}
+              keyboardType="numeric"
+              value={vitals.heartRate}
+              onChangeText={v => setVitals(p => ({ ...p, heartRate: v }))}
+            />
+
+            {/* Respiratory Rate */}
+            <Text style={styles.vitalsFieldLabel}>Respiratory Rate (breaths/min)</Text>
+            <TextInput
+              style={styles.vitalsInput}
+              placeholder="e.g. 16"
+              placeholderTextColor={MedicalColors.textLight}
+              keyboardType="numeric"
+              value={vitals.respiratoryRate}
+              onChangeText={v => setVitals(p => ({ ...p, respiratoryRate: v }))}
+            />
+
+            {/* SpO2 */}
+            <Text style={styles.vitalsFieldLabel}>Oxygen Saturation (SpO2 %)</Text>
+            <TextInput
+              style={styles.vitalsInput}
+              placeholder="e.g. 98"
+              placeholderTextColor={MedicalColors.textLight}
+              keyboardType="numeric"
+              value={vitals.spo2}
+              onChangeText={v => setVitals(p => ({ ...p, spo2: v }))}
+            />
+
+            {/* Temperature */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={styles.vitalsFieldLabel}>Temperature</Text>
+              <View style={styles.tempToggle}>
+                {['C', 'F'].map(u => (
+                  <TouchableOpacity
+                    key={u}
+                    style={[styles.tempBtn, vitals.tempUnit === u && styles.tempBtnActive]}
+                    onPress={() => setVitals(p => ({ ...p, tempUnit: u }))}
+                  >
+                    <Text style={[styles.tempBtnText, vitals.tempUnit === u && styles.tempBtnTextActive]}>°{u}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <TextInput
+              style={styles.vitalsInput}
+              placeholder={vitals.tempUnit === 'C' ? 'e.g. 37.2' : 'e.g. 98.9'}
+              placeholderTextColor={MedicalColors.textLight}
+              keyboardType="decimal-pad"
+              value={vitals.temperature}
+              onChangeText={v => setVitals(p => ({ ...p, temperature: v }))}
+            />
           </View>
         )}
       </View>
@@ -510,6 +660,81 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '700',
+  },
+
+  // Vitals styles
+  vitalsToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  vitalsCard: {
+    backgroundColor: MedicalColors.surface,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#fca5a5',
+  },
+  vitalsGroupLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#dc2626',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  vitalsFieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: MedicalColors.textSecondary,
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  vitalsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 0,
+  },
+  vitalsDivider: {
+    paddingHorizontal: 8,
+    paddingTop: 20,
+  },
+  vitalsDividerText: {
+    fontSize: 22,
+    fontWeight: '300',
+    color: MedicalColors.textLight,
+  },
+  vitalsInput: {
+    backgroundColor: MedicalColors.background,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: MedicalColors.border,
+    padding: 10,
+    fontSize: 14,
+    color: MedicalColors.text,
+  },
+  tempToggle: {
+    flexDirection: 'row',
+    backgroundColor: MedicalColors.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: MedicalColors.border,
+    overflow: 'hidden',
+  },
+  tempBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  tempBtnActive: {
+    backgroundColor: '#dc2626',
+  },
+  tempBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: MedicalColors.textSecondary,
+  },
+  tempBtnTextActive: {
+    color: '#fff',
   },
 });
 

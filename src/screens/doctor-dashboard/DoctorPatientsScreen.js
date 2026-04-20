@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, TextInput, RefreshControl, Alert, Modal,
+  ActivityIndicator, TextInput, RefreshControl, ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import {
   collection, query, where, getDocs, doc, getDoc,
-  setDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
@@ -20,27 +19,36 @@ function getInitials(name) {
 
 const STATUS_COLORS = {
   active:     { bg: '#f0fdf4', text: '#15803d' },
+  inactive:   { bg: '#fff7ed', text: '#c2410c' },
   discharged: { bg: '#fef2f2', text: '#b91c1c' },
   pending:    { bg: '#fff7ed', text: '#c2410c' },
 };
+
+const PANEL_TABS = ['All', 'Active'];
 
 export default function DoctorPatientsScreen({ navigation }) {
   const [patients, setPatients] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState('All');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dischargeTarget, setDischargeTarget] = useState(null);
-  const [discharging, setDischarging] = useState(false);
   const [doctorProfile, setDoctorProfile] = useState(null);
 
   useEffect(() => { loadPatients(); }, []);
 
   useEffect(() => {
-    if (!search.trim()) { setFiltered(patients); return; }
-    const q = search.toLowerCase();
-    setFiltered(patients.filter(p => (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q)));
-  }, [search, patients]);
+    let list = patients;
+    if (activeTab !== 'All') {
+      const statusKey = activeTab.toLowerCase();
+      list = patients.filter(p => (p.status || 'active') === statusKey);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(p => (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q));
+    }
+    setFiltered(list);
+  }, [search, patients, activeTab]);
 
   const loadPatients = async () => {
     try {
@@ -101,26 +109,6 @@ export default function DoctorPatientsScreen({ navigation }) {
     }
   };
 
-  const confirmDischarge = async () => {
-    if (!dischargeTarget) return;
-    setDischarging(true);
-    try {
-      const cu = auth.currentUser;
-      await setDoc(doc(db, 'patientProfiles', dischargeTarget.id), {
-        status: 'discharged',
-        dischargedBy: cu.uid,
-        dischargedByName: `Dr. ${doctorProfile?.name || 'Doctor'}`,
-        dischargedAt: serverTimestamp(),
-      }, { merge: true });
-      setPatients(prev => prev.map(p => p.id === dischargeTarget.id ? { ...p, status: 'discharged' } : p));
-      setDischargeTarget(null);
-    } catch {
-      Alert.alert('Error', 'Could not discharge patient.');
-    } finally {
-      setDischarging(false);
-    }
-  };
-
   const renderItem = ({ item }) => {
     const sc = STATUS_COLORS[item.status] || STATUS_COLORS.active;
     return (
@@ -165,15 +153,13 @@ export default function DoctorPatientsScreen({ navigation }) {
             <Ionicons name="chatbubble-outline" size={14} color={DoctorColors.primary} />
             <Text style={styles.actionText}>Message</Text>
           </TouchableOpacity>
-          {item.status !== 'discharged' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.dischargeBtn]}
-              onPress={() => setDischargeTarget(item)}
-            >
-              <Ionicons name="exit-outline" size={14} color="#b91c1c" />
-              <Text style={[styles.actionText, { color: '#b91c1c' }]}>Discharge</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name })}
+          >
+            <Ionicons name="chevron-forward-outline" size={14} color={DoctorColors.primary} />
+            <Text style={styles.actionText}>View Profile</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -193,6 +179,25 @@ export default function DoctorPatientsScreen({ navigation }) {
         <Text style={styles.count}>{filtered.length}</Text>
       </View>
 
+      {/* Status Tabs */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
+        {PANEL_TABS.map(tab => {
+          const count = tab === 'All' ? patients.length : patients.filter(p => (p.status || 'active') === tab.toLowerCase()).length;
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tab, activeTab === tab && styles.tabActive]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
+              <View style={[styles.tabBadge, activeTab === tab && styles.tabBadgeActive]}>
+                <Text style={[styles.tabBadgeText, activeTab === tab && styles.tabBadgeTextActive]}>{count}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       {loading ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
@@ -211,37 +216,6 @@ export default function DoctorPatientsScreen({ navigation }) {
         />
       )}
 
-      {/* Discharge Confirmation Modal */}
-      <Modal visible={!!dischargeTarget} transparent animationType="fade" onRequestClose={() => setDischargeTarget(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIcon}>
-              <Ionicons name="warning-outline" size={32} color="#f59e0b" />
-            </View>
-            <Text style={styles.modalTitle}>Discharge Patient?</Text>
-            <Text style={styles.modalBody}>
-              Are you sure you want to discharge{'\n'}
-              <Text style={{ fontWeight: '700' }}>{dischargeTarget?.name}</Text>?{'\n\n'}
-              This will mark the patient as discharged from your care.
-            </Text>
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setDischargeTarget(null)} disabled={discharging}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmBtn, discharging && { opacity: 0.6 }]}
-                onPress={confirmDischarge}
-                disabled={discharging}
-              >
-                {discharging
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={styles.confirmBtnText}>Discharge</Text>
-                }
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -249,6 +223,20 @@ export default function DoctorPatientsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: DoctorColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  tabScroll: { maxHeight: 50 },
+  tabContent: { paddingHorizontal: 12, paddingVertical: 6, gap: 8 },
+  tab: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: DoctorColors.border,
+  },
+  tabActive: { backgroundColor: DoctorColors.primary, borderColor: DoctorColors.primary },
+  tabText: { fontSize: 13, fontWeight: '600', color: DoctorColors.textSecondary },
+  tabTextActive: { color: '#fff' },
+  tabBadge: { backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
+  tabBadgeActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  tabBadgeText: { fontSize: 11, fontWeight: '700', color: DoctorColors.textSecondary },
+  tabBadgeTextActive: { color: '#fff' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', margin: 12, marginBottom: 6,
     backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
@@ -282,32 +270,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
     backgroundColor: DoctorColors.primaryLight,
   },
-  dischargeBtn: { backgroundColor: '#fff1f2' },
   actionText: { fontSize: 12, color: DoctorColors.primary, fontWeight: '600' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyText: { fontSize: 15, color: '#94a3b8' },
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalCard: {
-    backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15, shadowRadius: 16, elevation: 10,
-  },
-  modalIcon: {
-    width: 60, height: 60, borderRadius: 30, backgroundColor: '#fffbeb',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: DoctorColors.text, marginBottom: 10 },
-  modalBody: { fontSize: 14, color: DoctorColors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 20 },
-  modalFooter: { flexDirection: 'row', gap: 12, width: '100%' },
-  cancelBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-  },
-  cancelBtnText: { fontSize: 15, color: '#64748b', fontWeight: '600' },
-  confirmBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
-    backgroundColor: '#ef4444',
-  },
-  confirmBtnText: { fontSize: 15, color: '#fff', fontWeight: '700' },
 });

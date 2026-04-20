@@ -179,11 +179,30 @@ const MedicalPrescriptionsScreen = () => {
   );
 };
 
+const DRUG_STATUS_META = {
+  pending:               { icon: '⏳', label: 'Pending',        color: '#d97706', bg: '#fffbeb' },
+  available:             { icon: '✅', label: 'Available',      color: '#16a34a', bg: '#f0fdf4' },
+  not_available:         { icon: '❌', label: 'Not Available',  color: '#dc2626', bg: '#fff1f2' },
+  alternative_suggested: { icon: '🔁', label: 'Alt. Suggested', color: '#7c3aed', bg: '#f5f3ff' },
+  approved_replacement:  { icon: '✅', label: 'Approved Alt.',  color: '#16a34a', bg: '#f0fdf4' },
+};
+
+const PHARMACY_STATUS_META = {
+  sent:                { label: 'Sent to Pharmacy',    color: '#1d4ed8', bg: '#eff6ff' },
+  accepted:            { label: 'Processing',          color: '#d97706', bg: '#fffbeb' },
+  partially_fulfilled: { label: 'Partially Filled',   color: '#d97706', bg: '#fffbeb' },
+  ready:               { label: 'Ready for Pickup',   color: '#16a34a', bg: '#f0fdf4' },
+  delivered:           { label: 'Delivered',           color: '#475569', bg: '#f8fafc' },
+};
+
 function RxCard({ rx, onTick }) {
   const meds = Array.isArray(rx.medications) && rx.medications.length > 0
     ? rx.medications
     : [{ name: rx.medication || rx.medicationName || 'Prescription', dosage: rx.dosage, frequency: rx.frequency, duration: rx.duration }];
   const isDone = rx.status === 'completed';
+  const pm = rx.pharmacyStatus ? (PHARMACY_STATUS_META[rx.pharmacyStatus] || null) : null;
+  const hasDrugStatuses = meds.some(m => m.drugStatus);
+
   return (
     <View style={[styles.rxCard, isDone && styles.rxCardDone]}>
       <View style={styles.rxCardHeader}>
@@ -194,8 +213,12 @@ function RxCard({ rx, onTick }) {
           <Text style={[styles.rxName, isDone && styles.rxNameDone]}>{meds[0]?.name || 'Prescription'}</Text>
           {rx.diagnosis ? <Text style={styles.rxDiagnosis}>Diagnosis: {rx.diagnosis}</Text> : null}
           <Text style={styles.rxDoctor}>Dr. {rx.doctorName || 'Doctor'}</Text>
+          {rx.pharmacyName && (
+            <Text style={styles.rxPharmacy}>
+              🏥 {rx.pharmacyName}{rx.branchName ? ` › ${rx.branchName}` : ''}
+            </Text>
+          )}
         </View>
-        {/* Tick button */}
         <TouchableOpacity
           style={[styles.tickBtn, isDone && styles.tickBtnDone]}
           onPress={() => onTick(rx)}
@@ -205,14 +228,39 @@ function RxCard({ rx, onTick }) {
         </TouchableOpacity>
       </View>
 
-      {meds.map((m, i) => (
-        <View key={i} style={styles.rxDetails}>
-          {i > 0 && <Text style={[styles.rxDetailLabel, { marginBottom: 4 }]}>{m.name}</Text>}
-          {m.dosage ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Dosage</Text><Text style={styles.rxDetailValue}>{m.dosage}</Text></View> : null}
-          {m.frequency ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Frequency</Text><Text style={styles.rxDetailValue}>{m.frequency}</Text></View> : null}
-          {m.duration ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Duration</Text><Text style={styles.rxDetailValue}>{m.duration}</Text></View> : null}
+      {/* Pharmacy status banner */}
+      {pm && (
+        <View style={[styles.pharmacyBanner, { backgroundColor: pm.bg }]}>
+          <Text style={[styles.pharmacyBannerText, { color: pm.color }]}>{pm.label}</Text>
+          {rx.prescriptionRef && rx.pharmacyStatus === 'ready' && (
+            <Text style={[styles.pharmacyBannerRef, { color: pm.color }]}>Code: {rx.prescriptionRef}</Text>
+          )}
         </View>
-      ))}
+      )}
+
+      {meds.map((m, i) => {
+        const ds = m.drugStatus ? (DRUG_STATUS_META[m.drugStatus] || null) : null;
+        return (
+          <View key={i} style={styles.rxDetails}>
+            {i > 0 && <Text style={[styles.rxDetailLabel, { marginBottom: 4 }]}>{m.name}</Text>}
+            {m.dosage ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Dosage</Text><Text style={styles.rxDetailValue}>{m.dosage}</Text></View> : null}
+            {m.frequency ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Frequency</Text><Text style={styles.rxDetailValue}>{m.frequency}</Text></View> : null}
+            {m.duration ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Duration</Text><Text style={styles.rxDetailValue}>{m.duration}</Text></View> : null}
+            {ds && (
+              <View style={[styles.drugStatusPill, { backgroundColor: ds.bg }]}>
+                <Text style={[styles.drugStatusPillText, { color: ds.color }]}>{ds.icon} {ds.label}</Text>
+              </View>
+            )}
+            {m.alternativeSuggested && m.drugStatus === 'alternative_suggested' && (
+              <Text style={styles.altSuggested}>🔁 Alternative suggested: {m.alternativeSuggested}</Text>
+            )}
+            {m.alternativeSuggested && m.drugStatus === 'approved_replacement' && (
+              <Text style={styles.altApproved}>✅ Approved replacement: {m.alternativeSuggested}</Text>
+            )}
+          </View>
+        );
+      })}
+
       {rx.instructions ? (
         <View style={styles.rxInstructions}>
           <Text style={styles.rxDetailLabel}>Instructions</Text>
@@ -254,6 +302,14 @@ const styles = StyleSheet.create({
   rxNameDone: { textDecorationLine: 'line-through', color: C.textSecondary },
   rxDiagnosis: { fontSize: 11, color: C.textSecondary, marginBottom: 1 },
   rxDoctor: { fontSize: 12, color: C.textSecondary },
+  rxPharmacy: { fontSize: 11, color: '#0891b2', marginTop: 2, fontWeight: '600' },
+  pharmacyBanner: { borderRadius: 8, padding: 8, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pharmacyBannerText: { fontSize: 12, fontWeight: '700' },
+  pharmacyBannerRef: { fontFamily: 'monospace', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  drugStatusPill: { alignSelf: 'flex-start', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3, marginTop: 4 },
+  drugStatusPillText: { fontSize: 11, fontWeight: '700' },
+  altSuggested: { fontSize: 11, color: '#7c3aed', fontWeight: '600', marginTop: 3 },
+  altApproved: { fontSize: 11, color: '#16a34a', fontWeight: '600', marginTop: 3 },
   tickBtn: { padding: 4 },
   tickBtnDone: { opacity: 0.7 },
   rxDetails: { gap: 5, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border },

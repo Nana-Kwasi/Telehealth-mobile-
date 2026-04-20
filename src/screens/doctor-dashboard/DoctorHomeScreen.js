@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Dimensions, Image, DeviceEventEmitter,
+  Modal, TextInput, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import { LineChart } from 'react-native-chart-kit';
@@ -79,6 +80,13 @@ export default function DoctorHomeScreen({ navigation }) {
   const [sessionBreakdown, setSessionBreakdown] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // E-Pharmacy modal
+  const [showEPharmacyModal, setShowEPharmacyModal] = useState(false);
+  const [selectedPatientIds, setSelectedPatientIds] = useState(new Set());
+  const [pharmacyForm, setPharmacyForm] = useState({ name: '', address: '', phone: '' });
+  const [savingPharmacy, setSavingPharmacy] = useState(false);
+  const [ephSearch, setEphSearch] = useState('');
 
   // Calendar
   const [calYear, setCalYear] = useState(new Date().getFullYear());
@@ -204,6 +212,75 @@ export default function DoctorHomeScreen({ navigation }) {
     }
   };
 
+  // ── E-Pharmacy helpers ──────────────────────────────────────────────────────
+  const allPatients = useMemo(() => {
+    const patMap = new Map();
+    allAppts.forEach(a => {
+      if (!a.clientId) return;
+      if (!patMap.has(a.clientId)) {
+        patMap.set(a.clientId, { id: a.clientId, name: a.clientName || 'Patient' });
+      }
+    });
+    return Array.from(patMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allAppts]);
+
+  const ephPatients = useMemo(() => {
+    if (!ephSearch.trim()) return allPatients;
+    const q = ephSearch.toLowerCase();
+    return allPatients.filter(p => p.name.toLowerCase().includes(q));
+  }, [allPatients, ephSearch]);
+
+  const togglePatient = (id) => {
+    setSelectedPatientIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const openEPharmacy = () => {
+    setSelectedPatientIds(new Set());
+    setPharmacyForm({ name: '', address: '', phone: '' });
+    setEphSearch('');
+    setShowEPharmacyModal(true);
+  };
+
+  const saveEPharmacy = async () => {
+    if (!pharmacyForm.name.trim()) {
+      alert('Please enter a pharmacy name.');
+      return;
+    }
+    if (selectedPatientIds.size === 0) {
+      alert('Please select at least one patient.');
+      return;
+    }
+    setSavingPharmacy(true);
+    try {
+      const pharmacy = {
+        name: pharmacyForm.name.trim(),
+        address: pharmacyForm.address.trim(),
+        phone: pharmacyForm.phone.trim(),
+        addedByDoctor: true,
+        addedAt: new Date().toISOString(),
+      };
+      for (const patientId of selectedPatientIds) {
+        const patRef = doc(db, 'patientProfiles', patientId);
+        const snap = await getDoc(patRef);
+        const existing = snap.exists() ? (snap.data().pharmacies || []) : [];
+        await setDoc(patRef, { pharmacies: [...existing, pharmacy] }, { merge: true });
+      }
+      setShowEPharmacyModal(false);
+      alert(`Pharmacy added to ${selectedPatientIds.size} patient${selectedPatientIds.size > 1 ? 's' : ''} successfully.`);
+    } catch (err) {
+      console.error('E-Pharmacy save error:', err);
+      alert('Failed to save. Please try again.');
+    } finally {
+      setSavingPharmacy(false);
+    }
+  };
+  // ────────────────────────────────────────────────────────────────────────────
+
   const greeting = () => {
     const h = new Date().getHours();
     if (h < 12) return 'Good Morning 👨‍⚕️';
@@ -241,6 +318,7 @@ export default function DoctorHomeScreen({ navigation }) {
   }
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={DoctorColors.primary} />}
@@ -312,8 +390,9 @@ export default function DoctorHomeScreen({ navigation }) {
             { label: 'Prescriptions', icon: 'medkit',         screen: 'DoctorPrescriptions', color: '#d97706', bg: '#fef3c7' },
             { label: 'Messages',      icon: 'chatbubbles',    screen: 'DoctorMessages',      color: '#0284c7', bg: '#e0f2fe' },
             { label: 'Notes',         icon: 'document-text',  screen: 'DoctorNotes',         color: '#dc2626', bg: '#fee2e2' },
+            { label: 'E-Pharmacy',    icon: 'storefront',     onPress: openEPharmacy,         color: '#0f766e', bg: '#ccfbf1' },
           ].map((a, i) => (
-            <TouchableOpacity key={i} style={styles.quickBtn} onPress={() => navigation.navigate(a.screen)}>
+            <TouchableOpacity key={i} style={styles.quickBtn} onPress={() => a.onPress ? a.onPress() : navigation.navigate(a.screen)}>
               <View style={[styles.quickIcon, { backgroundColor: a.bg }]}>
                 <Ionicons name={`${a.icon}-outline`} size={22} color={a.color} />
               </View>
@@ -535,6 +614,139 @@ export default function DoctorHomeScreen({ navigation }) {
 
       <View style={{ height: 32 }} />
     </ScrollView>
+
+    {/* ── E-Pharmacy Modal ── */}
+    <Modal
+      visible={showEPharmacyModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowEPharmacyModal(false)}
+    >
+      <View style={eph.overlay}>
+        <View style={eph.card}>
+          {/* Header */}
+          <View style={eph.header}>
+            <View style={eph.headerIconWrap}>
+              <Ionicons name="storefront-outline" size={22} color="#0f766e" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={eph.title}>Add E-Pharmacy</Text>
+              <Text style={eph.subtitle}>Assign a pharmacy to your patients</Text>
+            </View>
+            <TouchableOpacity style={eph.closeBtn} onPress={() => setShowEPharmacyModal(false)}>
+              <Ionicons name="close" size={20} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+            {/* Pharmacy details */}
+            <View style={eph.sectionBlock}>
+              <Text style={eph.sectionLabel}>Pharmacy Details</Text>
+              <TextInput
+                style={eph.input}
+                placeholder="Pharmacy name *"
+                placeholderTextColor="#94a3b8"
+                value={pharmacyForm.name}
+                onChangeText={v => setPharmacyForm(p => ({ ...p, name: v }))}
+              />
+              <TextInput
+                style={[eph.input, { marginTop: 8 }]}
+                placeholder="Address (optional)"
+                placeholderTextColor="#94a3b8"
+                value={pharmacyForm.address}
+                onChangeText={v => setPharmacyForm(p => ({ ...p, address: v }))}
+              />
+              <TextInput
+                style={[eph.input, { marginTop: 8 }]}
+                placeholder="Phone number (optional)"
+                placeholderTextColor="#94a3b8"
+                keyboardType="phone-pad"
+                value={pharmacyForm.phone}
+                onChangeText={v => setPharmacyForm(p => ({ ...p, phone: v }))}
+              />
+            </View>
+
+            {/* Patient selection */}
+            <View style={eph.sectionBlock}>
+              <View style={eph.patientSectionHeader}>
+                <Text style={eph.sectionLabel}>Select Patients</Text>
+                {selectedPatientIds.size > 0 && (
+                  <View style={eph.selectionBadge}>
+                    <Text style={eph.selectionBadgeText}>{selectedPatientIds.size} selected</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Search */}
+              <View style={eph.searchBar}>
+                <Ionicons name="search-outline" size={15} color="#94a3b8" />
+                <TextInput
+                  style={eph.searchInput}
+                  placeholder="Search patients…"
+                  placeholderTextColor="#94a3b8"
+                  value={ephSearch}
+                  onChangeText={setEphSearch}
+                />
+              </View>
+
+              {allPatients.length === 0 ? (
+                <View style={eph.emptyPatients}>
+                  <Ionicons name="people-outline" size={32} color="#cbd5e1" />
+                  <Text style={eph.emptyPatientsText}>No patients found</Text>
+                </View>
+              ) : (
+                ephPatients.map(p => {
+                  const isSelected = selectedPatientIds.has(p.id);
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[eph.patientRow, isSelected && eph.patientRowSelected]}
+                      onPress={() => togglePatient(p.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[eph.patientAvatar, isSelected && eph.patientAvatarSelected]}>
+                        <Text style={[eph.patientAvatarText, isSelected && { color: '#fff' }]}>
+                          {(p.name || 'P')[0].toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={[eph.patientName, isSelected && eph.patientNameSelected]}>{p.name}</Text>
+                      <View style={[eph.checkbox, isSelected && eph.checkboxSelected]}>
+                        {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+
+            {/* Save button */}
+            <TouchableOpacity
+              style={[eph.saveBtn, (savingPharmacy || selectedPatientIds.size === 0) && { opacity: 0.6 }]}
+              onPress={saveEPharmacy}
+              disabled={savingPharmacy || selectedPatientIds.size === 0}
+              activeOpacity={0.8}
+            >
+              {savingPharmacy ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="storefront-outline" size={18} color="#fff" />
+                  <Text style={eph.saveBtnText}>
+                    {selectedPatientIds.size > 0
+                      ? `Add to ${selectedPatientIds.size} Patient${selectedPatientIds.size > 1 ? 's' : ''}`
+                      : 'Select patients first'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <View style={{ height: 24 }} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -673,4 +885,86 @@ const styles = StyleSheet.create({
   donutLegendDot: { width: 12, height: 12, borderRadius: 6 },
   donutLegendLabel: { flex: 1, fontSize: 13, color: DoctorColors.textSecondary },
   donutLegendValue: { fontSize: 16, fontWeight: '800', color: DoctorColors.text },
+});
+
+// ── E-Pharmacy modal styles ──────────────────────────────────────────────────
+const eph = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'flex-end' },
+  card: {
+    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 20, paddingTop: 16, maxHeight: '90%',
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingBottom: 14, marginBottom: 4,
+    borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+  },
+  headerIconWrap: {
+    width: 42, height: 42, borderRadius: 12,
+    backgroundColor: '#ccfbf1', justifyContent: 'center', alignItems: 'center',
+  },
+  title: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  subtitle: { fontSize: 12, color: '#64748b', marginTop: 1 },
+  closeBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center',
+  },
+
+  sectionBlock: {
+    marginTop: 16, padding: 14, backgroundColor: '#f8fafc',
+    borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  sectionLabel: { fontSize: 13, fontWeight: '700', color: '#0f172a', marginBottom: 10 },
+  patientSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  selectionBadge: {
+    backgroundColor: '#0f766e', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3,
+  },
+  selectionBadgeText: { fontSize: 11, color: '#fff', fontWeight: '700' },
+
+  input: {
+    backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e2e8f0',
+    borderRadius: 10, paddingHorizontal: 13, paddingVertical: 11,
+    fontSize: 14, color: '#0f172a',
+  },
+
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e2e8f0',
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
+    marginBottom: 10,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: '#0f172a' },
+
+  patientRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 10, paddingHorizontal: 10, borderRadius: 10,
+    marginBottom: 4, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  patientRowSelected: {
+    backgroundColor: '#f0fdfa', borderColor: '#5eead4',
+  },
+  patientAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: DoctorColors.primaryLight,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  patientAvatarSelected: { backgroundColor: '#0f766e' },
+  patientAvatarText: { fontSize: 14, fontWeight: '700', color: DoctorColors.primary },
+  patientName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#334155' },
+  patientNameSelected: { color: '#0f766e' },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2,
+    borderColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center',
+  },
+  checkboxSelected: { backgroundColor: '#0f766e', borderColor: '#0f766e' },
+
+  emptyPatients: { alignItems: 'center', paddingVertical: 24, gap: 8 },
+  emptyPatientsText: { fontSize: 13, color: '#94a3b8' },
+
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#0f766e', borderRadius: 14, padding: 15, marginTop: 16,
+  },
+  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

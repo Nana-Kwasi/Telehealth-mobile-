@@ -14,7 +14,7 @@ import {
 import { DoctorColors } from '../../constants/colors';
 
 const TODAY = new Date().toISOString().split('T')[0];
-const TABS = ['Overview', 'Appointments', 'Notes', 'Prescriptions', 'Patient Info', 'Daily Feeling'];
+const TABS = ['Overview', 'Appointments', 'Notes', 'Prescriptions', 'E-Pharmacy', 'Patient Info', 'Daily Feeling'];
 
 const NOTE_TYPES = [
   { value: 'consultation', label: 'Consultation', color: '#1e6bb8', bg: '#dbeafe' },
@@ -39,6 +39,20 @@ function getInitials(name) {
   return p.length >= 2 ? (p[0][0] + p[p.length-1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
 }
 
+function RestrictedBanner({ section }) {
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 60, paddingHorizontal: 24 }}>
+      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#fef2f2', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 1.5, borderColor: '#fecaca' }}>
+        <Ionicons name="lock-closed" size={28} color="#dc2626" />
+      </View>
+      <Text style={{ fontSize: 16, fontWeight: '800', color: '#0f172a', textAlign: 'center', marginBottom: 8 }}>Access Restricted</Text>
+      <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 20 }}>
+        This patient has restricted doctor access to their {section}.{'\n'}This data is hidden based on their privacy settings.
+      </Text>
+    </View>
+  );
+}
+
 export default function DoctorPatientDetailScreen({ route, navigation }) {
   const { patientId, patientName } = route.params || {};
 
@@ -47,6 +61,8 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
 
   const [patient, setPatient] = useState({ id: patientId, name: patientName || 'Patient' });
   const [patientProfile, setPatientProfile] = useState(null);
+  const [latestVitals, setLatestVitals] = useState(null);
+  const [pharmacies, setPharmacies] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [notes, setNotes] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
@@ -82,6 +98,16 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
   const [showDischarge, setShowDischarge] = useState(false);
   const [dischargeReason, setDischargeReason] = useState('');
   const [discharging, setDischarging] = useState(false);
+
+  // Patient status management
+  const [patientStatus, setPatientStatus] = useState('active');
+  const [changingStatus, setChangingStatus] = useState(false);
+
+  // Data sharing permissions (from patient's privacy settings)
+  const [dataSharing, setDataSharing] = useState({});
+
+  // Self-discharge requests submitted by the patient
+  const [selfDischargeRequest, setSelfDischargeRequest] = useState(null);
 
   useEffect(() => { loadAll(); }, [patientId]);
 
@@ -143,13 +169,17 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         }
       } catch {}
 
-      // Patient profile (insurance, emergency, health records)
+      // Patient profile (insurance, emergency, health records, vitals, pharmacies)
       try {
         const ppSnap = await getDoc(doc(db, 'patientProfiles', patientId));
         if (ppSnap.exists()) {
           const ppData = ppSnap.data();
           setPatientProfile(ppData);
           setHealthRecords(ppData.healthRecords || []);
+          setLatestVitals(ppData.vitals?.latest || null);
+          setPharmacies(ppData.pharmacies || []);
+          setPatientStatus(ppData.status || 'active');
+          setDataSharing(ppData.privacy?.dataSharing || {});
         }
       } catch {}
 
@@ -157,6 +187,20 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
       try {
         const intakeSnap = await getDoc(doc(db, 'patientIntake', patientId));
         if (intakeSnap.exists()) setIntakeData(intakeSnap.data());
+      } catch {}
+
+      // Self-discharge request
+      try {
+        const disSnap = await getDocs(query(
+          collection(db, 'dischargeRequests'),
+          where('patientId', '==', patientId)
+        ));
+        if (!disSnap.empty) {
+          const sorted = disSnap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+          setSelfDischargeRequest(sorted[0]);
+        }
       } catch {}
 
       // Daily feelings
@@ -374,11 +418,89 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.patientName}>{patient.name}</Text>
           {patient.email ? <Text style={styles.patientEmail}>{patient.email}</Text> : null}
+          {/* Patient Panel status badge */}
+          <View style={{ flexDirection: 'row', marginTop: 4, gap: 6 }}>
+            {(() => {
+              const smap = { active: ['#f0fdf4','#15803d'], inactive: ['#fff7ed','#c2410c'], discharged: ['#fef2f2','#b91c1c'] };
+              const [bg, color] = smap[patientStatus] || smap.active;
+              const label = patientStatus.charAt(0).toUpperCase() + patientStatus.slice(1);
+              return <View style={{ backgroundColor: bg, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 }}><Text style={{ fontSize: 11, fontWeight: '700', color }}>{label}</Text></View>;
+            })()}
+          </View>
         </View>
-        <TouchableOpacity style={styles.dischargeBtn} onPress={() => setShowDischarge(true)}>
-          <Ionicons name="exit-outline" size={14} color="#be123c" />
-          <Text style={styles.dischargeBtnText}>Discharge</Text>
-        </TouchableOpacity>
+        {/* Status + Discharge buttons */}
+        <View style={{ gap: 6, alignItems: 'flex-end' }}>
+          {patientStatus === 'active' && (
+            <TouchableOpacity
+              style={[styles.dischargeBtn, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
+              disabled={changingStatus}
+              onPress={() => {
+                Alert.alert('Set Inactive', `Set ${patient.name} to Inactive?`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Set Inactive', onPress: async () => {
+                    setChangingStatus(true);
+                    try {
+                      await setDoc(doc(db, 'patientProfiles', patientId), { status: 'inactive', updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid }, { merge: true });
+                      setPatientStatus('inactive');
+                    } catch { Alert.alert('Error', 'Could not update status.'); }
+                    finally { setChangingStatus(false); }
+                  }},
+                ]);
+              }}
+            >
+              <Ionicons name="pause-circle-outline" size={14} color="#c2410c" />
+              <Text style={[styles.dischargeBtnText, { color: '#c2410c' }]}>{changingStatus ? '…' : 'Inactive'}</Text>
+            </TouchableOpacity>
+          )}
+          {patientStatus === 'inactive' && (
+            <TouchableOpacity
+              style={[styles.dischargeBtn, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}
+              disabled={changingStatus}
+              onPress={() => {
+                Alert.alert('Reactivate', `Set ${patient.name} back to Active?`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Activate', onPress: async () => {
+                    setChangingStatus(true);
+                    try {
+                      await setDoc(doc(db, 'patientProfiles', patientId), { status: 'active', updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid }, { merge: true });
+                      setPatientStatus('active');
+                    } catch { Alert.alert('Error', 'Could not update status.'); }
+                    finally { setChangingStatus(false); }
+                  }},
+                ]);
+              }}
+            >
+              <Ionicons name="play-circle-outline" size={14} color="#15803d" />
+              <Text style={[styles.dischargeBtnText, { color: '#15803d' }]}>{changingStatus ? '…' : 'Activate'}</Text>
+            </TouchableOpacity>
+          )}
+          {patientStatus === 'discharged' && (
+            <TouchableOpacity
+              style={[styles.dischargeBtn, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}
+              disabled={changingStatus}
+              onPress={() => {
+                Alert.alert('Reactivate', `Reactivate ${patient.name} as Active?`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Reactivate', onPress: async () => {
+                    setChangingStatus(true);
+                    try {
+                      await setDoc(doc(db, 'patientProfiles', patientId), { status: 'active', updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid }, { merge: true });
+                      setPatientStatus('active');
+                    } catch { Alert.alert('Error', 'Could not update status.'); }
+                    finally { setChangingStatus(false); }
+                  }},
+                ]);
+              }}
+            >
+              <Ionicons name="refresh-circle-outline" size={14} color="#15803d" />
+              <Text style={[styles.dischargeBtnText, { color: '#15803d' }]}>{changingStatus ? '…' : 'Reactivate'}</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.dischargeBtn} onPress={() => setShowDischarge(true)}>
+            <Ionicons name="exit-outline" size={14} color="#be123c" />
+            <Text style={styles.dischargeBtnText}>Discharge</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Stats Row */}
@@ -469,7 +591,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
 
         {/* ── APPOINTMENTS ── */}
         {activeTab === 'Appointments' && (
-          <>
+          dataSharing.appointments === false ? <RestrictedBanner section="appointment history" /> : <>
             {appointments.length === 0 && <Text style={styles.emptyText}>No appointments with this patient yet</Text>}
             {appointments.map(appt => {
               const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.pending;
@@ -574,7 +696,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
 
         {/* ── PRESCRIPTIONS ── */}
         {activeTab === 'Prescriptions' && (
-          <>
+          dataSharing.prescriptions === false ? <RestrictedBanner section="prescriptions" /> : <>
             <TouchableOpacity style={styles.addRowBtn} onPress={() => setShowRxForm(v => !v)}>
               <Ionicons name={showRxForm ? 'chevron-up-outline' : 'add-circle-outline'} size={18} color={DoctorColors.primary} />
               <Text style={styles.addRowBtnText}>{showRxForm ? 'Close Form' : 'Issue Prescription'}</Text>
@@ -651,9 +773,92 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
           </>
         )}
 
+        {/* ── E-PHARMACY ── */}
+        {activeTab === 'E-Pharmacy' && (
+          <>
+            <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Patient Pharmacies</Text>
+            {pharmacies.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Ionicons name="storefront-outline" size={40} color="#cbd5e1" />
+                <Text style={styles.emptyText}>Patient has no pharmacies added</Text>
+              </View>
+            ) : (
+              pharmacies.map((ph, i) => (
+                <View key={i} style={[styles.miniCard, { borderLeftWidth: 3, borderLeftColor: '#7c3aed' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.miniCardTitle}>{ph.name}</Text>
+                    {ph.location ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <Ionicons name="location-outline" size={12} color="#94a3b8" />
+                        <Text style={styles.miniCardSub}>{ph.location}</Text>
+                      </View>
+                    ) : null}
+                    {ph.contact ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <Ionicons name="call-outline" size={12} color="#94a3b8" />
+                        <Text style={styles.miniCardSub}>{ph.contact}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#f5f3ff', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#ddd6fe' }}
+                    onPress={() => {
+                      if (prescriptions.length === 0) { Alert.alert('No Prescriptions', 'Issue a prescription first.'); return; }
+                      Alert.alert('Send Prescription', `Send the latest prescription to ${ph.name}?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Send', onPress: async () => {
+                            const latestRx = prescriptions[0];
+                            try {
+                              await updateDoc(doc(db, 'doctorPrescriptions', latestRx.id), {
+                                pharmacy: { id: ph.name, name: ph.name, location: ph.location || '', contact: ph.contact || '' },
+                                pharmacyStatus: 'sent',
+                                sentToPharmacyAt: serverTimestamp(),
+                              });
+                              Alert.alert('Sent', `Prescription sent to ${ph.name}.`);
+                            } catch { Alert.alert('Error', 'Could not send prescription.'); }
+                          }
+                        }
+                      ]);
+                    }}
+                  >
+                    <Ionicons name="send-outline" size={16} color="#7c3aed" />
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+            <View style={{ marginTop: 16, padding: 12, backgroundColor: '#f5f3ff', borderRadius: 10, borderWidth: 1, borderColor: '#ddd6fe' }}>
+              <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: '600' }}>
+                Tap the send icon to forward the most recent prescription to a pharmacy.
+              </Text>
+            </View>
+          </>
+        )}
+
         {/* ── PATIENT INFO ── */}
         {activeTab === 'Patient Info' && (
           <>
+            {/* Self-Discharge Request Alert */}
+            {selfDischargeRequest && (
+              <View style={{ backgroundColor: '#fff7ed', borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1.5, borderColor: '#fed7aa' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <Ionicons name="warning" size={18} color="#d97706" />
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#92400e' }}>Patient Self-Discharge Request</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: '#78350f', marginBottom: 6, lineHeight: 19 }}>
+                  <Text style={{ fontWeight: '700' }}>Reason: </Text>{selfDischargeRequest.reason || '—'}
+                </Text>
+                {selfDischargeRequest.message ? (
+                  <Text style={{ fontSize: 12, color: '#92400e', marginBottom: 6 }}>{selfDischargeRequest.message}</Text>
+                ) : null}
+                {selfDischargeRequest.submittedAt?.seconds ? (
+                  <Text style={{ fontSize: 11, color: '#b45309' }}>
+                    Submitted: {new Date(selfDischargeRequest.submittedAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
             {/* Health Info */}
             <Text style={styles.sectionTitle}>Health Information</Text>
             <View style={styles.infoCard}>
@@ -669,6 +874,56 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                 </View>
               ))}
             </View>
+
+            {/* Latest Vitals */}
+            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Latest Vitals</Text>
+            {latestVitals ? (
+              <View style={[styles.infoCard, { borderLeftWidth: 3, borderLeftColor: '#dc2626' }]}>
+                {latestVitals.recordedAt?.seconds && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Recorded</Text>
+                    <Text style={[styles.infoValue, { fontSize: 11, color: '#94a3b8' }]}>
+                      {new Date(latestVitals.recordedAt.seconds * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                )}
+                {(latestVitals.bpSystolic || latestVitals.bpDiastolic) && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Blood Pressure</Text>
+                    <Text style={styles.infoValue}>{latestVitals.bpSystolic || '—'} / {latestVitals.bpDiastolic || '—'} mmHg</Text>
+                  </View>
+                )}
+                {latestVitals.heartRate && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Heart Rate</Text>
+                    <Text style={styles.infoValue}>{latestVitals.heartRate} bpm</Text>
+                  </View>
+                )}
+                {latestVitals.respiratoryRate && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Respiratory Rate</Text>
+                    <Text style={styles.infoValue}>{latestVitals.respiratoryRate} breaths/min</Text>
+                  </View>
+                )}
+                {latestVitals.spo2 && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>SpO2</Text>
+                    <Text style={styles.infoValue}>{latestVitals.spo2}%</Text>
+                  </View>
+                )}
+                {latestVitals.temperature && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Temperature</Text>
+                    <Text style={styles.infoValue}>{latestVitals.temperature} °{latestVitals.tempUnit || 'C'}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={[styles.infoCard, { alignItems: 'center', paddingVertical: 20 }]}>
+                <Ionicons name="pulse-outline" size={28} color="#cbd5e1" />
+                <Text style={{ fontSize: 13, color: '#94a3b8', marginTop: 6 }}>No vitals recorded yet</Text>
+              </View>
+            )}
 
             {/* Insurance */}
             {patientProfile?.insurance && (
@@ -715,7 +970,12 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             )}
 
             {/* Health Records / Medical Files */}
-            {healthRecords.length > 0 && (
+            {dataSharing.records === false ? (
+              <View style={{ marginTop: 16, backgroundColor: '#fef2f2', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#fecaca', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="lock-closed" size={16} color="#dc2626" />
+                <Text style={{ fontSize: 13, color: '#b91c1c', fontWeight: '600', flex: 1 }}>Health records are restricted by this patient's privacy settings.</Text>
+              </View>
+            ) : healthRecords.length > 0 ? (
               <>
                 <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Health Records & Medical Files</Text>
                 {healthRecords.map((rec, i) => (
@@ -739,7 +999,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   </View>
                 ))}
               </>
-            )}
+            ) : null}
 
             {!patient.bloodType && !patientProfile && healthRecords.length === 0 && !intakeData && (
               <Text style={styles.emptyText}>No additional patient information available</Text>
@@ -748,7 +1008,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         )}
         {/* ── DAILY FEELING ── */}
         {activeTab === 'Daily Feeling' && (
-          <>
+          dataSharing.labResults === false ? <RestrictedBanner section="daily health check-ins" /> : <>
             {dailyFeelings.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 60 }}>
                 <Ionicons name="happy-outline" size={52} color="#cbd5e1" />

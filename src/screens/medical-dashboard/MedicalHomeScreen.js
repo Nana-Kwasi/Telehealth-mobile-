@@ -2,15 +2,17 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Image, Dimensions,
-  Modal, TextInput, Alert, KeyboardAvoidingView, Platform,
+  Modal, TextInput, Alert, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../services/firebaseConfig';
-import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
 import { fetchClientAppointments, fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+
+const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
 const SCREEN_WIDTH = Dimensions.get('window').width - 32;
 
@@ -66,6 +68,16 @@ const MedicalHomeScreen = ({ navigation }) => {
   const [feelingForm, setFeelingForm] = useState({ mood: '', painLevel: '', symptoms: '', medications: '', notes: '' });
   const [submittingFeeling, setSubmittingFeeling] = useState(false);
 
+  // Vitals modal
+  const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [vitalsForm, setVitalsForm] = useState({ ...EMPTY_VITALS });
+  const [submittingVitals, setSubmittingVitals] = useState(false);
+
+  // Quick log dropdown (+ button)
+  const [hasLoggedVitals, setHasLoggedVitals] = useState(false);
+  const [showLogDropdown, setShowLogDropdown] = useState(false);
+  const [latestFeeling, setLatestFeeling] = useState(null);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -101,10 +113,27 @@ const MedicalHomeScreen = ({ navigation }) => {
         setAppointments(appts);
         setPrescriptions(rxs);
 
-        // Fetch patient status
+        // Fetch patient status + check if vitals already logged
         try {
           const profSnap = await getDoc(doc(db, 'patientProfiles', clientId));
-          if (profSnap.exists()) setPatientStatus(profSnap.data().status || 'active');
+          if (profSnap.exists()) {
+            const pd = profSnap.data();
+            setPatientStatus(pd.status || 'active');
+            setHasLoggedVitals(!!pd.vitals?.latest);
+          }
+        } catch (_) {}
+
+        // Load latest daily feeling for pre-fill
+        try {
+          const feelSnap = await getDocs(query(
+            collection(db, 'patientDailyFeelings'),
+            where('patientId', '==', clientId)
+          ));
+          if (!feelSnap.empty) {
+            const sorted = feelSnap.docs.map(d => d.data())
+              .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            setLatestFeeling(sorted[0]);
+          }
         } catch (_) {}
 
         // Derive primary doctor from most recent non-cancelled appointment
@@ -187,11 +216,66 @@ const MedicalHomeScreen = ({ navigation }) => {
         createdAt: serverTimestamp(),
       });
       await AsyncStorage.setItem('lastDailyFeeling', String(Date.now()));
+      // Update latestFeeling so next open is pre-filled with what was just submitted
+      setLatestFeeling({
+        mood: feelingForm.mood,
+        painLevel: parseInt(feelingForm.painLevel) || 0,
+        symptoms: feelingForm.symptoms.split(',').map(s => s.trim()).filter(Boolean),
+        medications: feelingForm.medications,
+        notes: feelingForm.notes,
+      });
       setShowFeelingModal(false);
       setFeelingForm({ mood: '', painLevel: '', symptoms: '', medications: '', notes: '' });
       Alert.alert('Thank you!', 'Your daily check-in has been recorded and shared with your doctor.');
     } catch { Alert.alert('Error', 'Could not submit. Please try again.'); }
     finally { setSubmittingFeeling(false); }
+  };
+
+  const submitVitals = async () => {
+    const hasData = Object.entries(vitalsForm).some(([k, v]) => k !== 'tempUnit' && v.trim() !== '');
+    if (!hasData) { Alert.alert('Required', 'Please enter at least one vital sign.'); return; }
+    setSubmittingVitals(true);
+    try {
+      const uid = auth.currentUser?.uid;
+      const payload = {
+        bpSystolic: vitalsForm.bpSystolic.trim(),
+        bpDiastolic: vitalsForm.bpDiastolic.trim(),
+        heartRate: vitalsForm.heartRate.trim(),
+        respiratoryRate: vitalsForm.respiratoryRate.trim(),
+        spo2: vitalsForm.spo2.trim(),
+        temperature: vitalsForm.temperature.trim(),
+        tempUnit: vitalsForm.tempUnit,
+        recordedAt: serverTimestamp(),
+      };
+      await setDoc(
+        doc(db, 'patientProfiles', uid),
+        { vitals: { latest: payload }, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+      setHasLoggedVitals(true);
+      setShowVitalsModal(false);
+      setVitalsForm({ ...EMPTY_VITALS });
+      Alert.alert('Saved', 'Your vitals have been recorded and shared with your doctor.');
+    } catch { Alert.alert('Error', 'Could not save vitals. Please try again.'); }
+    finally { setSubmittingVitals(false); }
+  };
+
+  const openDailyCheckIn = () => {
+    setShowLogDropdown(false);
+    if (latestFeeling) {
+      setFeelingForm({
+        mood: latestFeeling.mood || '',
+        painLevel: latestFeeling.painLevel != null ? String(latestFeeling.painLevel) : '',
+        symptoms: Array.isArray(latestFeeling.symptoms)
+          ? latestFeeling.symptoms.join(', ')
+          : (latestFeeling.symptoms || ''),
+        medications: latestFeeling.medications || '',
+        notes: latestFeeling.notes || '',
+      });
+    } else {
+      setFeelingForm({ mood: '', painLevel: '', symptoms: '', medications: '', notes: '' });
+    }
+    setShowFeelingModal(true);
   };
 
   const onRefresh = async () => {
@@ -261,6 +345,7 @@ const MedicalHomeScreen = ({ navigation }) => {
     { icon: 'documents-outline', label: 'Records', color: MedicalColors.success, bg: '#f0fdf4', onPress: () => navigation.getParent()?.navigate('HealthRecords') },
     { icon: 'alert-circle-outline', label: 'Support', color: '#dc2626', bg: '#fef2f2', onPress: () => navigation.getParent()?.navigate('Support') },
     { icon: 'settings-outline', label: 'Settings', color: '#64748b', bg: '#f1f5f9', onPress: () => navigation.navigate('MedicalSettings') },
+    { icon: 'medical-outline', label: 'E-Pharmacy', color: '#7c3aed', bg: '#ede9fe', onPress: () => navigation.getParent()?.navigate('EPharmacy') },
   ];
 
   if (isLoading) {
@@ -341,6 +426,75 @@ const MedicalHomeScreen = ({ navigation }) => {
           </View>
         </TouchableOpacity>
       )}
+
+      {/* Vitals row — big button (first time only) + always-visible "+" quick log button */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, zIndex: 50 }}>
+        {!hasLoggedVitals ? (
+          <TouchableOpacity style={[styles.vitalsBtn, { flex: 1, marginBottom: 0 }]} onPress={() => setShowVitalsModal(true)} activeOpacity={0.85}>
+            <View style={styles.vitalsBtnIcon}>
+              <Ionicons name="pulse" size={22} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.vitalsBtnTitle}>Log Your Vitals</Text>
+              <Text style={styles.vitalsBtnSub}>Blood pressure, heart rate, SpO2, temperature</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#fff" />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f0fdf4', borderRadius: 14, padding: 12, borderWidth: 1.5, borderColor: '#bbf7d0' }}>
+            <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#15803d' }}>Vitals logged</Text>
+              <Text style={{ fontSize: 11, color: '#86efac', marginTop: 1 }}>Tap + to update your readings</Text>
+            </View>
+          </View>
+        )}
+
+        {/* + Quick Log dropdown button */}
+        <View style={{ position: 'relative' }}>
+          <TouchableOpacity
+            style={styles.plusLogBtn}
+            onPress={() => setShowLogDropdown(v => !v)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name={showLogDropdown ? 'close' : 'add'} size={22} color="#fff" />
+          </TouchableOpacity>
+
+          {showLogDropdown && (
+            <View style={styles.logDropdown}>
+              <TouchableOpacity
+                style={styles.logDropdownItem}
+                onPress={() => { setShowLogDropdown(false); setShowVitalsModal(true); }}
+                activeOpacity={0.7}
+              >
+                <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: '#fef2f2', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="pulse-outline" size={16} color="#dc2626" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.logDropdownTitle}>Log Vitals</Text>
+                  <Text style={styles.logDropdownSub}>Update your readings</Text>
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.logDropdownDivider} />
+
+              <TouchableOpacity
+                style={styles.logDropdownItem}
+                onPress={openDailyCheckIn}
+                activeOpacity={0.7}
+              >
+                <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="happy-outline" size={16} color={MedicalColors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.logDropdownTitle}>Log Daily Check-In</Text>
+                  <Text style={styles.logDropdownSub}>{latestFeeling ? 'Pre-filled from last entry' : 'How are you feeling?'}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
 
       {/* Tell doctor what's wrong — for patients who skipped onboarding */}
       {showIntakeBtn && primaryDoctor && (
@@ -612,20 +766,20 @@ const MedicalHomeScreen = ({ navigation }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, { height: '88%' }]}>
           {/* Fixed header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+          <View style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
             <Ionicons name="chatbubble-ellipses" size={20} color="#dc2626" />
             <Text style={styles.modalTitle}>Tell Your Doctor What's Wrong</Text>
             <TouchableOpacity onPress={() => setShowIntakeModal(false)} style={{ marginLeft: 'auto' }}>
               <Ionicons name="close" size={22} color="#64748b" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.modalSub}>Describe your symptoms so Dr. {primaryDoctor?.name} can prepare for your visit.</Text>
+          <Text style={[styles.modalSub, { flexShrink: 0 }]}>Describe your symptoms so Dr. {primaryDoctor?.name} can prepare for your visit.</Text>
 
           {/* Scrollable fields */}
           <ScrollView
-            style={{ maxHeight: '75%' }}
+            style={{ flex: 1 }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -654,11 +808,68 @@ const MedicalHomeScreen = ({ navigation }) => {
 
           {/* Fixed submit button */}
           <TouchableOpacity
-            style={[styles.modalSubmitBtn, { marginTop: 12 }, submittingIntake && { opacity: 0.6 }]}
+            style={[styles.modalSubmitBtn, { marginTop: 12, flex: 0 }, submittingIntake && { opacity: 0.6 }]}
             onPress={submitIntake}
             disabled={submittingIntake}
           >
             {submittingIntake ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.modalSubmitText}>Submit to Doctor</Text>}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+
+    {/* Vitals Modal */}
+    <Modal visible={showVitalsModal} transparent animationType="slide" onRequestClose={() => setShowVitalsModal(false)}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
+        <View style={[styles.modalCard, { height: '88%' }]}>
+          <View style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+            <Ionicons name="pulse" size={20} color="#dc2626" />
+            <Text style={[styles.modalTitle, { color: '#dc2626' }]}>  Log Vitals</Text>
+            <TouchableOpacity onPress={() => setShowVitalsModal(false)} style={{ marginLeft: 'auto' }}>
+              <Ionicons name="close" size={22} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.modalSub, { flexShrink: 0 }]}>Your readings will be shared with your doctor.</Text>
+
+          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {/* Blood Pressure */}
+            <Text style={[styles.modalFieldLabel, { marginTop: 10, color: '#dc2626', fontWeight: '700' }]}>Blood Pressure</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalFieldLabel}>Systolic (mmHg)</Text>
+                <TextInput style={styles.modalInput} placeholder="120" placeholderTextColor="#94a3b8" keyboardType="numeric" value={vitalsForm.bpSystolic} onChangeText={v => setVitalsForm(p => ({ ...p, bpSystolic: v }))} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalFieldLabel}>Diastolic (mmHg)</Text>
+                <TextInput style={styles.modalInput} placeholder="80" placeholderTextColor="#94a3b8" keyboardType="numeric" value={vitalsForm.bpDiastolic} onChangeText={v => setVitalsForm(p => ({ ...p, bpDiastolic: v }))} />
+              </View>
+            </View>
+
+            <Text style={styles.modalFieldLabel}>Heart Rate (bpm)</Text>
+            <TextInput style={styles.modalInput} placeholder="72" placeholderTextColor="#94a3b8" keyboardType="numeric" value={vitalsForm.heartRate} onChangeText={v => setVitalsForm(p => ({ ...p, heartRate: v }))} />
+
+            <Text style={styles.modalFieldLabel}>Respiratory Rate (breaths/min)</Text>
+            <TextInput style={styles.modalInput} placeholder="16" placeholderTextColor="#94a3b8" keyboardType="numeric" value={vitalsForm.respiratoryRate} onChangeText={v => setVitalsForm(p => ({ ...p, respiratoryRate: v }))} />
+
+            <Text style={styles.modalFieldLabel}>Oxygen Saturation / SpO2 (%)</Text>
+            <TextInput style={styles.modalInput} placeholder="98" placeholderTextColor="#94a3b8" keyboardType="numeric" value={vitalsForm.spo2} onChangeText={v => setVitalsForm(p => ({ ...p, spo2: v }))} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+              <Text style={styles.modalFieldLabel}>Temperature</Text>
+              <View style={{ flexDirection: 'row', backgroundColor: '#f1f5f9', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden' }}>
+                {['C', 'F'].map(u => (
+                  <TouchableOpacity key={u} style={[{ paddingVertical: 4, paddingHorizontal: 12 }, vitalsForm.tempUnit === u && { backgroundColor: '#dc2626' }]} onPress={() => setVitalsForm(p => ({ ...p, tempUnit: u }))}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: vitalsForm.tempUnit === u ? '#fff' : '#94a3b8' }}>°{u}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <TextInput style={styles.modalInput} placeholder={vitalsForm.tempUnit === 'C' ? '37.2' : '98.9'} placeholderTextColor="#94a3b8" keyboardType="decimal-pad" value={vitalsForm.temperature} onChangeText={v => setVitalsForm(p => ({ ...p, temperature: v }))} />
+            <View style={{ height: 8 }} />
+          </ScrollView>
+
+          <TouchableOpacity style={[styles.modalSubmitBtn, { backgroundColor: '#dc2626', marginTop: 12, flex: 0 }, submittingVitals && { opacity: 0.6 }]} onPress={submitVitals} disabled={submittingVitals}>
+            {submittingVitals ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.modalSubmitText}>Save Vitals</Text>}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -671,20 +882,22 @@ const MedicalHomeScreen = ({ navigation }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, { height: '90%' }]}>
           {/* Fixed header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <View style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
             <Ionicons name="happy-outline" size={20} color={MedicalColors.primary} />
             <Text style={styles.modalTitle}>Daily Check-In</Text>
             <TouchableOpacity onPress={() => setShowFeelingModal(false)} style={{ marginLeft: 'auto' }}>
               <Ionicons name="close" size={22} color="#64748b" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.modalSub}>Tell your doctor how you're feeling today.</Text>
+          <Text style={[styles.modalSub, { flexShrink: 0 }]}>
+            {latestFeeling ? 'Pre-filled from your last check-in — update and submit a new entry.' : 'Tell your doctor how you\'re feeling today.'}
+          </Text>
 
           {/* Scrollable fields */}
           <ScrollView
-            style={{ maxHeight: '75%' }}
+            style={{ flex: 1 }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -1208,9 +1421,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Intake button
+  vitalsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#dc2626', borderRadius: 14, padding: 14, marginBottom: 12,
+  },
+  vitalsBtnIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  vitalsBtnTitle: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  vitalsBtnSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   intakeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginHorizontal: 16, marginBottom: 12,
+    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 12,
     borderWidth: 1.5, borderColor: '#fca5a5',
   },
   intakeBtnIcon: {
@@ -1247,6 +1470,39 @@ const styles = StyleSheet.create({
   moodChipActive: { backgroundColor: MedicalColors.primary, borderColor: MedicalColors.primary },
   moodChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
   moodChipTextActive: { color: '#fff' },
+
+  // Quick log "+" button + dropdown
+  plusLogBtn: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: '#dc2626',
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#dc2626', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
+  },
+  logDropdown: {
+    position: 'absolute',
+    top: 52,
+    right: 0,
+    width: 210,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+    overflow: 'hidden',
+    zIndex: 200,
+  },
+  logDropdownItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  logDropdownTitle: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  logDropdownSub: { fontSize: 11, color: '#94a3b8', marginTop: 1 },
+  logDropdownDivider: { height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 14 },
 });
 
 export default MedicalHomeScreen;
