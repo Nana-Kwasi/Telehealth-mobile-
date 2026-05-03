@@ -31,6 +31,38 @@ export async function signInWithEmailOrUsername(identifier, password) {
 }
 
 export async function resolveRole(uid) {
+  // Check labs collection
+  const labRef = doc(db, 'labs', uid);
+  const labSnap = await getDoc(labRef);
+  if (labSnap.exists()) {
+    const data = labSnap.data();
+    return { role: 'lab', profile: { id: labSnap.id, ...data, role: 'lab' } };
+  }
+
+  // Check lab branches
+  const labBranchRef = doc(db, 'labBranches', uid);
+  const labBranchSnap = await getDoc(labBranchRef);
+  if (labBranchSnap.exists()) {
+    const data = labBranchSnap.data();
+    return { role: 'lab_branch', profile: { id: labBranchSnap.id, ...data, role: 'lab_branch' } };
+  }
+
+  // Check scan centers collection
+  const scanRef = doc(db, 'scanCenters', uid);
+  const scanSnap = await getDoc(scanRef);
+  if (scanSnap.exists()) {
+    const data = scanSnap.data();
+    return { role: 'scan', profile: { id: scanSnap.id, ...data, role: 'scan' } };
+  }
+
+  // Check scan branches
+  const scanBranchRef = doc(db, 'scanBranches', uid);
+  const scanBranchSnap = await getDoc(scanBranchRef);
+  if (scanBranchSnap.exists()) {
+    const data = scanBranchSnap.data();
+    return { role: 'scan_branch', profile: { id: scanBranchSnap.id, ...data, role: 'scan_branch' } };
+  }
+
   // Check pharmacies collection
   const pharmacyRef = doc(db, 'pharmacies', uid);
   const pharmacySnap = await getDoc(pharmacyRef);
@@ -152,6 +184,42 @@ export async function findUserByUsernameOrEmail(identifier) {
   const brQE = query(collection(db, 'pharmacyBranches'), where('email', '==', identifier));
   const brRE = await getDocs(brQE);
   if (!brRE.empty) return { id: brRE.docs[0].id, ...brRE.docs[0].data() };
+
+  // Check labs
+  const lbQ = query(collection(db, 'labs'), where('username', '==', identifier));
+  const lbR = await getDocs(lbQ);
+  if (!lbR.empty) return { id: lbR.docs[0].id, ...lbR.docs[0].data() };
+
+  const lbQE = query(collection(db, 'labs'), where('email', '==', identifier));
+  const lbRE = await getDocs(lbQE);
+  if (!lbRE.empty) return { id: lbRE.docs[0].id, ...lbRE.docs[0].data() };
+
+  // Check lab branches
+  const lbrQ = query(collection(db, 'labBranches'), where('username', '==', identifier));
+  const lbrR = await getDocs(lbrQ);
+  if (!lbrR.empty) return { id: lbrR.docs[0].id, ...lbrR.docs[0].data() };
+
+  const lbrQE = query(collection(db, 'labBranches'), where('email', '==', identifier));
+  const lbrRE = await getDocs(lbrQE);
+  if (!lbrRE.empty) return { id: lbrRE.docs[0].id, ...lbrRE.docs[0].data() };
+
+  // Check scan centers
+  const scQ = query(collection(db, 'scanCenters'), where('username', '==', identifier));
+  const scR = await getDocs(scQ);
+  if (!scR.empty) return { id: scR.docs[0].id, ...scR.docs[0].data() };
+
+  const scQE = query(collection(db, 'scanCenters'), where('email', '==', identifier));
+  const scRE = await getDocs(scQE);
+  if (!scRE.empty) return { id: scRE.docs[0].id, ...scRE.docs[0].data() };
+
+  // Check scan branches
+  const sbrQ = query(collection(db, 'scanBranches'), where('username', '==', identifier));
+  const sbrR = await getDocs(sbrQ);
+  if (!sbrR.empty) return { id: sbrR.docs[0].id, ...sbrR.docs[0].data() };
+
+  const sbrQE = query(collection(db, 'scanBranches'), where('email', '==', identifier));
+  const sbrRE = await getDocs(sbrQE);
+  if (!sbrRE.empty) return { id: sbrRE.docs[0].id, ...sbrRE.docs[0].data() };
 
   return null;
 }

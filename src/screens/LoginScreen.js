@@ -18,6 +18,7 @@ import { auth } from '../services/firebaseConfig';
 import { signInWithEmailOrUsername } from '../services/authService';
 import { fetchClientData } from '../services/clientDataService';
 import { Colors } from '../constants/colors';
+import { logAction, A } from '../utils/auditLogger';
 
 const LoginScreen = ({ navigation }) => {
   const [identifier, setIdentifier] = useState('');
@@ -47,6 +48,7 @@ const LoginScreen = ({ navigation }) => {
         setError('Unable to determine your account type. Please contact support.');
         return;
       }
+      logAction(A.LOGIN_SUCCESS, { role, identifier }, role);
 
       await AsyncStorage.setItem('userRole', role);
       await AsyncStorage.setItem('userName', profile?.name || profile?.displayName || identifier);
@@ -88,6 +90,7 @@ const LoginScreen = ({ navigation }) => {
         navigation.replace('Main');
       }
     } catch (e) {
+      logAction(A.LOGIN_FAILED, { error: e.message, identifier });
       setError(e.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);

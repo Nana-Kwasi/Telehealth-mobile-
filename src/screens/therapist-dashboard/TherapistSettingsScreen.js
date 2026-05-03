@@ -11,6 +11,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signOut, updatePassword, updateEmail } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TherapistColors } from '../../constants/colors';
+import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 
 const SPECIALIZATIONS = ['CBT','Trauma','Anxiety & Depression','Couples Therapy','Teen & Adolescent','Family Therapy','Substance Abuse','PTSD','Grief & Loss','Other'];
 const LANGUAGES = ['English','Spanish','French','Arabic','Mandarin','Portuguese','Other'];
@@ -19,6 +20,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
   const [profile, setProfile] = useState({
     name: '', email: '', phone: '', bio: '', specialization: '', experience: '',
     languages: [], photoURL: '', availabilityStatus: 'available',
+    location: '', country: '', city: '', area: '', region: '', street: '', ghanaDigitalAddress: '', latitude: null, longitude: null,
   });
   const [notifications, setNotifications] = useState({ sessionReminders: true, newMessages: true, systemUpdates: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -27,6 +29,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const { detectAddress, loading: locating, message: locationMsg } = useAddressAutofillMobile();
 
   const currentUser = auth.currentUser;
 
@@ -53,6 +56,24 @@ const TherapistSettingsScreen = ({ navigation }) => {
         bio: profile.bio,
         specialization: profile.specialization,
         experience: profile.experience,
+        location: profile.location || '',
+        country: profile.country || null,
+        city: profile.city || null,
+        area: profile.area || null,
+        region: profile.region || null,
+        street: profile.street || null,
+        ghanaDigitalAddress: profile.ghanaDigitalAddress || null,
+        latitude: Number.isFinite(Number(profile.latitude)) ? Number(profile.latitude) : null,
+        longitude: Number.isFinite(Number(profile.longitude)) ? Number(profile.longitude) : null,
+        locationMeta: {
+          country: profile.country || null,
+          city: profile.city || null,
+          area: profile.area || null,
+          region: profile.region || null,
+          street: profile.street || null,
+          latitude: Number.isFinite(Number(profile.latitude)) ? Number(profile.latitude) : null,
+          longitude: Number.isFinite(Number(profile.longitude)) ? Number(profile.longitude) : null,
+        },
         languages: profile.languages,
         availabilityStatus: profile.availabilityStatus,
         updatedAt: serverTimestamp(),
@@ -180,6 +201,47 @@ const TherapistSettingsScreen = ({ navigation }) => {
             <View>
               <Text style={styles.fieldLabel}>Phone</Text>
               <TextInput style={styles.input} value={profile.phone} onChangeText={v=>setProfile(p=>({...p,phone:v}))} placeholder="+1 (555) 000-0000" placeholderTextColor={TherapistColors.textLight} keyboardType="phone-pad" />
+            </View>
+            <View>
+              <Text style={styles.fieldLabel}>Location</Text>
+              <TextInput style={styles.input} value={profile.location || ''} onChangeText={v=>setProfile(p=>({...p,location:v}))} placeholder="City, State" placeholderTextColor={TherapistColors.textLight} />
+              <TouchableOpacity style={[styles.locBtn, { opacity: locating ? 0.7 : 1 }]} onPress={() => detectAddress((loc) => {
+                setProfile(p => ({
+                  ...p,
+                  location: loc.address || [loc.city, loc.country].filter(Boolean).join(', '),
+                  country: loc.countryCode || p.country || '',
+                  city: loc.city || p.city || '',
+                  area: loc.area || p.area || '',
+                  region: loc.region || p.region || '',
+                  street: loc.street || p.street || '',
+                  latitude: loc.latitude ?? p.latitude ?? null,
+                  longitude: loc.longitude ?? p.longitude ?? null,
+                }));
+              })} disabled={locating}>
+                <Ionicons name="locate-outline" size={14} color={TherapistColors.primary} />
+                <Text style={styles.locBtnText}>{locating ? 'Detecting location…' : 'Use current location'}</Text>
+              </TouchableOpacity>
+              {!!locationMsg && <Text style={styles.locMsg}>{locationMsg}</Text>}
+            </View>
+            <View>
+              <Text style={styles.fieldLabel}>City</Text>
+              <TextInput style={styles.input} value={profile.city || ''} onChangeText={v=>setProfile(p=>({...p,city:v}))} placeholder="e.g. Accra" placeholderTextColor={TherapistColors.textLight} />
+            </View>
+            <View>
+              <Text style={styles.fieldLabel}>Area / Locality</Text>
+              <TextInput style={styles.input} value={profile.area || ''} onChangeText={v=>setProfile(p=>({...p,area:v}))} placeholder="e.g. East Legon" placeholderTextColor={TherapistColors.textLight} />
+            </View>
+            <View>
+              <Text style={styles.fieldLabel}>Region / State</Text>
+              <TextInput style={styles.input} value={profile.region || ''} onChangeText={v=>setProfile(p=>({...p,region:v}))} placeholder="e.g. Greater Accra" placeholderTextColor={TherapistColors.textLight} />
+            </View>
+            <View>
+              <Text style={styles.fieldLabel}>Street</Text>
+              <TextInput style={styles.input} value={profile.street || ''} onChangeText={v=>setProfile(p=>({...p,street:v}))} placeholder="e.g. Liberation Road" placeholderTextColor={TherapistColors.textLight} />
+            </View>
+            <View>
+              <Text style={styles.fieldLabel}>Ghana Digital Address (optional)</Text>
+              <TextInput style={styles.input} value={profile.ghanaDigitalAddress || ''} onChangeText={v=>setProfile(p=>({...p,ghanaDigitalAddress:v}))} placeholder="e.g. GA-123-4567" placeholderTextColor={TherapistColors.textLight} />
             </View>
 
             {/* Bio */}
@@ -344,6 +406,21 @@ const styles = StyleSheet.create({
 
   saveBtn: { backgroundColor: TherapistColors.primary, borderRadius:12, paddingVertical:15, alignItems:'center' },
   saveBtnText: { color:'#fff', fontSize:15, fontWeight:'700' },
+  locBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: TherapistColors.primary + '40',
+    backgroundColor: TherapistColors.primary + '14',
+  },
+  locBtnText: { color: TherapistColors.primary, fontWeight: '700', fontSize: 12 },
+  locMsg: { marginTop: 6, color: TherapistColors.textSecondary, fontSize: 12, lineHeight: 16 },
 
   infoCard: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#fff', borderRadius:12, padding:14, borderWidth:1.5, borderColor: TherapistColors.border },
   infoCardLabel: { fontSize:12, color: TherapistColors.textLight, marginBottom:2 },

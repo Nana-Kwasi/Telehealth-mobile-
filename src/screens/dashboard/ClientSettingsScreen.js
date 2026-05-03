@@ -20,6 +20,7 @@ import { db, auth, storage } from '../../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
+import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 
 const ClientSettingsScreen = ({ navigation }) => {
   const [clientData, setClientData] = useState(null);
@@ -44,6 +45,7 @@ const ClientSettingsScreen = ({ navigation }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const { detectAddress, loading: locating, message: locationMsg } = useAddressAutofillMobile();
 
   const sections = [
     { id: 'basic', name: 'Basic Info', icon: 'person-outline' },
@@ -92,6 +94,23 @@ const ClientSettingsScreen = ({ navigation }) => {
         name: clientData.name,
         email: clientData.email,
         phone: clientData.phone || '',
+        country: clientData.country || '',
+        city: clientData.city || '',
+        area: clientData.area || '',
+        region: clientData.region || '',
+        street: clientData.street || '',
+        ghanaDigitalAddress: clientData.ghanaDigitalAddress || '',
+        latitude: Number.isFinite(Number(clientData.latitude)) ? Number(clientData.latitude) : null,
+        longitude: Number.isFinite(Number(clientData.longitude)) ? Number(clientData.longitude) : null,
+        locationMeta: {
+          country: clientData.country || '',
+          city: clientData.city || '',
+          area: clientData.area || '',
+          region: clientData.region || '',
+          street: clientData.street || '',
+          latitude: Number.isFinite(Number(clientData.latitude)) ? Number(clientData.latitude) : null,
+          longitude: Number.isFinite(Number(clientData.longitude)) ? Number(clientData.longitude) : null,
+        },
         lastModified: new Date(),
         modifiedBy: auth.currentUser.uid
       };
@@ -376,10 +395,56 @@ const ClientSettingsScreen = ({ navigation }) => {
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Country</Text>
                   <TextInput
-                    style={[styles.input, styles.readonlyInput]}
-                    value={clientData?.country || 'Not specified'}
-                    editable={false}
+                    style={styles.input}
+                    value={clientData?.country || ''}
+                    onChangeText={(text) => setClientData({ ...clientData, country: text })}
+                    placeholder="e.g. GH"
+                    placeholderTextColor={Colors.textSecondary}
                   />
+                </View>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { marginBottom: 12 }]}
+                  onPress={() => detectAddress((loc) => {
+                    setClientData({
+                      ...clientData,
+                      country: loc.countryCode || clientData?.country || '',
+                      city: loc.city || clientData?.city || '',
+                      area: loc.area || clientData?.area || '',
+                      region: loc.region || clientData?.region || '',
+                      street: loc.street || clientData?.street || '',
+                      latitude: loc.latitude ?? clientData?.latitude ?? null,
+                      longitude: loc.longitude ?? clientData?.longitude ?? null,
+                    });
+                  })}
+                  disabled={locating}
+                >
+                  <Ionicons name="locate-outline" size={16} color={Colors.primary} />
+                  <Text style={{ color: Colors.primary, fontWeight: '700' }}>{locating ? 'Detecting location…' : 'Use current location'}</Text>
+                </TouchableOpacity>
+                {!!locationMsg && <Text style={[styles.helpText, { marginTop: -4, marginBottom: 10 }]}>{locationMsg}</Text>}
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.label}>City</Text>
+                    <TextInput style={styles.input} value={clientData?.city || ''} onChangeText={(text) => setClientData({ ...clientData, city: text })} placeholder="e.g. Accra" placeholderTextColor={Colors.textSecondary} />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                    <Text style={styles.label}>Area</Text>
+                    <TextInput style={styles.input} value={clientData?.area || ''} onChangeText={(text) => setClientData({ ...clientData, area: text })} placeholder="e.g. East Legon" placeholderTextColor={Colors.textSecondary} />
+                  </View>
+                </View>
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.label}>Region / State</Text>
+                    <TextInput style={styles.input} value={clientData?.region || ''} onChangeText={(text) => setClientData({ ...clientData, region: text })} placeholder="e.g. Greater Accra" placeholderTextColor={Colors.textSecondary} />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                    <Text style={styles.label}>Street</Text>
+                    <TextInput style={styles.input} value={clientData?.street || ''} onChangeText={(text) => setClientData({ ...clientData, street: text })} placeholder="e.g. Liberation Road" placeholderTextColor={Colors.textSecondary} />
+                  </View>
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Ghana Digital Address (optional)</Text>
+                  <TextInput style={styles.input} value={clientData?.ghanaDigitalAddress || ''} onChangeText={(text) => setClientData({ ...clientData, ghanaDigitalAddress: text })} placeholder="e.g. GA-123-4567" placeholderTextColor={Colors.textSecondary} />
                 </View>
 
                 <View style={styles.formRow}>
@@ -920,6 +985,23 @@ const styles = StyleSheet.create({
   readonlyInput: {
     backgroundColor: '#f8fafc',
     color: Colors.textSecondary,
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    backgroundColor: Colors.primary + '12',
+  },
+  helpText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
   },
   passwordInputContainer: {
     flexDirection: 'row',

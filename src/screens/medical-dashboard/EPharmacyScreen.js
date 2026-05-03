@@ -7,8 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { auth, db } from '../../services/firebaseConfig';
 import {
-  collection, query, where, getDocs, onSnapshot,
+  collection, query, where, getDocs, onSnapshot, doc, updateDoc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
+import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
 import { MedicalColors as C } from '../../constants/colors';
 
 const DRUG_STATUS_META = {
@@ -17,6 +18,7 @@ const DRUG_STATUS_META = {
   not_available:         { icon: '❌', label: 'Not Available', color: '#dc2626' },
   alternative_suggested: { icon: '🔁', label: 'Alt. Suggested',color: '#7c3aed' },
   approved_replacement:  { icon: '✅', label: 'Approved Alt.', color: '#16a34a' },
+  transfer_requested:    { icon: '🕒', label: 'Awaiting Consent', color: '#0f766e' },
 };
 
 const RX_STATUS_META = {
@@ -27,16 +29,57 @@ const RX_STATUS_META = {
   delivered:           { label: 'Delivered',        color: '#475569', bg: '#f8fafc' },
 };
 
+const DEFAULT_TRANSFER_APPROVAL_TTL_HOURS = 6;
+
 export default function EPharmacyScreen() {
-  const [tab, setTab] = useState('prescriptions'); // 'prescriptions' | 'pharmacies'
+  const [tab, setTab] = useState('prescriptions'); // 'prescriptions' | 'myPharmacies' | 'pharmacies'
   const [prescriptions, setPrescriptions] = useState([]);
   const [loadingRx, setLoadingRx] = useState(true);
+  const [myPharmacies, setMyPharmacies] = useState([]);
+  const [loadingMyPh, setLoadingMyPh] = useState(true);
+  const [removingPhKey, setRemovingPhKey] = useState(null);
   const [systemPharmacies, setSystemPharmacies] = useState([]);
   const [loadingPh, setLoadingPh] = useState(false);
   const [searchPh, setSearchPh] = useState('');
-  const [expandedRx, setExpandedRx] = useState(null);
+  const [viewingRx, setViewingRx] = useState(null);
   const [qrModal, setQrModal] = useState(null); // prescriptionRef string
   const [refreshing, setRefreshing] = useState(false);
+  const [transferActionKey, setTransferActionKey] = useState('');
+
+  const isTransferRequestExpired = (med) => {
+    if (!med || med.drugStatus !== 'transfer_requested' || med.transferRequestStatus !== 'pending_patient') return false;
+    const requestedAt = med.transferRequestedAt ? new Date(med.transferRequestedAt).getTime() : NaN;
+    if (!Number.isFinite(requestedAt)) return false;
+    const ttlHours = Math.max(1, Number(med.transferApprovalTtlHours) || DEFAULT_TRANSFER_APPROVAL_TTL_HOURS);
+    const ttlMs = ttlHours * 60 * 60 * 1000;
+    return Date.now() - requestedAt > ttlMs;
+  };
+
+  const expirePendingTransferRequest = (med) => ({
+    ...med,
+    drugStatus: 'not_available',
+    transferRequestStatus: 'expired',
+    transferRequestExpiredAt: new Date().toISOString(),
+    transferBranchId: null,
+    transferBranchName: null,
+    transferBranchAddress: null,
+    transferRequestBranchId: null,
+    transferRequestBranchName: null,
+    transferRequestBranchAddress: null,
+  });
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setLoadingMyPh(false);
+      return;
+    }
+    const unsubProf = onSnapshot(doc(db, 'patientProfiles', uid), (snap) => {
+      setMyPharmacies(snap.exists() ? (snap.data().pharmacies || []) : []);
+      setLoadingMyPh(false);
+    }, () => setLoadingMyPh(false));
+    return unsubProf;
+  }, []);
 
   useEffect(() => {
     const uid = auth.currentUser?.uid;
@@ -45,9 +88,27 @@ export default function EPharmacyScreen() {
       collection(db, 'doctorPrescriptions'),
       where('patientId', '==', uid)
     );
-    const unsub = onSnapshot(q, snap => {
-      const list = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
+    const unsub = onSnapshot(q, async snap => {
+      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const expiries = [];
+      rows.forEach((rx) => {
+        const meds = Array.isArray(rx.medications) ? rx.medications : [];
+        if (meds.some(isTransferRequestExpired)) {
+          const nextMeds = meds.map(m => (isTransferRequestExpired(m) ? expirePendingTransferRequest(m) : m));
+          expiries.push(
+            updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
+              medications: nextMeds,
+              pharmacyStatus: deriveRxStatusFromMeds(nextMeds),
+              updatedAt: serverTimestamp(),
+            }).catch(() => {})
+          );
+        }
+      });
+      if (expiries.length) {
+        await Promise.all(expiries);
+        return;
+      }
+      const list = rows
         .filter(r => r.pharmacyId)
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setPrescriptions(list);
@@ -74,11 +135,78 @@ export default function EPharmacyScreen() {
            (ph.address || '').toLowerCase().includes(q);
   });
 
+  const deriveRxStatusFromMeds = (meds = []) => {
+    const statuses = meds.map(m => m.drugStatus || 'pending');
+    if (statuses.every(s => s === 'available' || s === 'approved_replacement')) return 'ready';
+    if (statuses.some(s => ['not_available', 'alternative_suggested', 'transferred', 'transfer_requested'].includes(s))) return 'partially_fulfilled';
+    return 'accepted';
+  };
+
+  const removeSavedPharmacy = async (ph) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const rk = patientPharmacyKey(ph) || ph.id || ph.name || '';
+    setRemovingPhKey(rk);
+    try {
+      const updated = removePatientPharmacyByKey(myPharmacies, ph);
+      await setDoc(doc(db, 'patientProfiles', uid), { pharmacies: updated }, { merge: true });
+    } catch {
+      Alert.alert('Error', 'Could not remove pharmacy.');
+    } finally {
+      setRemovingPhKey(null);
+    }
+  };
+
+  const resolveTransferRequest = async (rx, medIndex, approve) => {
+    const meds = Array.isArray(rx?.medications) ? rx.medications : [];
+    const med = meds[medIndex];
+    if (!med || med.drugStatus !== 'transfer_requested' || med.transferRequestStatus !== 'pending_patient') return;
+    const key = `${rx.id}:${medIndex}:${approve ? 'approve' : 'reject'}`;
+    setTransferActionKey(key);
+    try {
+      const nextMeds = meds.map((m, i) => {
+        if (i !== medIndex) return m;
+        if (approve) {
+          return {
+            ...m,
+            drugStatus: 'transferred',
+            transferRequestStatus: 'approved_by_patient',
+            transferApprovedByPatientAt: new Date().toISOString(),
+            transferBranchId: m.transferRequestBranchId || null,
+            transferBranchName: m.transferRequestBranchName || null,
+            transferBranchAddress: m.transferRequestBranchAddress || null,
+          };
+        }
+        return {
+          ...m,
+          drugStatus: 'not_available',
+          transferRequestStatus: 'rejected_by_patient',
+          transferRejectedByPatientAt: new Date().toISOString(),
+          transferBranchId: null,
+          transferBranchName: null,
+          transferBranchAddress: null,
+          transferRequestBranchId: null,
+          transferRequestBranchName: null,
+          transferRequestBranchAddress: null,
+        };
+      });
+      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
+        medications: nextMeds,
+        pharmacyStatus: deriveRxStatusFromMeds(nextMeds),
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      Alert.alert('Error', 'Failed to process transfer decision. Please try again.');
+    } finally {
+      setTransferActionKey('');
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Tabs */}
       <View style={styles.tabRow}>
-        {[{ key: 'prescriptions', label: '💊 Prescriptions' }, { key: 'pharmacies', label: '🏪 Pharmacies' }].map(t => (
+        {[{ key: 'prescriptions', label: '💊 Prescriptions' }, { key: 'myPharmacies', label: '⭐ Mine' }, { key: 'pharmacies', label: '🏪 Browse' }].map(t => (
           <TouchableOpacity key={t.key} style={[styles.tab, tab === t.key && styles.tabActive]} onPress={() => setTab(t.key)}>
             <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
           </TouchableOpacity>
@@ -102,10 +230,9 @@ export default function EPharmacyScreen() {
           ) : prescriptions.map(rx => {
             const pm = rx.pharmacyStatus ? (RX_STATUS_META[rx.pharmacyStatus] || null) : null;
             const meds = rx.medications || [];
-            const isExpanded = expandedRx === rx.id;
             return (
               <View key={rx.id} style={styles.rxCard}>
-                <TouchableOpacity onPress={() => setExpandedRx(isExpanded ? null : rx.id)}>
+                <TouchableOpacity onPress={() => setViewingRx(rx)}>
                   <View style={styles.rxHeader}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.rxDoctor}>Dr. {rx.doctorName || 'Doctor'}</Text>
@@ -141,44 +268,84 @@ export default function EPharmacyScreen() {
                       );
                     })}
                   </View>
-                  <Text style={styles.expandHint}>{isExpanded ? 'Tap to collapse ▲' : 'Tap for details ▼'}</Text>
-                </TouchableOpacity>
-
-                {isExpanded && (
-                  <View style={styles.medList}>
-                    {meds.map((m, i) => {
-                      const ds = DRUG_STATUS_META[m.drugStatus] || DRUG_STATUS_META.pending;
-                      return (
-                        <View key={i} style={styles.medRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.medName}>{m.name}{m.strength ? ` (${m.strength})` : ''}</Text>
-                            <Text style={styles.medDetail}>{m.dosage} · {m.frequency} · {m.duration} {m.durationUnit}</Text>
-                            {m.alternativeSuggested && (
-                              <Text style={styles.altText}>
-                                🔁 Alt: {m.alternativeSuggested}{m.drugStatus === 'approved_replacement' ? ' ✅ Approved' : ' (Pending doctor approval)'}
-                              </Text>
-                            )}
-                          </View>
-                          <Text style={[styles.drugStatusText, { color: ds.color }]}>{ds.icon} {ds.label}</Text>
+                  {meds
+                    .map((m, i) => ({ m, i }))
+                    .filter(({ m }) => m.drugStatus === 'transfer_requested' && m.transferRequestStatus === 'pending_patient')
+                    .map(({ m, i }) => (
+                      <View key={`${rx.id}-pending-transfer-${i}`} style={styles.transferConsentCard}>
+                        <Text style={styles.transferConsentText}>
+                          Transfer request for {m.name || 'this drug'} to {m.transferRequestBranchName || 'another branch'}{m.transferRequestBranchAddress ? ` (${m.transferRequestBranchAddress})` : ''}.
+                        </Text>
+                        <View style={styles.transferConsentActions}>
+                          <TouchableOpacity
+                            style={[styles.transferConsentBtn, styles.transferConsentAgree]}
+                            disabled={transferActionKey === `${rx.id}:${i}:approve` || transferActionKey === `${rx.id}:${i}:reject`}
+                            onPress={() => resolveTransferRequest(rx, i, true)}
+                          >
+                            <Text style={styles.transferConsentAgreeText}>I Agree</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.transferConsentBtn, styles.transferConsentReject]}
+                            disabled={transferActionKey === `${rx.id}:${i}:approve` || transferActionKey === `${rx.id}:${i}:reject`}
+                            onPress={() => resolveTransferRequest(rx, i, false)}
+                          >
+                            <Text style={styles.transferConsentRejectText}>I Reject</Text>
+                          </TouchableOpacity>
                         </View>
-                      );
-                    })}
-                    {rx.pharmacyStatus === 'ready' && rx.prescriptionRef && (
-                      <View style={styles.pickupBanner}>
-                        <Text style={styles.pickupTitle}>Ready for Pickup!</Text>
-                        <Text style={styles.pickupSub}>Show this code at the pharmacy:</Text>
-                        <Text style={styles.pickupCode}>{rx.prescriptionRef}</Text>
-                        <TouchableOpacity style={styles.showQrBtn} onPress={() => setQrModal(rx.prescriptionRef)}>
-                          <Ionicons name="qr-code" size={18} color="#fff" />
-                          <Text style={styles.showQrBtnText}>Show QR Code</Text>
-                        </TouchableOpacity>
                       </View>
-                    )}
-                  </View>
-                )}
+                    ))}
+                  <Text style={styles.expandHint}>Tap for full details</Text>
+                </TouchableOpacity>
               </View>
             );
           })}
+        </ScrollView>
+      )}
+
+      {tab === 'myPharmacies' && (
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          {loadingMyPh ? (
+            <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} />
+          ) : myPharmacies.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={{ fontSize: 48 }}>⭐</Text>
+              <Text style={styles.emptyTitle}>No saved pharmacies</Text>
+              <Text style={styles.emptySub}>When you or your doctor add a branch, it appears here. Tap − to remove.</Text>
+            </View>
+          ) : (
+            myPharmacies.map((ph, idx) => {
+              const rowKey = patientPharmacyKey(ph) || ph.id || String(idx);
+              return (
+                <View key={rowKey} style={[styles.rxCard, { flexDirection: 'row', alignItems: 'flex-start' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 15, color: '#0f172a' }}>{ph.name}</Text>
+                    {ph.address ? <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>📍 {ph.address}</Text> : null}
+                    {ph.phone ? <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>📞 {ph.phone}</Text> : null}
+                  </View>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#fef2f2',
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderWidth: 1,
+                      borderColor: '#fecaca',
+                      opacity: removingPhKey === rowKey ? 0.55 : 1,
+                    }}
+                    disabled={removingPhKey === rowKey}
+                    onPress={() => {
+                      Alert.alert('Remove pharmacy', `Remove ${ph.name || 'this pharmacy'} from your list?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: () => removeSavedPharmacy(ph) },
+                      ]);
+                    }}
+                  >
+                    <Text style={{ color: '#dc2626', fontSize: 20, fontWeight: '800' }}>−</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          )}
         </ScrollView>
       )}
 
@@ -239,6 +406,56 @@ export default function EPharmacyScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={!!viewingRx} transparent animationType="slide" onRequestClose={() => setViewingRx(null)}>
+        <View style={styles.qrOverlay}>
+          <View style={styles.qrCard}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.qrTitle}>Prescription Details</Text>
+              <TouchableOpacity onPress={() => setViewingRx(null)}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            {viewingRx && (
+              <ScrollView style={{ marginTop: 8 }} contentContainerStyle={{ gap: 8 }}>
+                <Text style={styles.rxDoctor}>Dr. {viewingRx.doctorName || 'Doctor'}</Text>
+                <Text style={styles.rxDiag}>{viewingRx.diagnosis || '—'} · {viewingRx.date || ''}</Text>
+                {viewingRx.prescriptionRef ? <Text style={styles.refCode}>{viewingRx.prescriptionRef}</Text> : null}
+                {(viewingRx.medications || []).map((m, i) => {
+                  const ds = DRUG_STATUS_META[m.drugStatus] || DRUG_STATUS_META.pending;
+                  return (
+                    <View key={i} style={styles.medRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.medName}>{m.name}{m.strength ? ` (${m.strength})` : ''}</Text>
+                        <Text style={styles.medDetail}>{m.dosage} · {m.frequency} · {m.duration} {m.durationUnit}</Text>
+                        {m.alternativeSuggested ? (
+                          <Text style={styles.altText}>
+                            🔁 Alt: {m.alternativeSuggested}{m.drugStatus === 'approved_replacement'
+                              ? ` · Approved · Dr. ${m.approvedByDoctorName || viewingRx.doctorName || 'Doctor'}`
+                              : ' · Waiting for Approval from your Doctor'}
+                            {m.alternativeRationale ? ` · Why: ${m.alternativeRationale}` : ''}
+                          </Text>
+                        ) : null}
+                        {m.drugStatus === 'transferred' && m.transferBranchName ? (
+                          <Text style={[styles.altText, { color: '#0369a1' }]}>
+                            This drug ({m.name || 'Drug'}) is transfered to branch ({m.transferBranchName}{m.transferBranchAddress ? `, ${m.transferBranchAddress}` : ''}).
+                          </Text>
+                        ) : null}
+                        {m.drugStatus === 'transfer_requested' && m.transferRequestStatus === 'pending_patient' ? (
+                          <Text style={[styles.altText, { color: '#0f766e' }]}>
+                            Awaiting your approval to transfer to {m.transferRequestBranchName || 'another branch'}{m.transferRequestBranchAddress ? ` (${m.transferRequestBranchAddress})` : ''}.
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.drugStatusText, { color: ds.color }]}>{ds.icon} {ds.label}</Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -274,6 +491,14 @@ const styles = StyleSheet.create({
   medDetail: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
   altText: { fontSize: 12, color: '#7c3aed', marginTop: 4 },
   drugStatusText: { fontSize: 12, fontWeight: '700', marginTop: 2 },
+  transferConsentCard: { marginTop: 6, backgroundColor: '#f0fdfa', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 10, padding: 8 },
+  transferConsentText: { fontSize: 11, color: '#0f766e', fontWeight: '600' },
+  transferConsentActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  transferConsentBtn: { flex: 1, borderWidth: 1, borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
+  transferConsentAgree: { borderColor: '#14b8a6', backgroundColor: '#ccfbf1' },
+  transferConsentReject: { borderColor: '#fda4af', backgroundColor: '#fff1f2' },
+  transferConsentAgreeText: { color: '#0f766e', fontSize: 11, fontWeight: '700' },
+  transferConsentRejectText: { color: '#be123c', fontSize: 11, fontWeight: '700' },
   pickupBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 16, borderWidth: 1.5, borderColor: '#bbf7d0', alignItems: 'center', gap: 6, marginTop: 8 },
   pickupTitle: { fontSize: 16, fontWeight: '800', color: '#15803d' },
   pickupSub: { fontSize: 13, color: '#166534' },

@@ -54,7 +54,7 @@ const SignUpScreen = ({ route, navigation }) => {
         email: email.toLowerCase(),
         role: 'client',
         clientId: clientId || userId,
-        status: 'active',
+        status: 'pending',
         createdAt: new Date().toISOString()
       };
 
@@ -75,7 +75,7 @@ const SignUpScreen = ({ route, navigation }) => {
           displayName: name,
           clientName: name,
           email: email.toLowerCase(),
-          status: 'active',
+          status: 'pending',
           updatedAt: new Date().toISOString()
         }, { merge: true });
       }

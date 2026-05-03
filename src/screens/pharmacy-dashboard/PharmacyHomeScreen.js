@@ -7,19 +7,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import {
   collection, query, where, getDocs, doc, updateDoc,
-  reauthenticateWithCredential, EmailAuthProvider, updatePassword,
 } from 'firebase/firestore';
-import { reauthenticateWithCredential as reauth, updatePassword as updatePwd, EmailAuthProvider as EAP } from 'firebase/auth';
+import { updatePassword as updatePwd } from 'firebase/auth';
 import { PharmacyColors as C } from '../../constants/colors';
+import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 
-export default function PharmacyHomeScreen({ profile }) {
+export default function PharmacyHomeScreen({ profile, navigation }) {
   const [stats, setStats] = useState({ branches: 0, incoming: 0, active: 0, ready: 0, delivered: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // Forced password reset
   const [mustChange, setMustChange] = useState(profile?.mustChangePassword === true);
-  const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [pwError, setPwError] = useState('');
@@ -61,8 +60,8 @@ export default function PharmacyHomeScreen({ profile }) {
       await updateDoc(doc(db, 'pharmacies', profile.id), { mustChangePassword: false });
       setMustChange(false);
     } catch (err) {
-      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        setPwError('Current password is incorrect.');
+      if (err.code === 'auth/requires-recent-login') {
+        setPwError('Log out, sign in with your temporary password again, then try.');
       } else { setPwError('Failed to update password. Try again.'); }
     } finally { setPwSaving(false); }
   };
@@ -85,6 +84,7 @@ export default function PharmacyHomeScreen({ profile }) {
           <Text style={styles.welcomeTitle}>Welcome, {profile?.pharmacyName || 'Pharmacy'}</Text>
           <Text style={styles.welcomeSub}>Here's your pharmacy overview</Text>
         </View>
+        <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('PharmacySettings')} />
 
         {loading ? (
           <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
@@ -111,7 +111,6 @@ export default function PharmacyHomeScreen({ profile }) {
             <Text style={styles.pwSub}>You must set a new password before accessing your dashboard.</Text>
             {pwError ? <Text style={styles.pwError}>{pwError}</Text> : null}
             {[
-              { label: 'Current (Temporary) Password', val: oldPw, set: setOldPw },
               { label: 'New Password', val: newPw, set: setNewPw },
               { label: 'Confirm New Password', val: confirmPw, set: setConfirmPw },
             ].map(f => (

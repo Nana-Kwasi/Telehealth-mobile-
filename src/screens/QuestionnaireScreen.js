@@ -128,7 +128,7 @@ const QuestionnaireScreen = ({ route, navigation }) => {
         ...data,
         phq9: phq9Data,
         completedAt: new Date().toISOString(),
-        status: 'active',
+        status: 'pending',
         displayName: data.name || data.firstName + ' ' + data.lastName || 'Client',
         clientName: data.name || data.firstName + ' ' + data.lastName || 'Client'
       };

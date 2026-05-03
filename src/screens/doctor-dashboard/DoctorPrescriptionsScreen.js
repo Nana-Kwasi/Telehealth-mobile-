@@ -1,10 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, TextInput, Modal, Alert, ScrollView,
   RefreshControl, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import {
@@ -107,6 +107,8 @@ function autoSchedule(frequency) {
 }
 
 export default function DoctorPrescriptionsScreen() {
+  const route = useRoute();
+  const navigation = useNavigation();
   const [prescriptions, setPrescriptions] = useState([]);
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -126,14 +128,16 @@ export default function DoctorPrescriptionsScreen() {
     medications: [{ ...EMPTY_MED }],
   });
   const [patientAllergies, setPatientAllergies] = useState([]);
-  const [pharmacies, setPharmacies] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [loadingBranches, setLoadingBranches] = useState(false);
-  const [showPharmacyPicker, setShowPharmacyPicker] = useState(false);
-  const [showBranchPicker, setShowBranchPicker] = useState(false);
+  const [branchDirectory, setBranchDirectory] = useState([]);
+  const [loadingBranchDirectory, setLoadingBranchDirectory] = useState(false);
+  const [showBranchDirectoryPicker, setShowBranchDirectoryPicker] = useState(false);
   // Alternative drug approval
   const [altApprovalRx, setAltApprovalRx] = useState(null);
   const [altSaving, setAltSaving] = useState(false);
+  const [viewingRx, setViewingRx] = useState(null);
+  const [reassignRx, setReassignRx] = useState(null);
+  const [reassignBranchId, setReassignBranchId] = useState('');
+  const [reassignSaving, setReassignSaving] = useState(false);
   const [showFreqPicker, setShowFreqPicker] = useState(null); // med index
   const [showDirPicker, setShowDirPicker] = useState(null);
   const [showFormPicker, setShowFormPicker] = useState(null);
@@ -146,7 +150,7 @@ export default function DoctorPrescriptionsScreen() {
 
   useFocusEffect(useCallback(() => {
     loadAll();
-    loadPharmacies();
+    loadBranchDirectory();
     // Real-time subscription for alt drug suggestions
     const cu = auth.currentUser;
     if (!cu) return;
@@ -170,6 +174,36 @@ export default function DoctorPrescriptionsScreen() {
     );
     return unsub;
   }, []));
+
+  useEffect(() => {
+    const p = route.params;
+    if (!p?.openRxForm || !p?.presetPatientId) return;
+
+    loadPatientAllergies(p.presetPatientId);
+    loadBranchDirectory();
+    setEditing(null);
+    setForm({
+      patientId: p.presetPatientId,
+      patientName: p.presetPatientName || '',
+      pharmacyId: '',
+      pharmacyName: '',
+      branchId: '',
+      branchName: '',
+      diagnosis: '',
+      instructions: '',
+      followUpDate: '',
+      status: 'active',
+      medications: [{ ...EMPTY_MED }],
+    });
+    setWarnings([]);
+    setShowModal(true);
+
+    navigation.setParams({
+      openRxForm: undefined,
+      presetPatientId: undefined,
+      presetPatientName: undefined,
+    });
+  }, [route.params?.openRxForm, route.params?.presetPatientId]);
 
   const loadAll = async () => {
     try {
@@ -252,28 +286,41 @@ export default function DoctorPrescriptionsScreen() {
     }
   };
 
-  const loadPharmacies = async () => {
+  const loadBranchDirectory = async () => {
+    setLoadingBranchDirectory(true);
     try {
-      const snap = await getDocs(query(collection(db, 'pharmacies'), where('status', '==', 'active')));
-      setPharmacies(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const phSnap = await getDocs(query(collection(db, 'pharmacies'), where('status', '==', 'active')));
+      const rows = [];
+      for (const phDoc of phSnap.docs) {
+        const ph = { id: phDoc.id, ...phDoc.data() };
+        const parentName = ph.pharmacyName || ph.name || '';
+        const brSnap = await getDocs(query(
+          collection(db, 'pharmacyBranches'),
+          where('pharmacyId', '==', ph.id),
+          where('status', '==', 'active'),
+        ));
+        brSnap.docs.forEach(d => {
+          const br = d.data();
+          const branchName = br.branchName || br.name || d.id;
+          rows.push({
+            branchId: d.id,
+            branchName,
+            pharmacyId: ph.id,
+            pharmacyName: parentName,
+            addressLine: [br.address, br.city].filter(Boolean).join(', '),
+          });
+        });
+      }
+      rows.sort((a, b) => a.branchName.localeCompare(b.branchName));
+      setBranchDirectory(rows);
     } catch {}
-  };
-
-  const loadBranches = async (pharmacyId) => {
-    setLoadingBranches(true);
-    setBranches([]);
-    try {
-      const snap = await getDocs(query(collection(db, 'pharmacyBranches'), where('pharmacyId', '==', pharmacyId), where('status', '==', 'active')));
-      setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch {}
-    finally { setLoadingBranches(false); }
+    finally { setLoadingBranchDirectory(false); }
   };
 
   const openNew = () => {
     setEditing(null);
     setForm({ patientId: '', patientName: '', pharmacyId: '', pharmacyName: '', branchId: '', branchName: '', diagnosis: '', instructions: '', followUpDate: '', status: 'active', medications: [{ ...EMPTY_MED }] });
     setWarnings([]);
-    setBranches([]);
     setShowModal(true);
   };
 
@@ -292,7 +339,6 @@ export default function DoctorPrescriptionsScreen() {
       status: rx.status || 'active',
       medications: rx.medications?.length ? rx.medications.map(m => ({ ...EMPTY_MED, ...m })) : [{ ...EMPTY_MED }],
     });
-    if (rx.pharmacyId) loadBranches(rx.pharmacyId);
     setWarnings([]);
     setShowModal(true);
   };
@@ -414,7 +460,7 @@ export default function DoctorPrescriptionsScreen() {
       if (editing) {
         await updateDoc(doc(db, 'doctorPrescriptions', editing.id), payload);
       } else {
-        await addDoc(collection(db, 'doctorPrescriptions'), {
+        const newRx = await addDoc(collection(db, 'doctorPrescriptions'), {
           ...payload,
           doctorId: cu.uid,
           doctorName: doctorProfile?.name || '',
@@ -422,6 +468,16 @@ export default function DoctorPrescriptionsScreen() {
           pharmacyStatus: form.pharmacyId ? 'sent' : null,
           createdAt: serverTimestamp(),
         });
+        await addDoc(collection(db, 'patientTimeline'), {
+          patientId: form.patientId,
+          type: 'PRESCRIPTION',
+          title: `Prescription created by Dr. ${doctorProfile?.name || 'Doctor'}`,
+          status: 'PENDING',
+          relatedId: newRx.id,
+          actor: { role: 'DOCTOR', name: doctorProfile?.name || 'Doctor' },
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch(() => {});
       }
       setShowModal(false);
       await loadAll();
@@ -436,7 +492,7 @@ export default function DoctorPrescriptionsScreen() {
     setAltSaving(true);
     try {
       const updatedMeds = rx.medications.map((m, i) =>
-        i === medIndex ? { ...m, drugStatus: 'approved_replacement' } : m
+        i === medIndex ? { ...m, drugStatus: 'approved_replacement', approvedByDoctorName: doctorProfile?.name || 'Doctor' } : m
       );
       await updateDoc(doc(db, 'doctorPrescriptions', rx.id), { medications: updatedMeds, updatedAt: serverTimestamp() });
       setAltApprovalRx(prev => prev ? { ...prev, medications: updatedMeds } : null);
@@ -458,6 +514,41 @@ export default function DoctorPrescriptionsScreen() {
     finally { setAltSaving(false); }
   };
 
+  const reassignUnavailableDrugs = async () => {
+    if (!reassignRx || !reassignBranchId) return;
+    const target = branchDirectory.find(b => b.branchId === reassignBranchId && (!reassignRx.pharmacyId || b.pharmacyId === reassignRx.pharmacyId));
+    if (!target) return;
+    const hasUnavailable = (reassignRx.medications || []).some(m => m.drugStatus === 'not_available');
+    if (!hasUnavailable) {
+      Alert.alert('No unavailable drugs', 'This prescription has no drugs marked as not available.');
+      return;
+    }
+    setReassignSaving(true);
+    try {
+      const updatedMeds = (reassignRx.medications || []).map(m =>
+        m.drugStatus === 'not_available'
+          ? {
+              ...m,
+              drugStatus: 'transferred',
+              transferFromBranchId: null,
+              transferFromBranchName: `Dr. ${doctorProfile?.name || reassignRx.doctorName || 'Doctor'}`,
+              transferBranchId: target.branchId,
+              transferBranchName: target.branchName || 'Branch',
+              transferBranchAddress: target.address || '',
+            }
+          : m
+      );
+      await updateDoc(doc(db, 'doctorPrescriptions', reassignRx.id), { medications: updatedMeds, updatedAt: serverTimestamp() });
+      setPrescriptions(prev => prev.map(r => r.id === reassignRx.id ? { ...r, medications: updatedMeds } : r));
+      setReassignRx(null);
+      setReassignBranchId('');
+    } catch {
+      Alert.alert('Error', 'Could not reassign unavailable drugs.');
+    } finally {
+      setReassignSaving(false);
+    }
+  };
+
   const handleDelete = (rxId) => {
     Alert.alert('Delete Prescription', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -477,7 +568,8 @@ export default function DoctorPrescriptionsScreen() {
     const q = search.toLowerCase();
     return (r.patientName || '').toLowerCase().includes(q) ||
            (r.diagnosis || '').toLowerCase().includes(q) ||
-           (r.date || '').includes(q);
+           (r.date || '').includes(q) ||
+           (r.branchName || '').toLowerCase().includes(q);
   });
 
   const STATUS_META = {
@@ -493,22 +585,31 @@ export default function DoctorPrescriptionsScreen() {
     not_available:         { icon: '❌', label: 'Not Available', color: '#dc2626', bg: '#fff1f2' },
     alternative_suggested: { icon: '🔁', label: 'Alt. Suggested',color: '#7c3aed', bg: '#f5f3ff' },
     approved_replacement:  { icon: '✅', label: 'Approved Alt.', color: '#16a34a', bg: '#f0fdf4' },
+    transferred:           { icon: '↔️', label: 'Transferred', color: '#0369a1', bg: '#e0f2fe' },
+  };
+  const PHARMACY_STATUS_META = {
+    sent: { label: 'Sent to Pharmacy', color: '#1d4ed8', bg: '#eff6ff' },
+    accepted: { label: 'Processing', color: '#d97706', bg: '#fffbeb' },
+    partially_fulfilled: { label: 'Partially Filled', color: '#d97706', bg: '#fffbeb' },
+    ready: { label: 'Ready for Pickup', color: '#16a34a', bg: '#f0fdf4' },
+    delivered: { label: 'Delivered', color: '#475569', bg: '#f8fafc' },
   };
 
   const renderRx = ({ item }) => {
     const sm = STATUS_META[item.status] || STATUS_META.active;
     const hasPendingAlts = (item.medications || []).some(m => m.drugStatus === 'alternative_suggested');
+    const hasTransferred = (item.medications || []).some(m => m.drugStatus === 'transferred');
+    const hasUnavailable = (item.medications || []).some(m => m.drugStatus === 'not_available') && !hasTransferred;
+    const pm = item.pharmacyStatus ? (PHARMACY_STATUS_META[item.pharmacyStatus] || null) : null;
     return (
-      <View style={[styles.rxCard, { borderLeftWidth: 3, borderLeftColor: sm.border }]}>
+      <TouchableOpacity activeOpacity={0.92} onPress={() => setViewingRx(item)} style={[styles.rxCard, { borderLeftWidth: 3, borderLeftColor: sm.border }]}>
         <View style={styles.rxHeader}>
           <View style={{ flex: 1 }}>
             <Text style={styles.rxPatient}>{item.patientName || 'Patient'}</Text>
             <Text style={styles.rxDiagnosis}>{item.diagnosis}</Text>
-            {item.pharmacyName && (
-              <Text style={styles.rxPharmacy}>
-                🏥 {item.pharmacyName}{item.branchName ? ` › ${item.branchName}` : ''}
-              </Text>
-            )}
+            {item.branchName ? (
+              <Text style={styles.rxPharmacy}>🏥 {item.branchName}</Text>
+            ) : null}
           </View>
           <View style={{ alignItems: 'flex-end', gap: 6 }}>
             <View style={[styles.statusBadgeActive, { backgroundColor: sm.bg, borderColor: sm.border }]}>
@@ -533,17 +634,39 @@ export default function DoctorPrescriptionsScreen() {
         )}
 
         {/* Per-drug status pills */}
+        {pm && (
+          <View style={[styles.drugStatusBadge, { alignSelf: 'flex-start', backgroundColor: pm.bg, marginBottom: 8 }]}>
+            <Text style={[styles.drugStatusBadgeText, { color: pm.color }]}>{pm.label}</Text>
+          </View>
+        )}
         <View style={{ gap: 4, marginBottom: 8 }}>
           {(item.medications || []).map((m, i) => {
             const ds = m.drugStatus ? (DRUG_STATUS_META[m.drugStatus] || DRUG_STATUS_META.pending) : null;
             return (
               <View key={i} style={styles.drugStatusRow}>
                 <Text style={styles.drugStatusName} numberOfLines={1}>{m.name}{m.strength ? ` (${m.strength})` : ''}</Text>
-                {ds && (
-                  <View style={[styles.drugStatusBadge, { backgroundColor: ds.bg }]}>
-                    <Text style={[styles.drugStatusBadgeText, { color: ds.color }]}>{ds.icon} {ds.label}</Text>
-                  </View>
-                )}
+                <View style={{ alignItems: 'flex-end' }}>
+                  {ds && (
+                    <View style={[styles.drugStatusBadge, { backgroundColor: ds.bg }]}>
+                      <Text style={[styles.drugStatusBadgeText, { color: ds.color }]}>{ds.icon} {ds.label}</Text>
+                    </View>
+                  )}
+                  {m.drugStatus === 'approved_replacement' && m.alternativeSuggested ? (
+                    <Text style={{ fontSize: 11, color: '#16a34a', fontWeight: '600', marginTop: 2 }}>
+                      {m.name} → {m.alternativeSuggested} · Approved · Dr. {m.approvedByDoctorName || item.doctorName || 'Doctor'}
+                      {m.alternativeRationale ? ` · Why: ${m.alternativeRationale}` : ''}
+                    </Text>
+                  ) : (m.drugStatus === 'transferred' && m.transferBranchName) ? (
+                    <Text style={{ fontSize: 11, color: '#0369a1', fontWeight: '600', marginTop: 2 }}>
+                      This drug ({m.name}) is transfered to branch ({m.transferBranchName}{m.transferBranchAddress ? `, ${m.transferBranchAddress}` : ''}).
+                    </Text>
+                  ) : (m.drugStatus === 'alternative_suggested' && m.alternativeSuggested) ? (
+                    <Text style={{ fontSize: 11, color: '#7c3aed', fontWeight: '600', marginTop: 2 }}>
+                      {m.name} → {m.alternativeSuggested} · Waiting for Approval from your Doctor
+                      {m.alternativeRationale ? ` · Why: ${m.alternativeRationale}` : ''}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
             );
           })}
@@ -554,7 +677,19 @@ export default function DoctorPrescriptionsScreen() {
           {item.prescriptionRef && <Text style={styles.rxRef}>{item.prescriptionRef}</Text>}
           {item.followUpDate ? <Text style={styles.rxDate}>🔄 {item.followUpDate}</Text> : null}
         </View>
-      </View>
+        {hasUnavailable && (
+          <TouchableOpacity
+            style={[styles.altBtn, { marginTop: 8, alignSelf: 'flex-start', backgroundColor: '#eff6ff', borderColor: '#bfdbfe', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 14 }]}
+            onPress={() => {
+              setReassignRx(item);
+              setReassignBranchId('');
+            }}
+          >
+            <Text style={[styles.altBtnText, { color: '#1d4ed8', fontSize: 12 }]}>Reassign</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={{ marginTop: 6, fontSize: 11, color: '#94a3b8', textAlign: 'right' }}>Tap card for full details</Text>
+      </TouchableOpacity>
     );
   };
 
@@ -619,6 +754,14 @@ export default function DoctorPrescriptionsScreen() {
                         <Text style={styles.altOriginalName}>{med.name}{med.strength ? ` (${med.strength})` : ''}</Text>
                         <Text style={styles.altArrow}>↓  Pharmacy suggests</Text>
                         <Text style={styles.altSuggestedName}>{med.alternativeSuggested}</Text>
+                        {med.alternativeRationale ? (
+                          <Text style={{ fontSize: 12, color: '#6d28d9', marginTop: 2 }}>
+                            Rationale: {med.alternativeRationale}
+                          </Text>
+                        ) : null}
+                        <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: '600', marginTop: 2 }}>
+                          Waiting for Approval from your Doctor
+                        </Text>
                         <View style={styles.altActions}>
                           <TouchableOpacity
                             style={[styles.altBtn, styles.altBtnApprove, altSaving && { opacity: 0.5 }]}
@@ -644,6 +787,90 @@ export default function DoctorPrescriptionsScreen() {
                     </Text>
                   )}
                 </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!viewingRx} animationType="slide" transparent onRequestClose={() => setViewingRx(null)}>
+        <View style={styles.altModalOverlay}>
+          <View style={[styles.altModalCard, { maxHeight: '88%' }]}>
+            <View style={styles.altModalHeader}>
+              <Text style={styles.altModalTitle}>Prescription Details</Text>
+              <TouchableOpacity onPress={() => setViewingRx(null)}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            {viewingRx && (
+              <ScrollView>
+                <Text style={styles.altModalSub}>{viewingRx.patientName || 'Patient'} · {viewingRx.diagnosis || '—'}</Text>
+                <Text style={[styles.altOriginalLabel, { marginBottom: 8 }]}>Date: {viewingRx.date || '—'} {viewingRx.prescriptionRef ? `· ${viewingRx.prescriptionRef}` : ''}</Text>
+                {(viewingRx.medications || []).map((m, i) => (
+                  <View key={i} style={styles.altMedCard}>
+                    <Text style={styles.altOriginalName}>{m.name || 'Medication'}{m.strength ? ` (${m.strength})` : ''}</Text>
+                    <Text style={styles.altOriginalLabel}>{[m.dosage, m.frequency, m.duration].filter(Boolean).join(' · ') || '—'}</Text>
+                    {m.alternativeSuggested ? (
+                      <Text style={{ marginTop: 4, fontSize: 12, color: m.drugStatus === 'approved_replacement' ? '#16a34a' : '#7c3aed', fontWeight: '700' }}>
+                        🔁 {m.alternativeSuggested} · {m.drugStatus === 'approved_replacement'
+                          ? `Approved · Dr. ${m.approvedByDoctorName || viewingRx.doctorName || 'Doctor'}`
+                          : 'Waiting for Approval from your Doctor'}
+                        {m.alternativeRationale ? ` · Why: ${m.alternativeRationale}` : ''}
+                      </Text>
+                    ) : null}
+                    {m.drugStatus === 'transferred' && m.transferBranchName ? (
+                      <Text style={{ marginTop: 4, fontSize: 12, color: '#0369a1', fontWeight: '700' }}>
+                        This drug ({m.name || 'Drug'}) is transfered to branch ({m.transferBranchName}{m.transferBranchAddress ? `, ${m.transferBranchAddress}` : ''}).
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+                {viewingRx.instructions ? <Text style={[styles.altOriginalLabel, { marginTop: 8 }]}>Instructions: {viewingRx.instructions}</Text> : null}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!reassignRx} animationType="slide" transparent onRequestClose={() => setReassignRx(null)}>
+        <View style={styles.altModalOverlay}>
+          <View style={styles.altModalCard}>
+            <View style={styles.altModalHeader}>
+              <Text style={styles.altModalTitle}>Reassign Unavailable Drugs</Text>
+              <TouchableOpacity onPress={() => setReassignRx(null)}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            {reassignRx && (
+              <>
+                <Text style={styles.altModalSub}>{reassignRx.patientName || 'Patient'} · {reassignRx.prescriptionRef || reassignRx.id}</Text>
+                <Text style={[styles.altOriginalLabel, { marginBottom: 8 }]}>Only drugs marked as Not Available will be reassigned.</Text>
+                <ScrollView style={{ maxHeight: 260 }}>
+                  {branchDirectory
+                    .filter(row => !reassignRx.pharmacyId || row.pharmacyId === reassignRx.pharmacyId)
+                    .map(row => (
+                    <TouchableOpacity
+                      key={`${row.pharmacyId}-${row.branchId}`}
+                      style={[styles.altMedCard, { borderColor: reassignBranchId === row.branchId ? '#93c5fd' : '#e2e8f0', backgroundColor: reassignBranchId === row.branchId ? '#eff6ff' : '#fff' }]}
+                      onPress={() => setReassignBranchId(row.branchId)}
+                    >
+                      <Text style={styles.altOriginalName}>{row.branchName || 'Branch'}</Text>
+                      <Text style={styles.altOriginalLabel}>{row.address || 'No address'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <View style={styles.altActions}>
+                  <TouchableOpacity style={[styles.altBtn, styles.altBtnReject]} onPress={() => setReassignRx(null)}>
+                    <Text style={[styles.altBtnText, { color: '#64748b' }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.altBtn, styles.altBtnApprove, (!reassignBranchId || reassignSaving) && { opacity: 0.5 }]}
+                    disabled={!reassignBranchId || reassignSaving}
+                    onPress={reassignUnavailableDrugs}
+                  >
+                    <Text style={styles.altBtnText}>{reassignSaving ? '…' : 'Reassign'}</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
           </View>
@@ -1100,82 +1327,55 @@ export default function DoctorPrescriptionsScreen() {
                 />
               </View>
 
-              {/* Pharmacy routing (optional) */}
+              {/* E-pharmacy branch routing (optional); labels are branch-only */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Route to Pharmacy (Optional)</Text>
+                <Text style={styles.fieldLabel}>E-Pharmacy Branch (Optional)</Text>
                 <TouchableOpacity
                   style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-                  onPress={() => setShowPharmacyPicker(v => !v)}
+                  onPress={() => { if (!loadingBranchDirectory) setShowBranchDirectoryPicker(v => !v); }}
                 >
-                  <Text style={{ color: form.pharmacyId ? DoctorColors.text : '#94a3b8', fontSize: 14 }}>
-                    {form.pharmacyName || 'Select Pharmacy'}
-                  </Text>
-                  <Ionicons name={showPharmacyPicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94a3b8" />
+                  {loadingBranchDirectory
+                    ? <ActivityIndicator size="small" color={DoctorColors.primary} />
+                    : <>
+                        <Text style={{ color: form.branchId ? DoctorColors.text : '#94a3b8', fontSize: 14, flex: 1 }}>
+                          {form.branchId ? form.branchName : 'Select branch (optional)'}
+                        </Text>
+                        <Ionicons name={showBranchDirectoryPicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94a3b8" />
+                      </>
+                  }
                 </TouchableOpacity>
-                {showPharmacyPicker && (
+                {showBranchDirectoryPicker && (
                   <View style={styles.pickerDropdown}>
                     <TouchableOpacity style={styles.pickerItem} onPress={() => {
                       setForm(p => ({ ...p, pharmacyId: '', pharmacyName: '', branchId: '', branchName: '' }));
-                      setBranches([]);
-                      setShowPharmacyPicker(false);
+                      setShowBranchDirectoryPicker(false);
                     }}>
-                      <Text style={[styles.pickerItemText, { color: '#94a3b8' }]}>— No Pharmacy —</Text>
+                      <Text style={[styles.pickerItemText, { color: '#94a3b8' }]}>— None —</Text>
                     </TouchableOpacity>
-                    {pharmacies.map(ph => (
-                      <TouchableOpacity key={ph.id}
-                        style={[styles.pickerItem, form.pharmacyId === ph.id && styles.pickerItemActive]}
+                    {branchDirectory.length === 0 && !loadingBranchDirectory && (
+                      <Text style={[styles.pickerItemText, { padding: 12, color: '#94a3b8' }]}>No active branches found.</Text>
+                    )}
+                    {branchDirectory.map(row => (
+                      <TouchableOpacity key={`${row.pharmacyId}-${row.branchId}`}
+                        style={[styles.pickerItem, form.branchId === row.branchId && styles.pickerItemActive]}
                         onPress={() => {
-                          setForm(p => ({ ...p, pharmacyId: ph.id, pharmacyName: ph.name || ph.pharmacyName || ph.id, branchId: '', branchName: '' }));
-                          setShowPharmacyPicker(false);
-                          loadBranches(ph.id);
+                          setForm(p => ({
+                            ...p,
+                            pharmacyId: row.pharmacyId,
+                            pharmacyName: row.pharmacyName,
+                            branchId: row.branchId,
+                            branchName: row.branchName,
+                          }));
+                          setShowBranchDirectoryPicker(false);
                         }}>
-                        <Text style={[styles.pickerItemText, form.pharmacyId === ph.id && { color: DoctorColors.primary, fontWeight: '700' }]}>
-                          {ph.name || ph.pharmacyName || ph.id}
+                        <Text style={[styles.pickerItemText, form.branchId === row.branchId && { color: DoctorColors.primary, fontWeight: '700' }]}>
+                          {row.branchName}
                         </Text>
+                        {!!row.addressLine && (
+                          <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{row.addressLine}</Text>
+                        )}
                       </TouchableOpacity>
                     ))}
-                  </View>
-                )}
-
-                {form.pharmacyId && (
-                  <View style={{ marginTop: 6 }}>
-                    <Text style={styles.subLabel}>Branch (Optional)</Text>
-                    <TouchableOpacity
-                      style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-                      onPress={() => { if (!loadingBranches) setShowBranchPicker(v => !v); }}
-                    >
-                      {loadingBranches
-                        ? <ActivityIndicator size="small" color={DoctorColors.primary} />
-                        : <>
-                            <Text style={{ color: form.branchId ? DoctorColors.text : '#94a3b8', fontSize: 14 }}>
-                              {form.branchName || 'Select Branch'}
-                            </Text>
-                            <Ionicons name={showBranchPicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94a3b8" />
-                          </>
-                      }
-                    </TouchableOpacity>
-                    {showBranchPicker && (
-                      <View style={styles.pickerDropdown}>
-                        <TouchableOpacity style={styles.pickerItem} onPress={() => {
-                          setForm(p => ({ ...p, branchId: '', branchName: '' }));
-                          setShowBranchPicker(false);
-                        }}>
-                          <Text style={[styles.pickerItemText, { color: '#94a3b8' }]}>— Main Pharmacy (No Branch) —</Text>
-                        </TouchableOpacity>
-                        {branches.map(br => (
-                          <TouchableOpacity key={br.id}
-                            style={[styles.pickerItem, form.branchId === br.id && styles.pickerItemActive]}
-                            onPress={() => {
-                              setForm(p => ({ ...p, branchId: br.id, branchName: br.name || br.branchName || br.id }));
-                              setShowBranchPicker(false);
-                            }}>
-                            <Text style={[styles.pickerItemText, form.branchId === br.id && { color: DoctorColors.primary, fontWeight: '700' }]}>
-                              {br.name || br.branchName || br.id}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
                   </View>
                 )}
               </View>

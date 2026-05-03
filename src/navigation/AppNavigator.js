@@ -30,14 +30,14 @@ import ClientBillingScreen from '../screens/dashboard/ClientBillingScreen';
 import ClientSettingsScreen from '../screens/dashboard/ClientSettingsScreen';
 import ClientSupportScreen from '../screens/dashboard/ClientSupportScreen';
 
-// Doctor discovery screens (new)
+// Doctor discovery screens
 import MedicalIntakeScreen from '../screens/doctor/MedicalIntakeScreen';
 import DoctorSearchScreen from '../screens/doctor/DoctorSearchScreen';
 import DoctorProfileScreen from '../screens/doctor/DoctorProfileScreen';
 import BookAppointmentScreen from '../screens/doctor/BookAppointmentScreen';
 import ReviewSubmitScreen from '../screens/doctor/ReviewSubmitScreen';
 
-// Medical dashboard screens (new)
+// Medical dashboard screens
 import MedicalHomeScreen from '../screens/medical-dashboard/MedicalHomeScreen';
 import MedicalAppointmentsScreen from '../screens/medical-dashboard/MedicalAppointmentsScreen';
 import MedicalMessagesScreen from '../screens/medical-dashboard/MedicalMessagesScreen';
@@ -52,6 +52,8 @@ import HealthRecordsScreen from '../screens/medical-dashboard/HealthRecordsScree
 import EPharmacyScreen from '../screens/medical-dashboard/EPharmacyScreen';
 import DoctorDetailScreen from '../screens/medical-dashboard/DoctorDetailScreen';
 import SupportScreen from '../screens/medical-dashboard/SupportScreen';
+import MedicalDiagnosticScreen from '../screens/medical-dashboard/MedicalDiagnosticScreen';
+import MedicalTimelineScreen from '../screens/medical-dashboard/MedicalTimelineScreen';
 
 // Therapist dashboard screens
 import TherapistHomeScreen from '../screens/therapist-dashboard/TherapistHomeScreen';
@@ -77,6 +79,11 @@ import DoctorAnalyticsScreen from '../screens/doctor-dashboard/DoctorAnalyticsSc
 import DoctorSettingsScreen from '../screens/doctor-dashboard/DoctorSettingsScreen';
 import DoctorPatientDetailScreen from '../screens/doctor-dashboard/DoctorPatientDetailScreen';
 import DoctorPatientPanelScreen from '../screens/doctor-dashboard/DoctorPatientPanelScreen';
+import DoctorDiagnosticScreen from '../screens/doctor-dashboard/DoctorDiagnosticScreen';
+import DoctorDiagnosticResultsScreen from '../screens/doctor-dashboard/DoctorDiagnosticResultsScreen';
+import DoctorDiagnosticDraftDetailScreen from '../screens/doctor-dashboard/DoctorDiagnosticDraftDetailScreen';
+import DoctorPatientTimelineScreen from '../screens/doctor-dashboard/DoctorPatientTimelineScreen';
+import DoctorPatientOverviewScreen from '../screens/doctor-dashboard/DoctorPatientOverviewScreen';
 
 // Pharmacy dashboard screens
 import PharmacyHomeScreen from '../screens/pharmacy-dashboard/PharmacyHomeScreen';
@@ -89,14 +96,30 @@ import BranchHomeScreen from '../screens/branch-dashboard/BranchHomeScreen';
 import BranchPrescriptionsScreen from '../screens/branch-dashboard/BranchPrescriptionsScreen';
 import BranchWalkInScreen from '../screens/branch-dashboard/BranchWalkInScreen';
 
+// Lab dashboard screens
+import LabHomeScreen from '../screens/lab-dashboard/LabHomeScreen';
+import LabOrdersScreen from '../screens/lab-dashboard/LabOrdersScreen';
+import LabVerifyScreen from '../screens/lab-dashboard/LabVerifyScreen';
+import LabResultsScreen from '../screens/lab-dashboard/LabResultsScreen';
+
+// Scan dashboard screens
+import ScanHomeScreen from '../screens/scan-dashboard/ScanHomeScreen';
+import ScanOrdersScreen from '../screens/scan-dashboard/ScanOrdersScreen';
+import ScanVerifyScreen from '../screens/scan-dashboard/ScanVerifyScreen';
+import ScanResultsScreen from '../screens/scan-dashboard/ScanResultsScreen';
+import EntityLocationSettingsScreen from '../screens/common/EntityLocationSettingsScreen';
+
 // Drawer content components
 import CustomDrawerContent from '../components/CustomDrawerContent';
 import MedicalDrawerContent from '../components/MedicalDrawerContent';
 import TherapistDrawerContent from '../components/TherapistDrawerContent';
 import DoctorDrawerContent from '../components/DoctorDrawerContent';
 import PharmacyDrawerContent from '../components/PharmacyDrawerContent';
+import LabDrawerContent from '../components/LabDrawerContent';
+import ScanDrawerContent from '../components/ScanDrawerContent';
+import DashboardLocationGateMobile from '../components/DashboardLocationGateMobile';
 
-import { Colors, MedicalColors, TherapistColors, DoctorColors, PharmacyColors } from '../constants/colors';
+import { Colors, MedicalColors, TherapistColors, DoctorColors, PharmacyColors, LabColors, ScanColors } from '../constants/colors';
 
 const Stack = createStackNavigator();
 const TherapyDrawer = createDrawerNavigator();
@@ -105,6 +128,10 @@ const TherapistDrawer = createDrawerNavigator();
 const DoctorDrawer = createDrawerNavigator();
 const PharmacyDrawer = createDrawerNavigator();
 const BranchDrawer = createDrawerNavigator();
+const LabDrawer = createDrawerNavigator();
+const LabBranchDrawer = createDrawerNavigator();
+const ScanDrawer = createDrawerNavigator();
+const ScanBranchDrawer = createDrawerNavigator();
 
 const LoadingScreen = () => (
   <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
@@ -135,6 +162,9 @@ const PharmacyDrawerNavigator = ({ profile }) => (
     <PharmacyDrawer.Screen name="PharmacyWalkIn"        options={{ title: 'Walk-in Verify' }}>
       {() => <PharmacyWalkInScreen profile={profile} />}
     </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacySettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
+      {() => <EntityLocationSettingsScreen profile={profile} collectionName="pharmacies" title="Pharmacy Location Settings" />}
+    </PharmacyDrawer.Screen>
   </PharmacyDrawer.Navigator>
 );
 
@@ -158,7 +188,126 @@ const BranchDrawerNavigator = ({ profile }) => (
     <BranchDrawer.Screen name="BranchWalkIn"        options={{ title: 'Walk-in Verify' }}>
       {() => <BranchWalkInScreen profile={profile} />}
     </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
+      {() => <EntityLocationSettingsScreen profile={profile} collectionName="pharmacyBranches" title="Branch Location Settings" />}
+    </BranchDrawer.Screen>
   </BranchDrawer.Navigator>
+);
+
+// ── Lab Drawer ──
+const LabDrawerNavigator = ({ profile }) => (
+  <LabDrawer.Navigator
+    drawerContent={(props) => <LabDrawerContent {...props} profile={profile} isBranch={false} />}
+    screenOptions={{
+      headerStyle: { backgroundColor: LabColors.primary },
+      headerTintColor: '#fff',
+      headerTitleStyle: { fontWeight: '700' },
+      drawerStyle: { backgroundColor: LabColors.primary, width: 280 },
+    }}
+  >
+    <LabDrawer.Screen name="LabHome"    options={{ title: 'Dashboard' }}>
+      {() => <LabHomeScreen profile={profile} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabOrders"  options={{ title: 'Orders' }}>
+      {() => <LabOrdersScreen profile={profile} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabVerify"  options={{ title: 'Verify Patient' }}>
+      {() => <LabVerifyScreen profile={profile} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabResults" options={{ title: 'Results' }}>
+      {() => <LabResultsScreen profile={profile} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
+      {() => <EntityLocationSettingsScreen profile={profile} collectionName="labs" title="Lab Location Settings" />}
+    </LabDrawer.Screen>
+  </LabDrawer.Navigator>
+);
+
+// ── Lab Branch Drawer ──
+const LabBranchDrawerNavigator = ({ profile }) => (
+  <LabBranchDrawer.Navigator
+    drawerContent={(props) => <LabDrawerContent {...props} profile={profile} isBranch={true} />}
+    screenOptions={{
+      headerStyle: { backgroundColor: LabColors.primary },
+      headerTintColor: '#fff',
+      headerTitleStyle: { fontWeight: '700' },
+      drawerStyle: { backgroundColor: LabColors.primary, width: 280 },
+    }}
+  >
+    <LabBranchDrawer.Screen name="LabBranchHome"    options={{ title: 'Branch Dashboard' }}>
+      {() => <LabHomeScreen profile={profile} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchOrders"  options={{ title: 'Orders' }}>
+      {() => <LabOrdersScreen profile={profile} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchVerify"  options={{ title: 'Verify Patient' }}>
+      {() => <LabVerifyScreen profile={profile} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchResults" options={{ title: 'Results' }}>
+      {() => <LabResultsScreen profile={profile} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
+      {() => <EntityLocationSettingsScreen profile={profile} collectionName="labBranches" title="Lab Branch Location Settings" />}
+    </LabBranchDrawer.Screen>
+  </LabBranchDrawer.Navigator>
+);
+
+// ── Scan Drawer ──
+const ScanDrawerNavigator = ({ profile }) => (
+  <ScanDrawer.Navigator
+    drawerContent={(props) => <ScanDrawerContent {...props} profile={profile} isBranch={false} />}
+    screenOptions={{
+      headerStyle: { backgroundColor: ScanColors.primary },
+      headerTintColor: '#fff',
+      headerTitleStyle: { fontWeight: '700' },
+      drawerStyle: { backgroundColor: ScanColors.primary, width: 280 },
+    }}
+  >
+    <ScanDrawer.Screen name="ScanHome"    options={{ title: 'Dashboard' }}>
+      {() => <ScanHomeScreen profile={profile} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanOrders"  options={{ title: 'Orders' }}>
+      {() => <ScanOrdersScreen profile={profile} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanVerify"  options={{ title: 'Verify Patient' }}>
+      {() => <ScanVerifyScreen profile={profile} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanResults" options={{ title: 'Reports' }}>
+      {() => <ScanResultsScreen profile={profile} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
+      {() => <EntityLocationSettingsScreen profile={profile} collectionName="scanCenters" title="Scan Center Location Settings" />}
+    </ScanDrawer.Screen>
+  </ScanDrawer.Navigator>
+);
+
+// ── Scan Branch Drawer ──
+const ScanBranchDrawerNavigator = ({ profile }) => (
+  <ScanBranchDrawer.Navigator
+    drawerContent={(props) => <ScanDrawerContent {...props} profile={profile} isBranch={true} />}
+    screenOptions={{
+      headerStyle: { backgroundColor: ScanColors.primary },
+      headerTintColor: '#fff',
+      headerTitleStyle: { fontWeight: '700' },
+      drawerStyle: { backgroundColor: ScanColors.primary, width: 280 },
+    }}
+  >
+    <ScanBranchDrawer.Screen name="ScanBranchHome"    options={{ title: 'Branch Dashboard' }}>
+      {() => <ScanHomeScreen profile={profile} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchOrders"  options={{ title: 'Orders' }}>
+      {() => <ScanOrdersScreen profile={profile} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchVerify"  options={{ title: 'Verify Patient' }}>
+      {() => <ScanVerifyScreen profile={profile} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchResults" options={{ title: 'Reports' }}>
+      {() => <ScanResultsScreen profile={profile} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
+      {() => <EntityLocationSettingsScreen profile={profile} collectionName="scanBranches" title="Scan Branch Location Settings" />}
+    </ScanBranchDrawer.Screen>
+  </ScanBranchDrawer.Navigator>
 );
 
 // ── Doctor Drawer ──
@@ -175,17 +324,18 @@ const DoctorDrawerNavigator = ({ profile }) => {
         drawerInactiveTintColor: DoctorColors.textSecondary,
       }}
     >
-      <DoctorDrawer.Screen name="DoctorHome"          component={DoctorHomeScreen}          options={{ title: 'Dashboard' }} />
-      <DoctorDrawer.Screen name="DoctorPatients"      component={DoctorPatientsScreen}      options={{ title: 'My Patients' }} />
-      <DoctorDrawer.Screen name="DoctorPatientPanel"  component={DoctorPatientPanelScreen}  options={{ title: 'Patient Panel' }} />
-      <DoctorDrawer.Screen name="DoctorAppointments"  component={DoctorAppointmentsScreen}  options={{ title: 'Appointments' }} />
-      <DoctorDrawer.Screen name="DoctorVideo"         component={DoctorVideoScreen}         options={{ title: 'Video Calls' }} />
-      <DoctorDrawer.Screen name="DoctorMessages"      component={DoctorMessagesScreen}      options={{ title: 'Messages' }} />
-      <DoctorDrawer.Screen name="DoctorNotes"         component={DoctorNotesScreen}         options={{ title: 'Notes' }} />
-      <DoctorDrawer.Screen name="DoctorPrescriptions" component={DoctorPrescriptionsScreen} options={{ title: 'Prescriptions' }} />
-      <DoctorDrawer.Screen name="DoctorReviews"       component={DoctorReviewsScreen}       options={{ title: 'Reviews' }} />
-      <DoctorDrawer.Screen name="DoctorAnalytics"     component={DoctorAnalyticsScreen}     options={{ title: 'Analytics' }} />
-      <DoctorDrawer.Screen name="DoctorSettings"      component={DoctorSettingsScreen}      options={{ title: 'Profile & Settings' }} />
+      <DoctorDrawer.Screen name="DoctorHome"               component={DoctorHomeScreen}               options={{ title: 'Dashboard' }} />
+      <DoctorDrawer.Screen name="DoctorPatients"           component={DoctorPatientsScreen}           options={{ title: 'My Patients' }} />
+      <DoctorDrawer.Screen name="DoctorPatientPanel"       component={DoctorPatientPanelScreen}       options={{ title: 'Patient Panel' }} />
+      <DoctorDrawer.Screen name="DoctorAppointments"       component={DoctorAppointmentsScreen}       options={{ title: 'Appointments' }} />
+      <DoctorDrawer.Screen name="DoctorVideo"              component={DoctorVideoScreen}              options={{ title: 'Video Calls' }} />
+      <DoctorDrawer.Screen name="DoctorMessages"           component={DoctorMessagesScreen}           options={{ title: 'Messages' }} />
+      <DoctorDrawer.Screen name="DoctorNotes"              component={DoctorNotesScreen}              options={{ title: 'Notes' }} />
+      <DoctorDrawer.Screen name="DoctorPrescriptions"      component={DoctorPrescriptionsScreen}      options={{ title: 'Prescriptions' }} />
+      <DoctorDrawer.Screen name="DoctorDiagnosticResults"  component={DoctorDiagnosticResultsScreen}  options={{ title: 'Lab & Scan Results' }} />
+      <DoctorDrawer.Screen name="DoctorReviews"            component={DoctorReviewsScreen}            options={{ title: 'Reviews' }} />
+      <DoctorDrawer.Screen name="DoctorAnalytics"          component={DoctorAnalyticsScreen}          options={{ title: 'Analytics' }} />
+      <DoctorDrawer.Screen name="DoctorSettings"           component={DoctorSettingsScreen}           options={{ title: 'Profile & Settings' }} />
     </DoctorDrawer.Navigator>
   );
 };
@@ -217,7 +367,7 @@ const TherapistDrawerNavigator = ({ profile }) => {
   );
 };
 
-// ── Therapy Drawer (existing, unchanged) ──
+// ── Therapy Drawer ──
 const TherapyDrawerNavigator = ({ profile }) => {
   return (
     <TherapyDrawer.Navigator
@@ -243,7 +393,7 @@ const TherapyDrawerNavigator = ({ profile }) => {
   );
 };
 
-// ── Medical Drawer (new) ──
+// ── Medical Drawer ──
 const MedicalDrawerNavigator = ({ profile }) => {
   return (
     <MedicalDrawer.Navigator
@@ -257,14 +407,16 @@ const MedicalDrawerNavigator = ({ profile }) => {
         drawerInactiveTintColor: MedicalColors.textSecondary,
       }}
     >
-      <MedicalDrawer.Screen name="MedicalHome" component={MedicalHomeScreen} options={{ title: 'Dashboard' }} />
-      <MedicalDrawer.Screen name="MedicalAppointments" component={MedicalAppointmentsScreen} options={{ title: 'Appointments' }} />
-      <MedicalDrawer.Screen name="MedicalMessages" component={MedicalMessagesScreen} options={{ title: 'Messages' }} />
-      <MedicalDrawer.Screen name="MedicalVideo" component={MedicalVideoScreen} options={{ title: 'Video Calls' }} />
-      <MedicalDrawer.Screen name="MedicalHistory" component={MedicalHistoryScreen} options={{ title: 'Medical History' }} />
+      <MedicalDrawer.Screen name="MedicalHome"          component={MedicalHomeScreen}          options={{ title: 'Dashboard' }} />
+      <MedicalDrawer.Screen name="MedicalTimeline"      component={MedicalTimelineScreen}      options={{ title: 'Health Timeline' }} />
+      <MedicalDrawer.Screen name="MedicalAppointments"  component={MedicalAppointmentsScreen}  options={{ title: 'Appointments' }} />
+      <MedicalDrawer.Screen name="MedicalMessages"      component={MedicalMessagesScreen}      options={{ title: 'Messages' }} />
+      <MedicalDrawer.Screen name="MedicalVideo"         component={MedicalVideoScreen}         options={{ title: 'Video Calls' }} />
+      <MedicalDrawer.Screen name="MedicalHistory"       component={MedicalHistoryScreen}       options={{ title: 'Medical History' }} />
       <MedicalDrawer.Screen name="MedicalPrescriptions" component={MedicalPrescriptionsScreen} options={{ title: 'Prescriptions' }} />
-      <MedicalDrawer.Screen name="MedicalBilling" component={MedicalBillingScreen} options={{ title: 'Billing' }} />
-      <MedicalDrawer.Screen name="MedicalSettings" component={MedicalSettingsScreen} options={{ title: 'My Profile' }} />
+      <MedicalDrawer.Screen name="MedicalDiagnostic"    component={MedicalDiagnosticScreen}    options={{ title: 'Lab & Scan Orders' }} />
+      <MedicalDrawer.Screen name="MedicalBilling"       component={MedicalBillingScreen}       options={{ title: 'Billing' }} />
+      <MedicalDrawer.Screen name="MedicalSettings"      component={MedicalSettingsScreen}      options={{ title: 'My Profile' }} />
     </MedicalDrawer.Navigator>
   );
 };
@@ -273,16 +425,17 @@ const MedicalDrawerNavigator = ({ profile }) => {
 const AppNavigator = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userIntent, setUserIntent] = useState(null); // 'therapy' | 'medical' | null
+  const [userIntent, setUserIntent] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        // User signed out — clear storage and reset state
         await AsyncStorage.multiRemove(['isAuthenticated', 'userProfile', 'userRole', 'userId', 'userName']);
         setIsAuthenticated(false);
         setProfile(null);
+        setUserRole(null);
         setIsLoading(false);
         return;
       }
@@ -290,8 +443,7 @@ const AppNavigator = () => {
       try {
         const { role, profile: resolvedProfile } = await resolveRole(user.uid);
 
-        // Block unknown roles
-        const allowedRoles = ['client', 'therapist', 'admin', 'doctor', 'pharmacy', 'branch_user'];
+        const allowedRoles = ['client', 'therapist', 'admin', 'doctor', 'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch'];
         if (!allowedRoles.includes(role)) {
           await auth.signOut();
           setIsAuthenticated(false);
@@ -300,41 +452,37 @@ const AppNavigator = () => {
           return;
         }
 
-        // Merge Firebase Auth photoURL as fallback (covers Google sign-in users)
         const mergedProfile = resolvedProfile
           ? { ...resolvedProfile, photoURL: resolvedProfile.photoURL || user.photoURL || null }
           : resolvedProfile;
 
-        // Sync resolved profile to AsyncStorage
         await AsyncStorage.setItem('isAuthenticated', 'true');
         await AsyncStorage.setItem('userProfile', JSON.stringify(mergedProfile));
         await AsyncStorage.setItem('userRole', role);
         await AsyncStorage.setItem('userId', mergedProfile?.id || user.uid);
         if (mergedProfile?.name) await AsyncStorage.setItem('userName', mergedProfile.name);
 
-        // Determine intent based on role
         let intent;
-        if (role === 'therapist' || role === 'admin') {
-          intent = 'therapist';
-        } else if (role === 'doctor') {
-          intent = 'doctor';
-        } else if (role === 'pharmacy') {
-          intent = 'pharmacy';
-        } else if (role === 'branch_user') {
-          intent = 'branch';
-        } else {
-          intent = resolvedProfile?.userIntent || await AsyncStorage.getItem('userIntent') || 'therapy';
-        }
-        await AsyncStorage.setItem('userIntent', intent);
+        if (role === 'therapist' || role === 'admin') intent = 'therapist';
+        else if (role === 'doctor')      intent = 'doctor';
+        else if (role === 'pharmacy')    intent = 'pharmacy';
+        else if (role === 'branch_user') intent = 'branch';
+        else if (role === 'lab')         intent = 'lab';
+        else if (role === 'lab_branch')  intent = 'lab_branch';
+        else if (role === 'scan')        intent = 'scan';
+        else if (role === 'scan_branch') intent = 'scan_branch';
+        else intent = resolvedProfile?.userIntent || await AsyncStorage.getItem('userIntent') || 'therapy';
 
+        await AsyncStorage.setItem('userIntent', intent);
         setProfile(mergedProfile);
+        setUserRole(role);
         setIsAuthenticated(true);
         setUserIntent(intent);
       } catch (err) {
-        // Suspended / deactivated account
         await auth.signOut().catch(() => {});
         setIsAuthenticated(false);
         setProfile(null);
+        setUserRole(null);
       } finally {
         setIsLoading(false);
       }
@@ -343,7 +491,6 @@ const AppNavigator = () => {
     return unsub;
   }, []);
 
-  // Listen for profile refresh requests (e.g. after photo upload)
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('refreshProfile', async () => {
       const user = auth.currentUser;
@@ -361,25 +508,27 @@ const AppNavigator = () => {
     return () => sub.remove();
   }, []);
 
-  // Determine initial route
   const getInitialRoute = () => {
     if (isAuthenticated) {
-      if (userIntent === 'therapist') return 'TherapistMain';
-      if (userIntent === 'doctor') return 'DoctorMain';
-      if (userIntent === 'medical') return 'MedicalMain';
-      if (userIntent === 'pharmacy') return 'PharmacyMain';
-      if (userIntent === 'branch') return 'BranchMain';
+      if (userIntent === 'therapist')  return 'TherapistMain';
+      if (userIntent === 'doctor')     return 'DoctorMain';
+      if (userIntent === 'medical')    return 'MedicalMain';
+      if (userIntent === 'pharmacy')   return 'PharmacyMain';
+      if (userIntent === 'branch')     return 'BranchMain';
+      if (userIntent === 'lab')        return 'LabMain';
+      if (userIntent === 'lab_branch') return 'LabBranchMain';
+      if (userIntent === 'scan')       return 'ScanMain';
+      if (userIntent === 'scan_branch')return 'ScanBranchMain';
       return 'Main';
     }
     return 'Intent';
   };
 
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <NavigationContainer>
+      <DashboardLocationGateMobile role={userRole} profile={profile} userIntent={userIntent} active={isAuthenticated && !isLoading} />
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: Colors.primary },
@@ -388,19 +537,8 @@ const AppNavigator = () => {
         }}
         initialRouteName={getInitialRoute()}
       >
-        {/* ── Intent Selection (new entry point) ── */}
-        <Stack.Screen
-          name="Intent"
-          component={IntentScreen}
-          options={{ headerShown: false }}
-        />
-
-        {/* ── Therapy Onboarding Flow (existing) ── */}
-        <Stack.Screen
-          name="Welcome"
-          component={WelcomeScreen}
-          options={{ headerShown: false }}
-        />
+        <Stack.Screen name="Intent" component={IntentScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Login' }} />
         <Stack.Screen name="Questionnaire" component={QuestionnaireScreen} options={{ title: 'Getting to know you' }} />
         <Stack.Screen name="SignUp" component={SignUpScreen} options={{ title: 'Create Account' }} />
@@ -410,115 +548,54 @@ const AppNavigator = () => {
         <Stack.Screen name="ChildInfo" component={ChildInfoScreen} options={{ title: 'Child Information' }} />
         <Stack.Screen name="ParentConsent" component={ParentConsentScreen} options={{ title: 'Parent Consent' }} />
 
-        {/* ── Doctor Discovery Flow ── */}
-        <Stack.Screen
-          name="MedicalIntake"
-          component={MedicalIntakeScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="DoctorSearch"
-          component={DoctorSearchScreen}
-          options={{
-            title: 'Find a Doctor',
-            headerStyle: { backgroundColor: MedicalColors.primary },
-            headerTintColor: '#fff',
-          }}
-        />
-        <Stack.Screen
-          name="DoctorProfile"
-          component={DoctorProfileScreen}
-          options={{
-            title: 'Doctor Profile',
-            headerStyle: { backgroundColor: MedicalColors.primary },
-          }}
-        />
-        <Stack.Screen
-          name="BookAppointment"
-          component={BookAppointmentScreen}
-          options={{
-            title: 'Book Appointment',
-            headerStyle: { backgroundColor: MedicalColors.primary },
-          }}
-        />
-        <Stack.Screen
-          name="ReviewSubmit"
-          component={ReviewSubmitScreen}
-          options={{
-            title: 'Leave a Review',
-            headerTintColor: '#FFFFFF',
-            headerStyle: { backgroundColor: MedicalColors.primary },
-          }}
-        />
+        <Stack.Screen name="MedicalIntake" component={MedicalIntakeScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="DoctorSearch" component={DoctorSearchScreen} options={{ title: 'Find a Doctor', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="DoctorProfile" component={DoctorProfileScreen} options={{ title: 'Doctor Profile', headerStyle: { backgroundColor: MedicalColors.primary } }} />
+        <Stack.Screen name="BookAppointment" component={BookAppointmentScreen} options={{ title: 'Book Appointment', headerStyle: { backgroundColor: MedicalColors.primary } }} />
+        <Stack.Screen name="ReviewSubmit" component={ReviewSubmitScreen} options={{ title: 'Leave a Review', headerTintColor: '#FFFFFF', headerStyle: { backgroundColor: MedicalColors.primary } }} />
 
-        {/* ── Pharmacy Dashboard ── */}
         <Stack.Screen name="PharmacyMain" options={{ headerShown: false }}>
           {() => <PharmacyDrawerNavigator profile={profile} />}
         </Stack.Screen>
-
-        {/* ── Branch Dashboard ── */}
         <Stack.Screen name="BranchMain" options={{ headerShown: false }}>
           {() => <BranchDrawerNavigator profile={profile} />}
         </Stack.Screen>
-
-        {/* ── Doctor Professional Dashboard ── */}
         <Stack.Screen name="DoctorMain" options={{ headerShown: false }}>
           {() => <DoctorDrawerNavigator profile={profile} />}
         </Stack.Screen>
-
-        {/* ── Therapist Dashboard ── */}
         <Stack.Screen name="TherapistMain" options={{ headerShown: false }}>
           {() => <TherapistDrawerNavigator profile={profile} />}
         </Stack.Screen>
-
-        {/* ── Therapy Client Dashboard (existing) ── */}
         <Stack.Screen name="Main" options={{ headerShown: false }}>
           {() => <TherapyDrawerNavigator profile={profile} />}
         </Stack.Screen>
-
-        {/* ── Medical Dashboard (new) ── */}
         <Stack.Screen name="MedicalMain" options={{ headerShown: false }}>
           {() => <MedicalDrawerNavigator profile={profile} />}
         </Stack.Screen>
+        <Stack.Screen name="LabMain" options={{ headerShown: false }}>
+          {() => <LabDrawerNavigator profile={profile} />}
+        </Stack.Screen>
+        <Stack.Screen name="LabBranchMain" options={{ headerShown: false }}>
+          {() => <LabBranchDrawerNavigator profile={profile} />}
+        </Stack.Screen>
+        <Stack.Screen name="ScanMain" options={{ headerShown: false }}>
+          {() => <ScanDrawerNavigator profile={profile} />}
+        </Stack.Screen>
+        <Stack.Screen name="ScanBranchMain" options={{ headerShown: false }}>
+          {() => <ScanBranchDrawerNavigator profile={profile} />}
+        </Stack.Screen>
 
-        {/* ── Medical Patient Detail Screens ── */}
-        <Stack.Screen
-          name="InsuranceDetails"
-          component={InsuranceDetailsScreen}
-          options={{ title: 'Insurance Details', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }}
-        />
-        <Stack.Screen
-          name="EmergencyContact"
-          component={EmergencyContactScreen}
-          options={{ title: 'Emergency Contacts', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }}
-        />
-        <Stack.Screen
-          name="HealthRecords"
-          component={HealthRecordsScreen}
-          options={{ title: 'Health Records', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }}
-        />
-        <Stack.Screen
-          name="EPharmacy"
-          component={EPharmacyScreen}
-          options={{ title: 'My E-Pharmacies', headerStyle: { backgroundColor: '#7c3aed' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }}
-        />
-        <Stack.Screen
-          name="DoctorDetail"
-          component={DoctorDetailScreen}
-          options={{ title: 'Doctor Profile', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }}
-        />
-        <Stack.Screen
-          name="Support"
-          component={SupportScreen}
-          options={{ title: 'Support & Report', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }}
-        />
-
-        {/* ── Doctor Patient Detail ── */}
-        <Stack.Screen
-          name="DoctorPatientDetail"
-          component={DoctorPatientDetailScreen}
-          options={{ title: 'Patient Detail', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }}
-        />
+        <Stack.Screen name="InsuranceDetails" component={InsuranceDetailsScreen} options={{ title: 'Insurance Details', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="EmergencyContact" component={EmergencyContactScreen} options={{ title: 'Emergency Contacts', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="HealthRecords" component={HealthRecordsScreen} options={{ title: 'Health Records', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="EPharmacy" component={EPharmacyScreen} options={{ title: 'My E-Pharmacies', headerStyle: { backgroundColor: '#7c3aed' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
+        <Stack.Screen name="DoctorDetail" component={DoctorDetailScreen} options={{ title: 'Doctor Profile', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="Support" component={SupportScreen} options={{ title: 'Support & Report', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="DoctorPatientDetail" component={DoctorPatientDetailScreen} options={{ title: 'Patient Detail', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
+        <Stack.Screen name="DoctorPatientOverview" component={DoctorPatientOverviewScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="DoctorDiagnosticOrder" component={DoctorDiagnosticScreen} options={{ title: 'Order Lab / Scan', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
+        <Stack.Screen name="DoctorDiagnosticDraftDetail" component={DoctorDiagnosticDraftDetailScreen} options={{ title: 'Draft order', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
+        <Stack.Screen name="DoctorPatientTimeline" component={DoctorPatientTimelineScreen} options={{ title: 'Patient Timeline', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

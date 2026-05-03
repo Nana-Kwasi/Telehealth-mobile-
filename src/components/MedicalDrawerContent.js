@@ -30,10 +30,12 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
 
   const drawerItems = [
     { name: 'MedicalHome', icon: 'home-outline', label: 'Home' },
+    { name: 'MedicalTimeline', icon: 'time-outline', label: 'Health Timeline' },
     { name: 'MedicalAppointments', icon: 'calendar-outline', label: 'Appointments' },
     { name: 'MedicalVideo', icon: 'videocam-outline', label: 'Video Calls' },
     { name: 'MedicalMessages', icon: 'chatbubbles-outline', label: 'Messages' },
     { name: 'MedicalPrescriptions', icon: 'medkit-outline', label: 'Prescriptions' },
+    { name: 'MedicalDiagnostic', icon: 'flask-outline', label: 'Lab & Scan Orders' },
     { name: 'MedicalHistory', icon: 'folder-outline', label: 'Medical History' },
     { name: 'MedicalBilling', icon: 'card-outline', label: 'Billing' },
     { name: 'MedicalSettings', icon: 'person-outline', label: 'My Profile' },

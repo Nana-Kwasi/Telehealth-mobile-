@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 
 const TABS = ['Profile', 'Availability'];
 
@@ -23,6 +24,16 @@ export default function DoctorSettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [savingAvail, setSavingAvail] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const { detectAddress, loading: locating, message: locationMsg } = useAddressAutofillMobile();
+  const [locationMeta, setLocationMeta] = useState({
+    latitude: null,
+    longitude: null,
+    country: '',
+    city: '',
+    area: '',
+    region: '',
+    street: '',
+  });
 
   // Profile
   const [form, setForm] = useState({
@@ -70,6 +81,15 @@ export default function DoctorSettingsScreen() {
             inPerson: !!data.consultationTypes?.inPerson,
           },
         });
+        setLocationMeta({
+          latitude: data?.latitude ?? data?.location?.latitude ?? null,
+          longitude: data?.longitude ?? data?.location?.longitude ?? null,
+          country: data?.country || data?.location?.country || '',
+          city: data?.city || data?.location?.city || '',
+          area: data?.area || data?.location?.area || '',
+          region: data?.region || data?.location?.region || '',
+          street: data?.street || data?.location?.street || '',
+        });
       }
 
       // Load availability
@@ -97,6 +117,21 @@ export default function DoctorSettingsScreen() {
         bio: form.bio.trim(),
         location: form.location.trim(),
         city: form.location.trim(),
+        latitude: locationMeta.latitude ?? null,
+        longitude: locationMeta.longitude ?? null,
+        country: locationMeta.country || null,
+        area: locationMeta.area || null,
+        region: locationMeta.region || null,
+        street: locationMeta.street || null,
+        locationMeta: {
+          country: locationMeta.country || null,
+          city: locationMeta.city || form.location.trim() || null,
+          area: locationMeta.area || null,
+          region: locationMeta.region || null,
+          street: locationMeta.street || null,
+          latitude: locationMeta.latitude ?? null,
+          longitude: locationMeta.longitude ?? null,
+        },
         consultationFee: form.consultationFee ? Number(form.consultationFee) : null,
         languages: form.languages.split(',').map(l => l.trim()).filter(Boolean),
         experience: form.experience ? Number(form.experience) : null,
@@ -326,6 +361,25 @@ export default function DoctorSettingsScreen() {
           <Field label="Consultation Fee (GHS)" value={form.consultationFee} onChange={v => setField('consultationFee', v)} placeholder="e.g. 150" keyboardType="numeric" />
           <Field label="Phone Number" value={form.phone} onChange={v => setField('phone', v)} placeholder="+233..." keyboardType="phone-pad" />
           <Field label="Location / City" value={form.location} onChange={v => setField('location', v)} placeholder="e.g. Accra, Ghana" />
+          <View style={{ marginTop: -8, marginBottom: 10 }}>
+            <TouchableOpacity style={styles.locBtn} onPress={() => detectAddress((loc) => {
+              const display = [loc.city, loc.country].filter(Boolean).join(', ') || loc.address || '';
+              if (display) setField('location', display);
+              setLocationMeta({
+                latitude: loc.latitude ?? null,
+                longitude: loc.longitude ?? null,
+                country: loc.country || '',
+                city: loc.city || '',
+                area: loc.area || '',
+                region: loc.region || '',
+                street: loc.street || '',
+              });
+            })} disabled={locating}>
+              <Ionicons name="locate-outline" size={15} color={DoctorColors.primary} />
+              <Text style={styles.locBtnText}>{locating ? 'Detecting location…' : 'Use current location'}</Text>
+            </TouchableOpacity>
+            {!!locationMsg && <Text style={styles.locMsg}>{locationMsg}</Text>}
+          </View>
           <Field label="Languages (comma-separated)" value={form.languages} onChange={v => setField('languages', v)} placeholder="e.g. English, Twi" />
           <Field label="Bio / About" value={form.bio} onChange={v => setField('bio', v)} placeholder="Tell patients about yourself..." multiline />
 
@@ -566,6 +620,20 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#e2e8f0',
   },
   inputMulti: { height: 100, textAlignVertical: 'top' },
+  locBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: DoctorColors.primary + '40',
+    backgroundColor: DoctorColors.primaryLight,
+  },
+  locBtnText: { fontSize: 12, color: DoctorColors.primary, fontWeight: '700' },
+  locMsg: { marginTop: 6, fontSize: 11, color: '#64748b', lineHeight: 16 },
   switchRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 8,

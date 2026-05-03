@@ -11,6 +11,7 @@ import { auth, db } from '../../services/firebaseConfig';
 import { doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
 import { fetchClientAppointments, fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 
 const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
@@ -51,6 +52,7 @@ const MedicalHomeScreen = ({ navigation }) => {
   const [prescriptions, setPrescriptions] = useState([]);
   const [userName, setUserName] = useState('');
   const [userPhotoURL, setUserPhotoURL] = useState(null);
+  const [locationProfile, setLocationProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [newBookingDoctor, setNewBookingDoctor] = useState(null);
@@ -98,8 +100,10 @@ const MedicalHomeScreen = ({ navigation }) => {
           try {
             const authSnap = await getDoc(doc(db, 'auth', currentUser.uid));
             if (authSnap.exists()) {
-              const pd = authSnap.data().photoURL || null;
+              const authData = authSnap.data() || {};
+              const pd = authData.photoURL || null;
               if (pd) setUserPhotoURL(pd);
+              setLocationProfile(prev => prev || authData);
             }
           } catch (_) {}
         }
@@ -118,6 +122,7 @@ const MedicalHomeScreen = ({ navigation }) => {
           const profSnap = await getDoc(doc(db, 'patientProfiles', clientId));
           if (profSnap.exists()) {
             const pd = profSnap.data();
+            setLocationProfile(pd);
             setPatientStatus(pd.status || 'active');
             setHasLoggedVitals(!!pd.vitals?.latest);
           }
@@ -409,6 +414,7 @@ const MedicalHomeScreen = ({ navigation }) => {
           )}
         </View>
       </View>
+      <LocationSummaryCardMobile profile={locationProfile} onEdit={() => navigation.navigate('MedicalSettings')} />
 
       {/* Find Doctor CTA Banner */}
       {!primaryDoctor && !newBookingDoctor && (

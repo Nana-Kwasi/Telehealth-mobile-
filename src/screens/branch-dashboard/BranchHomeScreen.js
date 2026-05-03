@@ -6,17 +6,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { reauthenticateWithCredential as reauth, updatePassword as updatePwd, EmailAuthProvider as EAP } from 'firebase/auth';
+import { updatePassword as updatePwd } from 'firebase/auth';
 import { PharmacyColors as C } from '../../constants/colors';
+import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 
-export default function BranchHomeScreen({ profile }) {
+export default function BranchHomeScreen({ profile, navigation }) {
   const [stats, setStats] = useState({ incoming: 0, active: 0, ready: 0, delivered: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // Forced password reset
   const [mustChange, setMustChange] = useState(profile?.mustChangePassword === true);
-  const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [pwError, setPwError] = useState('');
@@ -45,18 +45,15 @@ export default function BranchHomeScreen({ profile }) {
     setPwError('');
     if (newPw.length < 8) { setPwError('Password must be at least 8 characters.'); return; }
     if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
-    if (newPw === oldPw) { setPwError('New password must differ from current.'); return; }
     setPwSaving(true);
     try {
       const user = auth.currentUser;
-      const credential = EAP.credential(user.email, oldPw);
-      await reauth(user, credential);
       await updatePwd(user, newPw);
       await updateDoc(doc(db, 'pharmacyBranches', profile.id), { mustChangePassword: false });
       setMustChange(false);
     } catch (err) {
-      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        setPwError('Current password is incorrect.');
+      if (err.code === 'auth/requires-recent-login') {
+        setPwError('Log out, sign in with your temporary password again, then try.');
       } else { setPwError('Failed to update password. Try again.'); }
     } finally { setPwSaving(false); }
   };
@@ -78,6 +75,7 @@ export default function BranchHomeScreen({ profile }) {
           <Text style={styles.welcomeTitle}>{profile?.branchName || profile?.pharmacyName || 'Branch'}</Text>
           <Text style={styles.welcomeSub}>Branch Dashboard</Text>
         </View>
+        <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('BranchSettings')} />
 
         {loading ? (
           <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
@@ -102,7 +100,6 @@ export default function BranchHomeScreen({ profile }) {
             <Text style={styles.pwSub}>Your account was created with a temporary password. Please set a new one.</Text>
             {pwError ? <Text style={styles.pwError}>{pwError}</Text> : null}
             {[
-              { label: 'Current (Temporary) Password', val: oldPw, set: setOldPw },
               { label: 'New Password', val: newPw, set: setNewPw },
               { label: 'Confirm New Password', val: confirmPw, set: setConfirmPw },
             ].map(f => (

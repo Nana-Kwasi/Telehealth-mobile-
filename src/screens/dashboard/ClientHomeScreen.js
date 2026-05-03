@@ -20,6 +20,7 @@ import { fetchClientData, getCachedClientData, getCachedTherapistData } from '..
 import { collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Colors } from '../../constants/colors';
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
+import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 
 const { width } = Dimensions.get('window');
 
@@ -450,6 +451,7 @@ const ClientHomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
+      <LocationSummaryCardMobile profile={clientData} onEdit={() => navigation.navigate('Settings')} />
 
       {/* Emergency Banner */}
       <TouchableOpacity style={styles.emergencyBanner} onPress={() => setShowEmergencyModal(true)} activeOpacity={0.85}>

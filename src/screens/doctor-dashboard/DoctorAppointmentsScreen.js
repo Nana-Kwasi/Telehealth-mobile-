@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
+import { logAction, A } from '../../utils/auditLogger';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -157,7 +158,21 @@ export default function DoctorAppointmentsScreen() {
     setSaving(true);
     try {
       const cu = auth.currentUser;
-      await addDoc(collection(db, 'doctorAppointments'), {
+
+      // Check system config limit
+      const cfgSnap = await getDoc(doc(db, 'systemConfig', 'settings')).catch(() => null);
+      const cfgData = cfgSnap?.exists() ? cfgSnap.data() : {};
+      const maxPerDay = cfgData?.appointments?.maxApptPerDoctorPerDay ?? 20;
+      const todaySnap = await getDocs(
+        query(collection(db, 'doctorAppointments'),
+          where('doctorId', '==', cu.uid), where('date', '==', bookDate))
+      );
+      if (todaySnap.size >= maxPerDay) {
+        Alert.alert('Limit Reached', `Maximum ${maxPerDay} appointments per day reached.`);
+        return;
+      }
+
+      const ref = await addDoc(collection(db, 'doctorAppointments'), {
         doctorId: cu.uid,
         doctorName: doctorProfile?.name || '',
         doctorSpecialization: doctorProfile?.specialty || doctorProfile?.specialization || '',
@@ -171,6 +186,10 @@ export default function DoctorAppointmentsScreen() {
         scheduledByDoctor: true,
         createdAt: serverTimestamp(),
       });
+      logAction(A.APPOINTMENT_BOOKED, {
+        appointmentId: ref.id, patientId: bookForm.patientId,
+        patientName: bookForm.patientName, date: bookDate, type: bookForm.type,
+      }, 'doctor');
       // Add patient to doctor's subcollection
       await setDoc(doc(db, 'doctors', cu.uid, 'patients', bookForm.patientId), {
         patientId: bookForm.patientId, name: bookForm.patientName, addedAt: serverTimestamp(),

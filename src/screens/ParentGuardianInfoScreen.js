@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
+import useAddressAutofillMobile from '../hooks/useAddressAutofillMobile';
 
 const ParentGuardianInfoScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({
@@ -21,15 +22,23 @@ const ParentGuardianInfoScreen = ({ navigation }) => {
     phone: '',
     relationship: '',
     address: '',
+    country: '',
     city: '',
+    area: '',
+    region: '',
+    street: '',
+    ghanaDigitalAddress: '',
     state: '',
     zipCode: '',
+    latitude: null,
+    longitude: null,
     emergencyContactName: '',
     emergencyContactPhone: '',
     emergencyContactRelationship: '',
   });
 
   const [errors, setErrors] = useState({});
+  const { detectAddress, loading: locating, message: locationMsg } = useAddressAutofillMobile();
 
   const relationships = [
     'Parent',
@@ -225,6 +234,25 @@ const ParentGuardianInfoScreen = ({ navigation }) => {
 
         <View style={styles.formSection}>
           <Text style={styles.sectionTitle}>Address</Text>
+          <TouchableOpacity style={styles.locBtn} onPress={() => detectAddress((loc) => {
+            setFormData(prev => ({
+              ...prev,
+              address: prev.address || loc.street || loc.address || '',
+              country: prev.country || loc.countryCode || '',
+              city: prev.city || loc.city || '',
+              area: prev.area || loc.area || '',
+              region: prev.region || loc.region || '',
+              street: prev.street || loc.street || '',
+              state: prev.state || loc.region || '',
+              zipCode: prev.zipCode || '',
+              ghanaDigitalAddress: prev.ghanaDigitalAddress || '',
+              latitude: loc.latitude ?? prev.latitude ?? null,
+              longitude: loc.longitude ?? prev.longitude ?? null,
+            }));
+          })} disabled={locating}>
+            <Text style={styles.locBtnText}>{locating ? 'Detecting location…' : 'Use current location'}</Text>
+          </TouchableOpacity>
+          {!!locationMsg && <Text style={styles.locationMsg}>{locationMsg}</Text>}
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>
@@ -240,6 +268,63 @@ const ParentGuardianInfoScreen = ({ navigation }) => {
             {errors.address && (
               <Text style={styles.errorText}>{errors.address}</Text>
             )}
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, styles.halfWidth]}>
+              <Text style={styles.label}>Country</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.country}
+                onChangeText={(value) => updateField('country', value)}
+                placeholder="e.g. GH"
+                placeholderTextColor={Colors.textLight}
+              />
+            </View>
+            <View style={[styles.inputContainer, styles.halfWidth]}>
+              <Text style={styles.label}>Area / Locality</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.area}
+                onChangeText={(value) => updateField('area', value)}
+                placeholder="Enter area"
+                placeholderTextColor={Colors.textLight}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, styles.halfWidth]}>
+              <Text style={styles.label}>Region / State</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.region}
+                onChangeText={(value) => updateField('region', value)}
+                placeholder="Enter region"
+                placeholderTextColor={Colors.textLight}
+              />
+            </View>
+            <View style={[styles.inputContainer, styles.halfWidth]}>
+              <Text style={styles.label}>Street</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.street}
+                onChangeText={(value) => updateField('street', value)}
+                placeholder="Enter street"
+                placeholderTextColor={Colors.textLight}
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Ghana Digital Address (optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.ghanaDigitalAddress}
+              onChangeText={(value) => updateField('ghanaDigitalAddress', value)}
+              placeholder="e.g. GA-123-4567"
+              placeholderTextColor={Colors.textLight}
+            />
           </View>
 
           <View style={styles.row}>
@@ -470,6 +555,26 @@ const styles = StyleSheet.create({
   optionTextSelected: {
     color: Colors.surface,
     fontWeight: '600',
+  },
+  locBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primary + '15',
+    borderColor: Colors.primary + '40',
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  locBtnText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  locationMsg: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginBottom: 10,
   },
   nextButton: {
     backgroundColor: Colors.primary,

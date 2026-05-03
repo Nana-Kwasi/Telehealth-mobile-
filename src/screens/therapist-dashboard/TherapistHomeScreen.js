@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { TherapistColors } from '../../constants/colors';
 import { LineChart, BarChart } from 'react-native-chart-kit';
+import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 
 const { width } = Dimensions.get('window');
 
@@ -352,6 +353,7 @@ const TherapistHomeScreen = ({ navigation }) => {
           </Text>
         </View>
       </View>
+      <LocationSummaryCardMobile profile={therapistProfile} onEdit={() => navigation.navigate('TherapistSettings')} />
 
       {/* ── KPI Cards ── */}
       <View style={styles.kpiGrid}>

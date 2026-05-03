@@ -9,17 +9,19 @@ import { signOut } from 'firebase/auth';
 import { DoctorColors } from '../constants/colors';
 
 const drawerItems = [
-  { screen: 'DoctorHome',          icon: 'home-outline',            label: 'Dashboard' },
-  { screen: 'DoctorPatients',      icon: 'people-outline',          label: 'My Patients' },
-  { screen: 'DoctorPatientPanel',  icon: 'grid-outline',            label: 'Patient Panel' },
-  { screen: 'DoctorAppointments',  icon: 'calendar-outline',        label: 'Appointments' },
-  { screen: 'DoctorVideo',         icon: 'videocam-outline',        label: 'Video Calls' },
-  { screen: 'DoctorMessages',      icon: 'chatbubbles-outline',     label: 'Messages' },
-  { screen: 'DoctorNotes',         icon: 'document-text-outline',   label: 'Notes' },
-  { screen: 'DoctorPrescriptions', icon: 'medkit-outline',          label: 'Prescriptions' },
-  { screen: 'DoctorReviews',       icon: 'star-outline',            label: 'Reviews' },
-  { screen: 'DoctorAnalytics',     icon: 'bar-chart-outline',       label: 'Analytics' },
-  { screen: 'DoctorSettings',      icon: 'settings-outline',        label: 'Profile & Settings' },
+  { screen: 'DoctorHome',               icon: 'home-outline',            label: 'Dashboard' },
+  { screen: 'DoctorPatients',           icon: 'people-outline',          label: 'My Patients' },
+  { screen: 'DoctorPatientPanel',       icon: 'grid-outline',            label: 'Patient Panel' },
+  { screen: 'DoctorAppointments',       icon: 'calendar-outline',        label: 'Appointments' },
+  { screen: 'DoctorVideo',              icon: 'videocam-outline',        label: 'Video Calls' },
+  { screen: 'DoctorMessages',           icon: 'chatbubbles-outline',     label: 'Messages' },
+  { screen: 'DoctorNotes',              icon: 'document-text-outline',   label: 'Notes' },
+  { screen: 'DoctorPrescriptions',      icon: 'medkit-outline',          label: 'Prescriptions' },
+  { stackScreen: 'DoctorDiagnosticOrder', icon: 'add-circle-outline',    label: 'Order Lab / Scan' },
+  { screen: 'DoctorDiagnosticResults',  icon: 'flask-outline',           label: 'Lab & Scan Results' },
+  { screen: 'DoctorReviews',            icon: 'star-outline',            label: 'Reviews' },
+  { screen: 'DoctorAnalytics',          icon: 'bar-chart-outline',       label: 'Analytics' },
+  { screen: 'DoctorSettings',           icon: 'settings-outline',        label: 'Profile & Settings' },
 ];
 
 const DoctorDrawerContent = ({ navigation, profile, state }) => {
@@ -65,13 +67,18 @@ const DoctorDrawerContent = ({ navigation, profile, state }) => {
       {/* Navigation */}
       <ScrollView style={styles.menuContainer} showsVerticalScrollIndicator={false}>
         {drawerItems.map(item => {
-          const isActive = activeRoute === item.screen;
+          const key = item.stackScreen || item.screen;
+          const isActive = item.stackScreen ? false : activeRoute === item.screen;
           return (
             <TouchableOpacity
-              key={item.screen}
+              key={key}
               style={[styles.menuItem, isActive && styles.menuItemActive]}
               onPress={() => {
-                navigation.navigate(item.screen);
+                if (item.stackScreen) {
+                  navigation.getParent()?.navigate(item.stackScreen);
+                } else {
+                  navigation.navigate(item.screen);
+                }
                 navigation.closeDrawer();
               }}
               activeOpacity={0.7}

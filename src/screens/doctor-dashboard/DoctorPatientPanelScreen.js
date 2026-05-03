@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, TextInput, RefreshControl, Alert, Modal, ScrollView,
+  ActivityIndicator, TextInput, RefreshControl, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import {
   collection, query, where, getDocs, doc, getDoc,
-  setDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
@@ -40,9 +39,6 @@ export default function DoctorPatientPanelScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('All');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [statusChangeTarget, setStatusChangeTarget] = useState(null); // { patient, newStatus }
-  const [changingStatus, setChangingStatus] = useState(false);
-  const [doctorProfile, setDoctorProfile] = useState(null);
 
   useEffect(() => { loadPatients(); }, []);
 
@@ -63,10 +59,6 @@ export default function DoctorPatientPanelScreen({ navigation }) {
     try {
       const cu = auth.currentUser;
       if (!cu) return;
-
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      const profile = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
-      setDoctorProfile(profile);
 
       const apptSnap = await getDocs(
         query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
@@ -115,27 +107,6 @@ export default function DoctorPatientPanelScreen({ navigation }) {
     }
   };
 
-  const confirmStatusChange = async () => {
-    if (!statusChangeTarget) return;
-    setChangingStatus(true);
-    try {
-      const { patient, newStatus } = statusChangeTarget;
-      await setDoc(doc(db, 'patientProfiles', patient.id), {
-        status: newStatus,
-        updatedAt: serverTimestamp(),
-        updatedBy: auth.currentUser?.uid,
-        updatedByName: `Dr. ${doctorProfile?.name || 'Doctor'}`,
-        ...(newStatus === 'discharged' ? { dischargedAt: serverTimestamp() } : {}),
-      }, { merge: true });
-      setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, status: newStatus } : p));
-      setStatusChangeTarget(null);
-    } catch {
-      Alert.alert('Error', 'Could not update patient status.');
-    } finally {
-      setChangingStatus(false);
-    }
-  };
-
   const tabCount = (tab) => {
     if (tab === 'All') return patients.length;
     return patients.filter(p => (p.status || 'active') === tab.toLowerCase()).length;
@@ -144,12 +115,12 @@ export default function DoctorPatientPanelScreen({ navigation }) {
   const renderItem = ({ item }) => {
     const sc = STATUS_COLORS[item.status] || STATUS_COLORS.active;
     return (
-      <View style={styles.patientCard}>
-        <TouchableOpacity
-          style={styles.cardTop}
-          onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name })}
-          activeOpacity={0.7}
-        >
+      <TouchableOpacity
+        style={styles.patientCard}
+        activeOpacity={0.75}
+        onPress={() => navigation.getParent()?.navigate('DoctorPatientOverview', { patientId: item.id, patientName: item.name })}
+      >
+        <View style={styles.cardRow}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
           </View>
@@ -160,70 +131,16 @@ export default function DoctorPatientPanelScreen({ navigation }) {
               <Text style={styles.meta}>{item.visitCount} appointment{item.visitCount !== 1 ? 's' : ''}</Text>
               {item.lastVisit ? <Text style={styles.meta}>· Last: {item.lastVisit}</Text> : null}
             </View>
+            <Text style={styles.tapHint}>Tap for full overview · appointments, labs, Rx, notes</Text>
           </View>
           <View style={styles.cardTopRight}>
             <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.border }]}>
               <Text style={[styles.statusText, { color: sc.text }]}>{(item.status || 'active').charAt(0).toUpperCase() + (item.status || 'active').slice(1)}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" style={{ marginTop: 6 }} />
+            <Ionicons name="chevron-forward" size={18} color="#cbd5e1" style={{ marginTop: 6 }} />
           </View>
-        </TouchableOpacity>
-
-        {/* Status management actions */}
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name })}
-          >
-            <Ionicons name="person-outline" size={14} color={DoctorColors.primary} />
-            <Text style={styles.actionText}>View</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate('DoctorMessages', { patientId: item.id, patientName: item.name })}
-          >
-            <Ionicons name="chatbubble-outline" size={14} color={DoctorColors.primary} />
-            <Text style={styles.actionText}>Message</Text>
-          </TouchableOpacity>
-
-          {item.status === 'active' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
-              onPress={() => setStatusChangeTarget({ patient: item, newStatus: 'inactive' })}
-            >
-              <Ionicons name="pause-circle-outline" size={14} color="#c2410c" />
-              <Text style={[styles.actionText, { color: '#c2410c' }]}>Inactive</Text>
-            </TouchableOpacity>
-          )}
-          {item.status === 'inactive' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}
-              onPress={() => setStatusChangeTarget({ patient: item, newStatus: 'active' })}
-            >
-              <Ionicons name="play-circle-outline" size={14} color="#15803d" />
-              <Text style={[styles.actionText, { color: '#15803d' }]}>Activate</Text>
-            </TouchableOpacity>
-          )}
-          {item.status !== 'discharged' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#fef2f2', borderColor: '#fecdd3' }]}
-              onPress={() => setStatusChangeTarget({ patient: item, newStatus: 'discharged' })}
-            >
-              <Ionicons name="exit-outline" size={14} color="#b91c1c" />
-              <Text style={[styles.actionText, { color: '#b91c1c' }]}>Discharge</Text>
-            </TouchableOpacity>
-          )}
-          {item.status === 'discharged' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}
-              onPress={() => setStatusChangeTarget({ patient: item, newStatus: 'active' })}
-            >
-              <Ionicons name="refresh-circle-outline" size={14} color="#15803d" />
-              <Text style={[styles.actionText, { color: '#15803d' }]}>Reactivate</Text>
-            </TouchableOpacity>
-          )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -282,9 +199,9 @@ export default function DoctorPatientPanelScreen({ navigation }) {
       {activeTab !== 'All' && (
         <View style={[styles.contextHint, { backgroundColor: STATUS_COLORS[activeTab.toLowerCase()]?.bg || '#f1f5f9' }]}>
           <Text style={[styles.contextHintText, { color: STATUS_COLORS[activeTab.toLowerCase()]?.text || '#64748b' }]}>
-            {activeTab === 'Active' && 'Active patients under your care. Tap a patient to view or change status.'}
-            {activeTab === 'Inactive' && 'Temporarily inactive patients. Reactivate or discharge from here.'}
-            {activeTab === 'Discharged' && 'Discharged patients. You can reactivate them if needed.'}
+            {activeTab === 'Active' && 'Active patients under your care. Tap a name for the full overview.'}
+            {activeTab === 'Inactive' && 'Inactive patients. Open overview to reactivate or discharge.'}
+            {activeTab === 'Discharged' && 'Discharged patients. Open overview to reactivate from the header.'}
           </Text>
         </View>
       )}
@@ -307,48 +224,6 @@ export default function DoctorPatientPanelScreen({ navigation }) {
         />
       )}
 
-      {/* Status Change Confirmation Modal */}
-      <Modal visible={!!statusChangeTarget} transparent animationType="fade" onRequestClose={() => setStatusChangeTarget(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={[styles.modalIcon, { backgroundColor: statusChangeTarget?.newStatus === 'discharged' ? '#fef2f2' : statusChangeTarget?.newStatus === 'inactive' ? '#fff7ed' : '#f0fdf4' }]}>
-              <Ionicons
-                name={statusChangeTarget?.newStatus === 'discharged' ? 'exit-outline' : statusChangeTarget?.newStatus === 'inactive' ? 'pause-circle-outline' : 'play-circle-outline'}
-                size={32}
-                color={statusChangeTarget?.newStatus === 'discharged' ? '#b91c1c' : statusChangeTarget?.newStatus === 'inactive' ? '#c2410c' : '#15803d'}
-              />
-            </View>
-            <Text style={styles.modalTitle}>
-              {statusChangeTarget?.newStatus === 'discharged' ? 'Discharge Patient?' : statusChangeTarget?.newStatus === 'inactive' ? 'Set Inactive?' : 'Reactivate Patient?'}
-            </Text>
-            <Text style={styles.modalBody}>
-              {statusChangeTarget?.newStatus === 'discharged'
-                ? `Discharge ${statusChangeTarget?.patient?.name}? This will mark them as no longer under active care.`
-                : statusChangeTarget?.newStatus === 'inactive'
-                ? `Set ${statusChangeTarget?.patient?.name} to Inactive? You can reactivate them at any time.`
-                : `Reactivate ${statusChangeTarget?.patient?.name} as an Active patient?`}
-            </Text>
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setStatusChangeTarget(null)} disabled={changingStatus}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmBtn, changingStatus && { opacity: 0.6 },
-                  { backgroundColor: statusChangeTarget?.newStatus === 'discharged' ? '#b91c1c' : statusChangeTarget?.newStatus === 'inactive' ? '#c2410c' : '#15803d' }]}
-                onPress={confirmStatusChange}
-                disabled={changingStatus}
-              >
-                {changingStatus
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={styles.confirmBtnText}>
-                    {statusChangeTarget?.newStatus === 'discharged' ? 'Discharge' : statusChangeTarget?.newStatus === 'inactive' ? 'Set Inactive' : 'Reactivate'}
-                  </Text>
-                }
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -392,8 +267,9 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
-  cardTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  cardRow: { flexDirection: 'row', alignItems: 'flex-start' },
   cardTopRight: { alignItems: 'flex-end' },
+  tapHint: { fontSize: 11, color: '#94a3b8', marginTop: 6, fontWeight: '500' },
   avatar: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: DoctorColors.primaryLight,
@@ -407,36 +283,6 @@ const styles = StyleSheet.create({
   meta: { fontSize: 11, color: '#94a3b8' },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   statusText: { fontSize: 11, fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: 6, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 10, flexWrap: 'wrap' },
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-    backgroundColor: DoctorColors.primaryLight, borderWidth: 1, borderColor: DoctorColors.primaryLight,
-  },
-  actionText: { fontSize: 12, color: DoctorColors.primary, fontWeight: '600' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyText: { fontSize: 15, color: '#94a3b8' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalCard: {
-    backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15, shadowRadius: 16, elevation: 10,
-  },
-  modalIcon: {
-    width: 60, height: 60, borderRadius: 30,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: DoctorColors.text, marginBottom: 10 },
-  modalBody: { fontSize: 14, color: DoctorColors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 20 },
-  modalFooter: { flexDirection: 'row', gap: 12, width: '100%' },
-  cancelBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-  },
-  cancelBtnText: { fontSize: 15, color: '#64748b', fontWeight: '600' },
-  confirmBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
-  },
-  confirmBtnText: { fontSize: 15, color: '#fff', fontWeight: '700' },
 });

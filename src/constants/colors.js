@@ -89,6 +89,50 @@ export const PharmacyColors = {
   cardBg: '#f8fafc',
 };
 
+// Lab theme colors (emerald green + dark teal)
+export const LabColors = {
+  primary: '#065f46',
+  primaryDark: '#022c22',
+  primaryLight: '#d1fae5',
+  secondary: '#0d9488',
+  accent: '#10b981',
+  background: '#ecfdf5',
+  surface: '#ffffff',
+  text: '#0f172a',
+  textSecondary: '#64748b',
+  textLight: '#94a3b8',
+  success: '#16a34a',
+  warning: '#d97706',
+  error: '#dc2626',
+  info: '#0369a1',
+  border: '#a7f3d0',
+  shadow: 'rgba(0,0,0,0.08)',
+  overlay: 'rgba(0,0,0,0.5)',
+  cardBg: '#f0fdf4',
+};
+
+// Scan theme colors (deep purple + indigo)
+export const ScanColors = {
+  primary: '#4c1d95',
+  primaryDark: '#2e1065',
+  primaryLight: '#ede9fe',
+  secondary: '#7c3aed',
+  accent: '#8b5cf6',
+  background: '#f5f3ff',
+  surface: '#ffffff',
+  text: '#0f172a',
+  textSecondary: '#64748b',
+  textLight: '#94a3b8',
+  success: '#16a34a',
+  warning: '#d97706',
+  error: '#dc2626',
+  info: '#0369a1',
+  border: '#ddd6fe',
+  shadow: 'rgba(0,0,0,0.08)',
+  overlay: 'rgba(0,0,0,0.5)',
+  cardBg: '#faf5ff',
+};
+
 // Therapist theme colors (deep indigo + teal)
 export const TherapistColors = {
   primary: '#4f46e5',         // Indigo

@@ -13,6 +13,7 @@ import {
   EmailAuthProvider, reauthenticateWithCredential, updatePassword, deleteUser,
 } from 'firebase/auth';
 import { MedicalColors } from '../../constants/colors';
+import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -38,8 +39,12 @@ export default function MedicalSettingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
 
   // Profile
-  const [form, setForm] = useState({ name: '', email: '', phone: '', dob: '', bloodType: '', allergies: '' });
+  const [form, setForm] = useState({
+    name: '', email: '', phone: '', dob: '', bloodType: '', allergies: '',
+    country: '', city: '', area: '', region: '', street: '', ghanaDigitalAddress: '', latitude: null, longitude: null,
+  });
   const [saving, setSaving] = useState(false);
+  const { detectAddress, loading: locating, message: locationMsg } = useAddressAutofillMobile();
 
   // Security
   const [security, setSecurity] = useState(DEFAULT_SECURITY);
@@ -85,11 +90,38 @@ export default function MedicalSettingsScreen({ navigation }) {
 
       if (authSnap.exists()) {
         const d = authSnap.data();
-        setForm({ name: d.name || '', email: d.email || '', phone: d.phone || '', dob: d.dob || '', bloodType: d.bloodType || '', allergies: d.allergies || '' });
+        setForm(f => ({
+          ...f,
+          name: d.name || '',
+          email: d.email || '',
+          phone: d.phone || '',
+          dob: d.dob || '',
+          bloodType: d.bloodType || '',
+          allergies: d.allergies || '',
+          country: d.country || d.locationMeta?.country || '',
+          city: d.city || d.locationMeta?.city || '',
+          area: d.area || d.locationMeta?.area || '',
+          region: d.region || d.locationMeta?.region || '',
+          street: d.street || d.locationMeta?.street || '',
+          ghanaDigitalAddress: d.ghanaDigitalAddress || '',
+          latitude: d.latitude ?? d.locationMeta?.latitude ?? null,
+          longitude: d.longitude ?? d.locationMeta?.longitude ?? null,
+        }));
       }
 
       if (profileSnap.exists()) {
         const d = profileSnap.data();
+        setForm(f => ({
+          ...f,
+          country: f.country || d.country || d.locationMeta?.country || '',
+          city: f.city || d.city || d.locationMeta?.city || '',
+          area: f.area || d.area || d.locationMeta?.area || '',
+          region: f.region || d.region || d.locationMeta?.region || '',
+          street: f.street || d.street || d.locationMeta?.street || '',
+          ghanaDigitalAddress: f.ghanaDigitalAddress || d.ghanaDigitalAddress || '',
+          latitude: f.latitude ?? d.latitude ?? d.locationMeta?.latitude ?? null,
+          longitude: f.longitude ?? d.longitude ?? d.locationMeta?.longitude ?? null,
+        }));
         setSecurity(s => ({ ...s, ...(d.security || {}) }));
         setPrivacy(p => ({ ...DEFAULT_PRIVACY, ...(d.privacy || {}), dataSharing: { ...DEFAULT_PRIVACY.dataSharing, ...(d.privacy?.dataSharing || {}) } }));
         setEmergency(e => ({ ...DEFAULT_EMERGENCY, ...(d.emergency || {}) }));
@@ -108,7 +140,52 @@ export default function MedicalSettingsScreen({ navigation }) {
     setSaving(true);
     try {
       const uid = auth.currentUser?.uid;
-      await setDoc(doc(db, 'auth', uid), { name: form.name, phone: form.phone, dob: form.dob, bloodType: form.bloodType, allergies: form.allergies }, { merge: true });
+      const latitude = Number.isFinite(Number(form.latitude)) ? Number(form.latitude) : null;
+      const longitude = Number.isFinite(Number(form.longitude)) ? Number(form.longitude) : null;
+      await setDoc(doc(db, 'auth', uid), {
+        name: form.name,
+        phone: form.phone,
+        dob: form.dob,
+        bloodType: form.bloodType,
+        allergies: form.allergies,
+        country: form.country || null,
+        city: form.city || null,
+        area: form.area || null,
+        region: form.region || null,
+        street: form.street || null,
+        ghanaDigitalAddress: form.ghanaDigitalAddress || null,
+        latitude,
+        longitude,
+        locationMeta: {
+          country: form.country || null,
+          city: form.city || null,
+          area: form.area || null,
+          region: form.region || null,
+          street: form.street || null,
+          latitude,
+          longitude,
+        },
+      }, { merge: true });
+      await setDoc(doc(db, 'patientProfiles', uid), {
+        country: form.country || null,
+        city: form.city || null,
+        area: form.area || null,
+        region: form.region || null,
+        street: form.street || null,
+        ghanaDigitalAddress: form.ghanaDigitalAddress || null,
+        latitude,
+        longitude,
+        locationMeta: {
+          country: form.country || null,
+          city: form.city || null,
+          area: form.area || null,
+          region: form.region || null,
+          street: form.street || null,
+          latitude,
+          longitude,
+        },
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
       if (form.name) await AsyncStorage.setItem('userName', form.name);
       Alert.alert('Saved', 'Profile updated successfully.');
     } catch { Alert.alert('Error', 'Failed to save. Please try again.'); }
@@ -355,6 +432,39 @@ export default function MedicalSettingsScreen({ navigation }) {
                 <Text style={s.label}>Email (read-only)</Text>
                 <TextInput style={[s.input, { backgroundColor: '#f8fafc', color: MedicalColors.textSecondary }]} value={form.email} editable={false} />
               </View>
+              <TouchableOpacity
+                style={[s.outlineBtn, { marginBottom: 10, alignSelf: 'flex-start' }]}
+                onPress={() => detectAddress((loc) => {
+                  setForm(f => ({
+                    ...f,
+                    country: loc.countryCode || f.country,
+                    city: loc.city || f.city,
+                    area: loc.area || f.area,
+                    region: loc.region || f.region,
+                    street: loc.street || f.street,
+                    latitude: loc.latitude ?? f.latitude ?? null,
+                    longitude: loc.longitude ?? f.longitude ?? null,
+                  }));
+                })}
+                disabled={locating}
+              >
+                <Ionicons name="locate-outline" size={16} color={MedicalColors.primary} />
+                <Text style={{ color: MedicalColors.primary, fontWeight: '700' }}>{locating ? 'Detecting location…' : 'Use current location'}</Text>
+              </TouchableOpacity>
+              {!!locationMsg && <Text style={{ color: '#64748b', fontSize: 12, marginBottom: 10 }}>{locationMsg}</Text>}
+              {[
+                { label: 'Country', key: 'country', placeholder: 'e.g. GH' },
+                { label: 'City', key: 'city', placeholder: 'e.g. Accra' },
+                { label: 'Area / Locality', key: 'area', placeholder: 'e.g. East Legon' },
+                { label: 'Region / State', key: 'region', placeholder: 'e.g. Greater Accra' },
+                { label: 'Street', key: 'street', placeholder: 'e.g. Liberation Road' },
+                { label: 'Ghana Digital Address (optional)', key: 'ghanaDigitalAddress', placeholder: 'e.g. GA-123-4567' },
+              ].map(({ label, key, placeholder }) => (
+                <View key={key} style={s.fieldGroup}>
+                  <Text style={s.label}>{label}</Text>
+                  <TextInput style={s.input} value={String(form[key] || '')} onChangeText={v => setForm(f => ({ ...f, [key]: v }))} placeholder={placeholder} placeholderTextColor={MedicalColors.textLight} />
+                </View>
+              ))}
             </View>
 
             <View style={s.card}>
