@@ -64,7 +64,7 @@ function flagFromCountry(country = '') {
 
 export default function LocationSummaryCardMobile({ profile, title = 'Your Saved Location', onEdit }) {
   const loc = pickLocation(profile);
-  const composedAddress = [loc.area || loc.street, loc.city, loc.country].filter(Boolean).join(', ');
+  const composedAddress = [loc.area || loc.street, loc.city].filter(Boolean).join(', ');
   const rawFormatted = (profile?.formattedAddress || profile?.address || profile?.location?.address || '').trim();
   const isDigitalCodeOnly = /^[A-Z]{2}-\d{3}-\d{4}$/i.test(rawFormatted);
   const formattedAddress = composedAddress || (rawFormatted && !isDigitalCodeOnly ? rawFormatted : '');
@@ -80,7 +80,7 @@ export default function LocationSummaryCardMobile({ profile, title = 'Your Saved
           <View style={s.flagCircle}>
             <Text style={s.flagText}>{flag}</Text>
           </View>
-          <Text style={s.title}>📍 {title}</Text>
+          <Text style={s.countryText}>{loc.country || 'Location'}</Text>
         </View>
         <View style={[s.badge, hasLocation ? s.badgeOk : s.badgeMissing]}>
           <Text style={[s.badgeText, hasLocation ? s.badgeTextOk : s.badgeTextMissing]}>
@@ -89,16 +89,10 @@ export default function LocationSummaryCardMobile({ profile, title = 'Your Saved
         </View>
       </View>
       {hasLocation ? (
-        <View style={{ gap: 2 }}>
-          {!!formattedAddress && <Text style={[s.line, { fontWeight: '700' }]}>{formattedAddress}</Text>}
-          {!formattedAddress && !!loc.ghanaDigitalAddress && (
-            <Text style={s.subtle}>Address name not set yet. Update location details for "East Legon, Accra, Ghana" format.</Text>
-          )}
-          {!!loc.ghanaDigitalAddress && <Text style={s.subtle}>Ghana Digital Address: {loc.ghanaDigitalAddress}</Text>}
+        <View style={{ gap: 0 }}>
+          {!!formattedAddress && <Text style={[s.line, { fontWeight: '600' }]} numberOfLines={1}>{formattedAddress}</Text>}
         </View>
-      ) : (
-        <Text style={s.subtle}>No location on record yet. Save your address in Settings for better nearby services.</Text>
-      )}
+      ) : null}
       {onEdit ? <Text style={s.cta}>Update location</Text> : null}
     </CardWrapper>
   );
@@ -107,18 +101,18 @@ export default function LocationSummaryCardMobile({ profile, title = 'Your Saved
 const s = StyleSheet.create({
   card: {
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 8,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#dbeafe',
     backgroundColor: '#f8fafc',
-    padding: 12,
+    padding: 8,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   titleWrap: {
     flexDirection: 'row',
@@ -144,6 +138,11 @@ const s = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
   },
+  countryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
   badge: {
     borderRadius: 999,
     paddingVertical: 3,
@@ -155,7 +154,7 @@ const s = StyleSheet.create({
   badgeTextOk: { color: '#166534' },
   badgeTextMissing: { color: '#991b1b' },
   line: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#334155',
   },
   subtle: {
@@ -164,7 +163,7 @@ const s = StyleSheet.create({
     color: '#64748b',
   },
   cta: {
-    marginTop: 8,
+    marginTop: 4,
     fontSize: 11,
     color: '#1d4ed8',
     fontWeight: '700',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,8 +19,12 @@ import { signInWithEmailOrUsername } from '../services/authService';
 import { fetchClientData } from '../services/clientDataService';
 import { Colors } from '../constants/colors';
 import { logAction, A } from '../utils/auditLogger';
+import { PRIVACY_STORAGE_KEY, syncPrivacyConsentToUser } from '../services/privacyConsentService';
+import { resetToHomeCarePatientDashboard } from '../utils/homeCareNavigation';
+import { applyCoupleLandingIfNeeded } from '../services/coupleTherapyService';
+import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
 
-const LoginScreen = ({ navigation }) => {
+const LoginScreen = ({ navigation, route }) => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,6 +35,18 @@ const LoginScreen = ({ navigation }) => {
   const [resetEmail, setResetEmail] = useState('');
   const [resetSending, setResetSending] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+
+  useEffect(() => {
+    const prime = async () => {
+      if (!route.params?.coupleResume) return;
+      const { coupleId, partnerRole } = route.params;
+      const pairs = [];
+      if (coupleId) pairs.push([COUPLE_STORAGE_KEYS.coupleId, coupleId]);
+      if (partnerRole) pairs.push([COUPLE_STORAGE_KEYS.partnerRole, partnerRole]);
+      if (pairs.length) await AsyncStorage.multiSet(pairs);
+    };
+    prime();
+  }, [route.params?.coupleResume, route.params?.coupleId, route.params?.partnerRole]);
 
   const handleLogin = async () => {
     setError('');
@@ -44,11 +60,24 @@ const LoginScreen = ({ navigation }) => {
       setLoading(true);
       const { role, profile } = await signInWithEmailOrUsername(identifier, password);
 
-      if (role !== 'client' && role !== 'therapist' && role !== 'admin' && role !== 'doctor') {
+      const allowedRoles = [
+        'client', 'therapist', 'admin', 'doctor',
+        'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch', 'homecare_nurse',
+      ];
+      if (!allowedRoles.includes(role)) {
         setError('Unable to determine your account type. Please contact support.');
         return;
       }
       logAction(A.LOGIN_SUCCESS, { role, identifier }, role);
+
+      const privacyAccepted = await AsyncStorage.getItem(PRIVACY_STORAGE_KEY);
+      if (privacyAccepted === 'true') {
+        syncPrivacyConsentToUser({
+          userId: auth.currentUser?.uid,
+          role,
+          profileId: profile?.id || auth.currentUser?.uid,
+        }).catch(() => {});
+      }
 
       await AsyncStorage.setItem('userRole', role);
       await AsyncStorage.setItem('userName', profile?.name || profile?.displayName || identifier);
@@ -70,22 +99,74 @@ const LoginScreen = ({ navigation }) => {
         return;
       }
 
+      if (role === 'pharmacy') {
+        await AsyncStorage.setItem('userIntent', 'pharmacy');
+        navigation.replace('PharmacyMain');
+        return;
+      }
+      if (role === 'branch_user') {
+        await AsyncStorage.setItem('userIntent', 'branch');
+        navigation.replace('BranchMain');
+        return;
+      }
+      if (role === 'lab') {
+        await AsyncStorage.setItem('userIntent', 'lab');
+        navigation.replace('LabMain');
+        return;
+      }
+      if (role === 'lab_branch') {
+        await AsyncStorage.setItem('userIntent', 'lab_branch');
+        navigation.replace('LabBranchMain');
+        return;
+      }
+      if (role === 'scan') {
+        await AsyncStorage.setItem('userIntent', 'scan');
+        navigation.replace('ScanMain');
+        return;
+      }
+      if (role === 'scan_branch') {
+        await AsyncStorage.setItem('userIntent', 'scan_branch');
+        navigation.replace('ScanBranchMain');
+        return;
+      }
+      if (role === 'homecare_nurse') {
+        await AsyncStorage.setItem('userIntent', 'homecare_nurse');
+        navigation.replace('HomeCareNurseMain');
+        return;
+      }
+
       if (profile?.clientId) {
         await AsyncStorage.setItem('th.clientId', profile.clientId);
       } else if (profile?.id) {
         await AsyncStorage.setItem('th.clientId', profile.id);
       }
 
+      let clientData = null;
       try {
-        const clientData = await fetchClientData();
+        clientData = await fetchClientData();
         console.log('Client data fetched on login:', clientData);
       } catch (error) {
         console.error('Error fetching client data on login:', error);
       }
 
+      if (role === 'client') {
+        const coupleProfile = {
+          ...profile,
+          ...(clientData || {}),
+          coupleId: profile?.coupleId || clientData?.coupleId,
+          therapyType: profile?.therapyType || clientData?.therapyType,
+          couplePartnerRole: profile?.couplePartnerRole || clientData?.couplePartnerRole,
+          coupleIntakeComplete: profile?.coupleIntakeComplete ?? clientData?.coupleIntakeComplete,
+        };
+        const coupleHandled = await applyCoupleLandingIfNeeded(navigation, coupleProfile);
+        if (coupleHandled) return;
+      }
+
       const intent = profile?.userIntent || await AsyncStorage.getItem('userIntent');
       if (intent === 'medical') {
         navigation.replace('MedicalMain');
+      } else if (intent === 'homecare') {
+        resetToHomeCarePatientDashboard(navigation);
       } else {
         navigation.replace('Main');
       }
@@ -186,13 +267,6 @@ const LoginScreen = ({ navigation }) => {
             ) : (
               <Text style={styles.loginButtonText}>Sign In</Text>
             )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkButton}
-            onPress={() => navigation.navigate('Welcome')}
-          >
-            <Text style={styles.linkText}>New user? Start with questionnaire</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -349,15 +423,6 @@ const styles = StyleSheet.create({
     color: Colors.surface,
     fontSize: 16,
     fontWeight: '600',
-  },
-  linkButton: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  linkText: {
-    color: Colors.primary,
-    fontSize: 14,
-    textDecorationLine: 'underline',
   },
   // Modal styles
   modalOverlay: {

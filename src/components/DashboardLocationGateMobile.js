@@ -16,6 +16,7 @@ function roleTarget(role, profile) {
   if (role === 'scan') return { collection: 'scanCenters', id };
   if (role === 'lab_branch') return { collection: 'labBranches', id };
   if (role === 'scan_branch') return { collection: 'scanBranches', id };
+  if (role === 'homecare_nurse') return { collection: 'homeCareNurses', id };
   return { collection: 'auth', id: auth.currentUser?.uid || id };
 }
 

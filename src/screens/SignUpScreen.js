@@ -16,14 +16,27 @@ import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
+import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
+import {
+  linkCouplePartnerAuth,
+  createPartnerClientRecord,
+} from '../services/coupleTherapyService';
+import { syncPrivacyConsentToUser, buildLegalPrivacyFields } from '../services/privacyConsentService';
+import { resetToHomeCarePatientDashboard } from '../utils/homeCareNavigation';
 
 const SignUpScreen = ({ route, navigation }) => {
   const { clientData } = route.params || {};
+  const lockEmail = !!clientData?.lockEmail;
   const [name, setName] = useState(clientData?.name || clientData?.displayName || '');
   const [email, setEmail] = useState(clientData?.email || '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const coupleInviteSubtitle =
+    clientData?.therapyType === 'couples' && clientData?.couplePartnerRole === 'partnerB'
+      ? `${clientData?.invitePartnerName || 'Your partner'} invited you to couples therapy. Create your own login — your intake answers stay private.`
+      : null;
 
   const handleSignUp = async () => {
     setError('');
@@ -45,7 +58,25 @@ const SignUpScreen = ({ route, navigation }) => {
       
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const userId = userCredential.user.uid;
-      const clientId = await AsyncStorage.getItem('th.clientId');
+      let clientId = await AsyncStorage.getItem('th.clientId');
+      const coupleId =
+        clientData?.coupleId || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
+      const couplePartnerRole =
+        clientData?.couplePartnerRole ||
+        (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.partnerRole)) ||
+        'partnerA';
+      const isCouple = clientData?.therapyType === 'couples' || !!coupleId;
+
+      if (isCouple && !clientId && coupleId) {
+        clientId = await createPartnerClientRecord(
+          coupleId,
+          couplePartnerRole,
+          email.toLowerCase(),
+          name,
+          userId,
+        );
+        await AsyncStorage.setItem('th.clientId', clientId);
+      }
 
       // Create user profile in auth collection (matching web version)
       const userProfile = {
@@ -54,6 +85,9 @@ const SignUpScreen = ({ route, navigation }) => {
         email: email.toLowerCase(),
         role: 'client',
         clientId: clientId || userId,
+        coupleId: isCouple ? coupleId : undefined,
+        couplePartnerRole: isCouple ? couplePartnerRole : undefined,
+        therapyType: isCouple ? 'couples' : undefined,
         status: 'pending',
         createdAt: new Date().toISOString()
       };
@@ -61,31 +95,72 @@ const SignUpScreen = ({ route, navigation }) => {
       // Check user intent — medical skip or pending booking goes to medical dashboard
       const medicalSkip = await AsyncStorage.getItem('th.medicalSkip');
       const pendingBooking = await AsyncStorage.getItem('th.pendingBooking');
+      const homecareIntent = (await AsyncStorage.getItem('userIntent')) === 'homecare';
       const isMedical = !!(medicalSkip || pendingBooking);
 
-      // Set intent on profile
-      userProfile.userIntent = isMedical ? 'medical' : 'therapy';
+      userProfile.userIntent = isCouple
+        ? 'therapy'
+        : homecareIntent
+          ? 'homecare'
+          : isMedical
+            ? 'medical'
+            : 'therapy';
+      Object.assign(userProfile, buildLegalPrivacyFields());
 
       await setDoc(doc(db, 'auth', userId), userProfile);
+      await syncPrivacyConsentToUser({ userId, role: 'client', profileId: clientId || userId }).catch(() => {});
 
       // Update the client document with the auth UID and proper name (matching web version)
       if (clientId) {
-        await setDoc(doc(db, 'clients', clientId), {
+        await setDoc(
+          doc(db, 'clients', clientId),
+          {
+            authUid: userId,
+            displayName: name,
+            clientName: name,
+            email: email.toLowerCase(),
+            therapyType: isCouple ? 'couples' : undefined,
+            coupleId: isCouple ? coupleId : undefined,
+            couplePartnerRole: isCouple ? couplePartnerRole : undefined,
+            status: 'pending',
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        );
+      }
+
+      if (isCouple && coupleId) {
+        await linkCouplePartnerAuth(coupleId, couplePartnerRole, {
           authUid: userId,
-          displayName: name,
-          clientName: name,
-          email: email.toLowerCase(),
-          status: 'pending',
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
+          clientId: clientId || userId,
+          name,
+        });
+        const storagePairs = [
+          [COUPLE_STORAGE_KEYS.coupleId, coupleId],
+          [COUPLE_STORAGE_KEYS.partnerRole, couplePartnerRole],
+          [COUPLE_STORAGE_KEYS.myPartnerName, name.trim()],
+          ['th.clientId', clientId || userId],
+        ];
+        if (couplePartnerRole === 'partnerB' && clientData?.invitePartnerName) {
+          storagePairs.push([COUPLE_STORAGE_KEYS.otherPartnerName, clientData.invitePartnerName]);
+        }
+        await AsyncStorage.multiSet(storagePairs);
+        if (couplePartnerRole === 'partnerB') {
+          navigation.replace('CoupleIntake', { coupleId, partnerRole: 'partnerB' });
+          return;
+        }
+        navigation.replace('CoupleIntake', { coupleId, partnerRole: 'partnerA' });
+        return;
       }
 
       if (isMedical) {
         await AsyncStorage.removeItem('th.medicalSkip');
         await AsyncStorage.setItem('userIntent', 'medical');
         navigation.replace('MedicalMain');
+      } else if (homecareIntent) {
+        await AsyncStorage.setItem('userIntent', 'homecare');
+        resetToHomeCarePatientDashboard(navigation);
       } else {
-        // Navigate to payment (therapy flow)
         navigation.navigate('Payment');
       }
     } catch (error) {
@@ -114,7 +189,9 @@ const SignUpScreen = ({ route, navigation }) => {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <Text style={styles.title}>Create Your Account</Text>
-          <Text style={styles.subtitle}>Set up your login credentials</Text>
+          <Text style={styles.subtitle}>
+            {coupleInviteSubtitle || 'Set up your login credentials'}
+          </Text>
         </View>
 
         <View style={styles.formContainer}>
@@ -140,7 +217,7 @@ const SignUpScreen = ({ route, navigation }) => {
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Email</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, lockEmail && styles.inputLocked]}
               placeholder="Enter your email"
               placeholderTextColor={Colors.textLight}
               value={email}
@@ -148,6 +225,7 @@ const SignUpScreen = ({ route, navigation }) => {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              editable={!lockEmail}
             />
           </View>
 
@@ -259,6 +337,10 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  inputLocked: {
+    backgroundColor: '#f3f4f6',
+    color: Colors.textSecondary,
   },
 });
 

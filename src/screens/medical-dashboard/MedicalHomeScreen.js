@@ -12,6 +12,7 @@ import { doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, serverT
 import { fetchClientAppointments, fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import { mergeLocationProfile } from '../../utils/locationProfile';
 
 const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
@@ -103,7 +104,7 @@ const MedicalHomeScreen = ({ navigation }) => {
               const authData = authSnap.data() || {};
               const pd = authData.photoURL || null;
               if (pd) setUserPhotoURL(pd);
-              setLocationProfile(prev => prev || authData);
+              setLocationProfile((prev) => mergeLocationProfile(prev, authData));
             }
           } catch (_) {}
         }
@@ -122,7 +123,7 @@ const MedicalHomeScreen = ({ navigation }) => {
           const profSnap = await getDoc(doc(db, 'patientProfiles', clientId));
           if (profSnap.exists()) {
             const pd = profSnap.data();
-            setLocationProfile(pd);
+            setLocationProfile((prev) => mergeLocationProfile(prev, pd));
             setPatientStatus(pd.status || 'active');
             setHasLoggedVitals(!!pd.vitals?.latest);
           }

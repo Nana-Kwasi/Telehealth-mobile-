@@ -453,43 +453,45 @@ export default function DoctorHomeScreen({ navigation }) {
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={DoctorColors.primary} />}
     >
-      {/* Header */}
+      {/* Header (badges live here so the location card never stacks over them) */}
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.greeting}>{greeting()}</Text>
-          <Text style={styles.doctorName}>Dr. {profile?.name || 'Doctor'}</Text>
-          <Text style={styles.specialty}>{profile?.specialty || profile?.specialization || 'General Practice'}</Text>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greeting}>{greeting()}</Text>
+            <Text style={styles.doctorName}>Dr. {profile?.name || 'Doctor'}</Text>
+            <Text style={styles.specialty}>{profile?.specialty || profile?.specialization || 'General Practice'}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end', gap: 10 }}>
+            {profile?.photoURL ? (
+              <Image source={{ uri: profile.photoURL }} style={styles.headerAvatar} />
+            ) : (
+              <View style={styles.headerAvatarPlaceholder}>
+                <Text style={styles.headerAvatarInitials}>
+                  {(profile?.name || 'D')[0].toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.verifiedPill}>
+              <Ionicons name="shield-checkmark" size={13} color="#10b981" />
+              <Text style={styles.verifiedText}>Verified</Text>
+            </View>
+          </View>
         </View>
-        <View style={{ alignItems: 'flex-end', gap: 10 }}>
-          {profile?.photoURL ? (
-            <Image source={{ uri: profile.photoURL }} style={styles.headerAvatar} />
-          ) : (
-            <View style={styles.headerAvatarPlaceholder}>
-              <Text style={styles.headerAvatarInitials}>
-                {(profile?.name || 'D')[0].toUpperCase()}
-              </Text>
+        <View style={styles.headerBadgesRow}>
+          <View style={styles.badge}>
+            <Ionicons name="today-outline" size={13} color={DoctorColors.primary} />
+            <Text style={styles.badgeText}>{stats.todayAppts} today</Text>
+          </View>
+          {stats.pending > 0 && (
+            <View style={[styles.badge, { backgroundColor: '#fff7ed' }]}>
+              <Ionicons name="time-outline" size={13} color="#c2410c" />
+              <Text style={[styles.badgeText, { color: '#c2410c' }]}>{stats.pending} pending</Text>
             </View>
           )}
-          <View style={styles.verifiedPill}>
-            <Ionicons name="shield-checkmark" size={13} color="#10b981" />
-            <Text style={styles.verifiedText}>Verified</Text>
-          </View>
         </View>
       </View>
-      <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('DoctorSettings')} />
-
-      {/* Badges */}
-      <View style={styles.badgesRow}>
-        <View style={styles.badge}>
-          <Ionicons name="today-outline" size={13} color={DoctorColors.primary} />
-          <Text style={styles.badgeText}>{stats.todayAppts} today</Text>
-        </View>
-        {stats.pending > 0 && (
-          <View style={[styles.badge, { backgroundColor: '#fff7ed' }]}>
-            <Ionicons name="time-outline" size={13} color="#c2410c" />
-            <Text style={[styles.badgeText, { color: '#c2410c' }]}>{stats.pending} pending</Text>
-          </View>
-        )}
+      <View style={styles.locationCardSlot}>
+        <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('DoctorSettings')} />
       </View>
 
       {/* Stats — horizontal scroll */}
@@ -974,8 +976,24 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: DoctorColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
-    backgroundColor: DoctorColors.primaryDark, padding: 20, paddingTop: 20,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    backgroundColor: DoctorColors.primaryDark,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.2)',
   },
   greeting: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 3 },
   doctorName: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 2 },
@@ -997,19 +1015,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
   verifiedText: { fontSize: 11, color: '#10b981', fontWeight: '700', marginLeft: 2 },
-  badgesRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: DoctorColors.primaryDark, paddingTop: 0 },
+  locationCardSlot: {
+    marginTop: 12,
+    marginBottom: 16,
+  },
   badge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: DoctorColors.primaryLight,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
   },
   badgeText: { fontSize: 12, fontWeight: '600', color: DoctorColors.primary },
-  statsScroll: { paddingVertical: 12 },
-  statsScrollContent: { paddingHorizontal: 14, gap: 10 },
+  statsScroll: { paddingVertical: 14, paddingTop: 8 },
+  statsScrollContent: { paddingHorizontal: 14, gap: 10, paddingBottom: 4 },
   statCard: {
-    width: 96, borderRadius: 16, padding: 14, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    width: 96,
+    borderRadius: 16,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   statValue: { fontSize: 22, fontWeight: '900', marginBottom: 2 },
   statLabel: { fontSize: 10, textAlign: 'center', fontWeight: '600' },

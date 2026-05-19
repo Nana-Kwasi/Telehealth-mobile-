@@ -13,10 +13,22 @@ import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
+import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
+import {
+  loadCouple,
+  canBrowseTherapists,
+  getCoupleMatchedTherapists,
+  proposeCoupleTherapist,
+  confirmCoupleTherapist,
+} from '../services/coupleTherapyService';
 
-const MatchTherapistScreen = ({ navigation }) => {
+const MatchTherapistScreen = ({ navigation, route }) => {
   const [therapists, setTherapists] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [coupleProfile, setCoupleProfile] = useState(null);
+  const [coupleBlocked, setCoupleBlocked] = useState(false);
+  const [availabilityOverlap, setAvailabilityOverlap] = useState(true);
+  const [myPartnerKey, setMyPartnerKey] = useState(null);
 
   useEffect(() => {
     loadTherapists();
@@ -65,52 +77,57 @@ const MatchTherapistScreen = ({ navigation }) => {
       setLoading(true);
       const questionnaireData = await AsyncStorage.getItem('th.onboard');
       const clientId = await AsyncStorage.getItem('th.clientId');
+      const coupleId = (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId)) || null;
       const data = questionnaireData ? JSON.parse(questionnaireData) : {};
 
-      // Try therapists collection first, then therapistt
+      const routeCoupleId = route.params?.coupleId;
+      const resolvedCoupleId = routeCoupleId || coupleId || data.coupleId;
+
+      if (resolvedCoupleId || data.therapyType === 'couples' || route.params?.therapyType === 'couples') {
+        const id = resolvedCoupleId;
+        const couple = await loadCouple(id);
+        setCoupleProfile(couple);
+        const uid = auth.currentUser?.uid;
+        const pk = couple?.partnerA?.authUid === uid ? 'partnerA' : couple?.partnerB?.authUid === uid ? 'partnerB' : null;
+        setMyPartnerKey(pk);
+
+        if (!canBrowseTherapists(couple)) {
+          setCoupleBlocked(true);
+          setTherapists([]);
+          setLoading(false);
+          return;
+        }
+        setCoupleBlocked(false);
+
+        const match = await getCoupleMatchedTherapists(id);
+        setAvailabilityOverlap(match.availabilityOverlap !== false);
+        const list = (match.therapists || []).map((t) => ({
+          ...t,
+          score: t.matchScore || 50,
+        }));
+        setTherapists(list);
+        setLoading(false);
+        return;
+      }
+
       let therapistsRef = collection(db, 'therapists');
       let snapshot = await getDocs(therapistsRef);
-      
       if (snapshot.empty) {
         therapistsRef = collection(db, 'therapistt');
         snapshot = await getDocs(therapistsRef);
       }
-      
-      const allTherapists = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      // Enhanced matching based on questionnaire data (matching web version)
+      const allTherapists = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       const filtered = allTherapists.filter((t) => {
-        // Basic type matching
-        const typeMatch = !data.therapyType || 
-          (t.type || '').toLowerCase().includes(data.therapyType);
-        
-        // Religious preference matching
+        const typeMatch = !data.therapyType || (t.type || '').toLowerCase().includes(data.therapyType);
         const christianPref = data.preferChristianTherapist === 'Yes';
-        const religionMatch = !christianPref || 
-          (t.religion || '').toLowerCase() === 'christianity';
-        
-        // Gender preference matching
+        const religionMatch = !christianPref || (t.religion || '').toLowerCase() === 'christianity';
         const genderPref = data.therapistGender;
-        const genderMatch = !genderPref || genderPref === 'No preference' || 
-          (t.gender || '').toLowerCase() === genderPref.toLowerCase();
-        
-        // LGBTQIA+ preference matching
+        const genderMatch = !genderPref || genderPref === 'No preference' || (t.gender || '').toLowerCase() === genderPref.toLowerCase();
         const lgbtqiaPref = data.lgbtqia;
-        const lgbtqiaMatch = !lgbtqiaPref || lgbtqiaPref === 'No preference' || 
-          (t.lgbtqiaAffirming === true);
-        
+        const lgbtqiaMatch = !lgbtqiaPref || lgbtqiaPref === 'No preference' || t.lgbtqiaAffirming === true;
         return typeMatch && religionMatch && genderMatch && lgbtqiaMatch;
       });
-      
-      // Sort by relevance score (matching web version)
-      const scored = filtered.map(t => ({
-        ...t,
-        score: calculateRelevanceScore(t, data)
-      }));
-      
+      const scored = filtered.map((t) => ({ ...t, score: calculateRelevanceScore(t, data) }));
       scored.sort((a, b) => b.score - a.score);
       setTherapists(scored);
     } catch (error) {
@@ -125,23 +142,41 @@ const MatchTherapistScreen = ({ navigation }) => {
     try {
       const user = auth.currentUser;
       const clientId = await AsyncStorage.getItem('th.clientId');
+      const coupleId =
+        coupleProfile?.id || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
 
-      if (user && clientId) {
-        // Update client document with therapist assignment (matching web version)
-        await setDoc(doc(db, 'clients', clientId), {
-          assignedTherapistId: therapist.id,
-          assignedTherapistName: therapist.name,
-          assignedAt: new Date().toISOString(),
-        }, { merge: true });
+      if (coupleId && coupleProfile) {
+        const proposal = coupleProfile.therapistProposal;
+        if (proposal?.status === 'pending' && proposal.proposedBy !== myPartnerKey) {
+          await confirmCoupleTherapist(coupleId, true);
+          Alert.alert('Confirmed', 'Your couple therapist has been confirmed.');
+          navigation.replace('Main');
+          return;
+        }
+        await proposeCoupleTherapist(coupleId, therapist.id, therapist.name || therapist.displayName);
+        Alert.alert(
+          'Proposal sent',
+          'Your partner will be asked to confirm this therapist before assignment is final.',
+        );
+        navigation.replace('CoupleDashboard', { coupleId });
+        return;
+      } else if (user && clientId) {
+        await setDoc(
+          doc(db, 'clients', clientId),
+          {
+            assignedTherapistId: therapist.id,
+            assignedTherapistName: therapist.name,
+            assignedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        );
 
-        // Add client to therapist's clients subcollection (matching web version)
         await setDoc(doc(db, 'therapists', therapist.id, 'clients', clientId), {
-          clientId: clientId,
+          clientId,
           assignedAt: new Date().toISOString(),
         });
       }
 
-      // Navigate to dashboard after therapist selection (matching web version)
       navigation.replace('Main');
     } catch (error) {
       console.error('Error assigning therapist:', error);
@@ -158,10 +193,53 @@ const MatchTherapistScreen = ({ navigation }) => {
     );
   }
 
+  const pendingProposal =
+    coupleProfile?.therapistProposal?.status === 'pending' ? coupleProfile.therapistProposal : null;
+  const awaitingMyConfirm = pendingProposal && pendingProposal.proposedBy !== myPartnerKey;
+
+  if (coupleBlocked) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.title}>Therapist selection locked</Text>
+        <Text style={styles.subtitle}>
+          Complete both partners intake, consent, and couple payment before browsing therapists.
+        </Text>
+        <TouchableOpacity style={styles.selectButton} onPress={() => navigation.replace('CoupleDashboard', { coupleId: coupleProfile?.id })}>
+          <Text style={styles.selectButtonText}>View couple status</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.title}>Choose your therapist</Text>
-      <Text style={styles.subtitle}>We matched options based on your preferences</Text>
+      <Text style={styles.title}>
+        {coupleProfile ? 'Choose your couple therapist' : 'Choose your therapist'}
+      </Text>
+      <Text style={styles.subtitle}>
+        {awaitingMyConfirm
+          ? `Your partner proposed ${pendingProposal.therapistName}. Confirm below.`
+          : coupleProfile
+            ? 'One therapist for both — your partner must confirm your selection'
+            : 'We matched options based on your preferences'}
+      </Text>
+
+      {coupleProfile && !availabilityOverlap ? (
+        <View style={styles.warnBox}>
+          <Text style={styles.warnText}>
+            No overlapping availability detected. Consider updating your availability in intake or choose the closest match.
+          </Text>
+        </View>
+      ) : null}
+
+      {awaitingMyConfirm ? (
+        <TouchableOpacity
+          style={[styles.selectButton, { marginBottom: 20 }]}
+          onPress={() => chooseTherapist({ id: pendingProposal.therapistId, name: pendingProposal.therapistName })}
+        >
+          <Text style={styles.selectButtonText}>Confirm {pendingProposal.therapistName}</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {therapists.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -206,12 +284,13 @@ const MatchTherapistScreen = ({ navigation }) => {
                   <Text style={styles.matchScoreText}>Match: {Math.round(therapist.score)}%</Text>
                 </View>
               )}
-              <TouchableOpacity 
-                style={styles.selectButton}
-                onPress={() => chooseTherapist(therapist)}
-              >
-                <Text style={styles.selectButtonText}>Select This Therapist</Text>
-              </TouchableOpacity>
+              {!awaitingMyConfirm ? (
+                <TouchableOpacity style={styles.selectButton} onPress={() => chooseTherapist(therapist)}>
+                  <Text style={styles.selectButtonText}>
+                    {coupleProfile ? 'Propose This Therapist' : 'Select This Therapist'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </TouchableOpacity>
           ))}
         </View>
@@ -350,6 +429,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  warnBox: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  warnText: { color: '#92400e', fontSize: 14, lineHeight: 20 },
 });
 
 export default MatchTherapistScreen;

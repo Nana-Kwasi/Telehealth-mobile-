@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
+import { validateTeenDateOfBirth } from '../constants/therapyAgeValidation';
 
 const ChildInfoScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({
@@ -80,29 +81,15 @@ const ChildInfoScreen = ({ navigation }) => {
       const age = calculateAge(value);
       updateField('age', age);
       
-      // Validate age immediately when date is entered
-      if (age) {
-        const ageNum = parseInt(age);
-        if (!isNaN(ageNum)) {
-          if (ageNum > 18) {
-            setErrors((prev) => ({
-              ...prev,
-              dateOfBirth: 'Child cannot be more than 18 years old. Please use individual therapy for adults.',
-            }));
-          } else if (ageNum < 13) {
-            setErrors((prev) => ({
-              ...prev,
-              dateOfBirth: 'Child must be at least 13 years old for teen therapy',
-            }));
-          } else {
-            // Clear error if age is valid
-            setErrors((prev) => {
-              const newErrors = { ...prev };
-              delete newErrors.dateOfBirth;
-              return newErrors;
-            });
-          }
-        }
+      const dobErr = validateTeenDateOfBirth(value, calculateAge);
+      if (dobErr) {
+        setErrors((prev) => ({ ...prev, dateOfBirth: dobErr }));
+      } else {
+        setErrors((prev) => {
+          const newErrors = { ...prev };
+          delete newErrors.dateOfBirth;
+          return newErrors;
+        });
       }
     } else {
       // Clear age and error if date is cleared
@@ -120,24 +107,8 @@ const ChildInfoScreen = ({ navigation }) => {
 
     if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
     if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.dateOfBirth.trim()) {
-      newErrors.dateOfBirth = 'Date of birth is required';
-    } else {
-      const dob = new Date(formData.dateOfBirth);
-      const today = new Date();
-      if (dob > today) {
-        newErrors.dateOfBirth = 'Date of birth cannot be in the future';
-      } else {
-        const age = parseInt(calculateAge(formData.dateOfBirth));
-        if (isNaN(age)) {
-          newErrors.dateOfBirth = 'Please enter a valid date of birth';
-        } else if (age < 13) {
-          newErrors.dateOfBirth = 'Child must be at least 13 years old for teen therapy';
-        } else if (age > 18) {
-          newErrors.dateOfBirth = 'Child cannot be more than 18 years old. Please use individual therapy for adults.';
-        }
-      }
-    }
+    const dobErr = validateTeenDateOfBirth(formData.dateOfBirth, calculateAge);
+    if (dobErr) newErrors.dateOfBirth = dobErr;
     if (!formData.gender) newErrors.gender = 'Gender is required';
     if (!formData.schoolName.trim()) newErrors.schoolName = 'School name is required';
     if (!formData.grade) newErrors.grade = 'Grade is required';

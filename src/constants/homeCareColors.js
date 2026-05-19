@@ -1,0 +1,17 @@
+export const HomeCareColors = {
+  primary: '#0d9488',
+  primaryDark: '#0f766e',
+  primaryLight: '#ccfbf1',
+  accent: '#d97706',
+  accentLight: '#fff7ed',
+  background: '#f0fdfa',
+  surface: '#ffffff',
+  text: '#134e4a',
+  textSecondary: '#64748b',
+  textLight: '#94a3b8',
+  border: '#99f6e4',
+  success: '#059669',
+  warning: '#d97706',
+  error: '#dc2626',
+  emergency: '#b91c1c',
+};

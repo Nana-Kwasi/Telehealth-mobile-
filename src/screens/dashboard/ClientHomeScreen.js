@@ -21,8 +21,13 @@ import { collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp 
 import { Colors } from '../../constants/colors';
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
 
 const { width } = Dimensions.get('window');
+
+async function resolveMoodClientId(client) {
+  return (await AsyncStorage.getItem('th.clientId')) || client?.id || auth.currentUser?.uid;
+}
 
 const chartConfig = {
   backgroundColor: Colors.surface,
@@ -99,6 +104,7 @@ const MOOD_OPTIONS = [
 
 const ClientHomeScreen = ({ navigation }) => {
   const [clientData, setClientData] = useState(null);
+  const [locationProfile, setLocationProfile] = useState(null);
   const [therapistData, setTherapistData] = useState(null);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
   const [progressScore, setProgressScore] = useState(0);
@@ -188,6 +194,16 @@ const ClientHomeScreen = ({ navigation }) => {
       let client = getCachedClientData();
       if (!client) client = await fetchClientData();
       setClientData(client);
+      const uid = auth.currentUser?.uid;
+      let storedProfile = null;
+      try {
+        const profileStr = await AsyncStorage.getItem('userProfile');
+        storedProfile = profileStr ? JSON.parse(profileStr) : null;
+      } catch {
+        storedProfile = null;
+      }
+      const authLoc = uid ? await fetchAuthLocationProfile(uid) : null;
+      setLocationProfile(mergeLocationProfile(storedProfile, authLoc, client));
       let therapist = getCachedTherapistData();
       if (client?.therapist) therapist = client.therapist;
       setTherapistData(therapist);
@@ -272,8 +288,7 @@ const ClientHomeScreen = ({ navigation }) => {
         .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
       setNextSession(upcoming.length > 0 ? upcoming[0] : null);
 
-      // Load mood distribution for pie chart
-      await loadMoodDistribution(clientId);
+      await loadMoodDistribution(await resolveMoodClientId(client));
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -349,10 +364,9 @@ const ClientHomeScreen = ({ navigation }) => {
     if (!selectedMood) return;
     setSubmittingMood(true);
     try {
-      const user = auth.currentUser;
-      const clientId = user?.uid;
+      const moodClientId = await resolveMoodClientId(clientData);
       await addDoc(collection(db, 'Client daily mood tracking'), {
-        clientId,
+        clientId: moodClientId,
         clientName: clientData?.name || 'Client',
         assignedTherapistId: clientData?.assignedTherapist || clientData?.assignedTherapistId || '',
         assignedTherapistName: clientData?.assignedTherapistName || therapistData?.name || '',
@@ -369,9 +383,7 @@ const ClientHomeScreen = ({ navigation }) => {
       setMoodStep(0);
       setSelectedMood(null);
       setMoodJournal('');
-      // Refresh mood distribution chart
-      const uid = auth.currentUser?.uid;
-      if (uid) await loadMoodDistribution(uid);
+      if (moodClientId) await loadMoodDistribution(moodClientId);
       Alert.alert('Mood Saved', 'Your mood check-in has been recorded.');
     } catch (err) {
       console.error('Mood submit error:', err);
@@ -451,7 +463,21 @@ const ClientHomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
-      <LocationSummaryCardMobile profile={clientData} onEdit={() => navigation.navigate('Settings')} />
+      <LocationSummaryCardMobile
+        profile={locationProfile || clientData}
+        onEdit={() => navigation.navigate('Settings')}
+      />
+
+      {clientData?.coupleId ? (
+        <TouchableOpacity
+          style={styles.coupleBanner}
+          onPress={() => navigation.navigate('CoupleDashboard', { coupleId: clientData.coupleId })}
+        >
+          <Ionicons name="people" size={20} color="#047857" />
+          <Text style={styles.coupleBannerText}>Couple therapy hub — shared status & therapist</Text>
+          <Ionicons name="chevron-forward" size={18} color="#047857" />
+        </TouchableOpacity>
+      ) : null}
 
       {/* Emergency Banner */}
       <TouchableOpacity style={styles.emergencyBanner} onPress={() => setShowEmergencyModal(true)} activeOpacity={0.85}>
@@ -1215,6 +1241,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   // Emergency banner
+  coupleBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  coupleBannerText: { flex: 1, color: '#047857', fontWeight: '600', fontSize: 14 },
   emergencyBanner: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,52 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
+import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
+import {
+  loadCouple,
+  isPaymentAllowed,
+  markCouplePaymentComplete,
+} from '../services/coupleTherapyService';
 
-const PaymentScreen = ({ navigation }) => {
+const PaymentScreen = ({ navigation, route }) => {
+  const coupleIdParam = route.params?.coupleId;
+  const isCouple = route.params?.therapyType === 'couples';
   const [plan, setPlan] = useState('standard');
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvc, setCvc] = useState('');
+  const [checking, setChecking] = useState(isCouple);
+  const [blocked, setBlocked] = useState(false);
 
-  const prices = {
-    basic: 70,
-    standard: 85,
-    premium: 100,
-  };
+  const prices = { basic: 70, standard: 85, premium: 100 };
+
+  useEffect(() => {
+    if (!isCouple) return;
+    (async () => {
+      const id = coupleIdParam || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
+      if (!id) {
+        setChecking(false);
+        return;
+      }
+      const couple = await loadCouple(id);
+      if (!isPaymentAllowed(couple)) {
+        setBlocked(true);
+        Alert.alert(
+          'Not ready yet',
+          'Both partners must complete intake and consent before couple payment.',
+          [{ text: 'OK', onPress: () => navigation.replace('CoupleDashboard', { coupleId: id }) }],
+        );
+      }
+      if (couple?.paymentComplete) {
+        navigation.replace('MatchTherapist', { coupleId: id, therapyType: 'couples' });
+      }
+      setChecking(false);
+    })();
+  }, [isCouple, coupleIdParam, navigation]);
 
   const handleSubmit = async () => {
     if (!cardNumber || !expiry || !cvc) {
@@ -29,45 +60,49 @@ const PaymentScreen = ({ navigation }) => {
       return;
     }
 
-    // Mock activation - in real app, this would process payment (matching web version)
     await AsyncStorage.setItem(
       'th.subscription',
-      JSON.stringify({
-        plan,
-        price: prices[plan],
-        activatedAt: new Date().toISOString(),
-      })
+      JSON.stringify({ plan, price: prices[plan], activatedAt: new Date().toISOString() }),
     );
 
-    // Navigate to MatchTherapist after payment (matching web version)
+    if (isCouple) {
+      const coupleId = coupleIdParam || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
+      try {
+        await markCouplePaymentComplete(coupleId, plan);
+        navigation.replace('MatchTherapist', { coupleId, therapyType: 'couples' });
+      } catch (e) {
+        Alert.alert('Error', e.message || 'Could not record payment.');
+      }
+      return;
+    }
+
     navigation.navigate('MatchTherapist');
   };
 
   const plans = [
-    {
-      key: 'basic',
-      title: 'Basic',
-      price: prices.basic,
-      features: ['Messaging', 'Monthly live session'],
-    },
-    {
-      key: 'standard',
-      title: 'Standard',
-      price: prices.standard,
-      features: ['Messaging', 'Bi-weekly live sessions'],
-    },
-    {
-      key: 'premium',
-      title: 'Premium',
-      price: prices.premium,
-      features: ['Messaging', 'Weekly live sessions'],
-    },
+    { key: 'basic', title: 'Basic', price: prices.basic, features: ['Messaging', 'Monthly live session'] },
+    { key: 'standard', title: 'Standard', price: prices.standard, features: ['Messaging', 'Bi-weekly live sessions'] },
+    { key: 'premium', title: 'Premium', price: prices.premium, features: ['Messaging', 'Weekly live sessions'] },
   ];
+
+  if (checking) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={Colors.primary} size="large" />
+      </View>
+    );
+  }
+
+  if (blocked) return null;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.title}>Choose your plan</Text>
-      <Text style={styles.subtitle}>Weekly subscription billed monthly. Cancel anytime.</Text>
+      <Text style={styles.title}>{isCouple ? 'Couple plan' : 'Choose your plan'}</Text>
+      <Text style={styles.subtitle}>
+        {isCouple
+          ? 'One subscription covers both partners. Billed monthly — cancel anytime.'
+          : 'Weekly subscription billed monthly. Cancel anytime.'}
+      </Text>
 
       <View style={styles.plansContainer}>
         {plans.map((p) => (
@@ -92,46 +127,22 @@ const PaymentScreen = ({ navigation }) => {
 
       <View style={styles.paymentForm}>
         <Text style={styles.formTitle}>Payment Details</Text>
-
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Card Number</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="4242 4242 4242 4242"
-            value={cardNumber}
-            onChangeText={setCardNumber}
-            keyboardType="numeric"
-            maxLength={19}
-          />
+          <TextInput style={styles.input} placeholder="4242 4242 4242 4242" value={cardNumber} onChangeText={setCardNumber} keyboardType="numeric" />
         </View>
-
         <View style={styles.row}>
           <View style={[styles.inputContainer, styles.halfWidth]}>
             <Text style={styles.label}>Expiry</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="MM/YY"
-              value={expiry}
-              onChangeText={setExpiry}
-              maxLength={5}
-            />
+            <TextInput style={styles.input} placeholder="MM/YY" value={expiry} onChangeText={setExpiry} maxLength={5} />
           </View>
-
           <View style={[styles.inputContainer, styles.halfWidth]}>
             <Text style={styles.label}>CVC</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="123"
-              value={cvc}
-              onChangeText={setCvc}
-              keyboardType="numeric"
-              maxLength={3}
-            />
+            <TextInput style={styles.input} placeholder="123" value={cvc} onChangeText={setCvc} keyboardType="numeric" maxLength={3} />
           </View>
         </View>
-
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Activate Subscription</Text>
+          <Text style={styles.submitButtonText}>{isCouple ? 'Activate couple subscription' : 'Activate Subscription'}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -139,28 +150,12 @@ const PaymentScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  contentContainer: {
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    marginBottom: 24,
-  },
-  plansContainer: {
-    gap: 16,
-    marginBottom: 32,
-  },
+  container: { flex: 1, backgroundColor: Colors.background },
+  contentContainer: { padding: 20 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 28, fontWeight: 'bold', color: Colors.text, marginBottom: 8 },
+  subtitle: { fontSize: 16, color: Colors.textSecondary, marginBottom: 24 },
+  plansContainer: { gap: 16, marginBottom: 32 },
   planCard: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
@@ -168,33 +163,12 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.border,
   },
-  planCardSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: '#f0f9f4',
-  },
-  planTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  planPrice: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: Colors.primary,
-  },
-  planPeriod: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 16,
-  },
-  featuresContainer: {
-    gap: 8,
-  },
-  feature: {
-    fontSize: 14,
-    color: Colors.text,
-  },
+  planCardSelected: { borderColor: Colors.primary, backgroundColor: '#f0f9f4' },
+  planTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.text, marginBottom: 8 },
+  planPrice: { fontSize: 32, fontWeight: 'bold', color: Colors.primary },
+  planPeriod: { fontSize: 14, color: Colors.textSecondary, marginBottom: 16 },
+  featuresContainer: { gap: 8 },
+  feature: { fontSize: 14, color: Colors.text },
   paymentForm: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
@@ -205,28 +179,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  formTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 20,
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfWidth: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 8,
-  },
+  formTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.text, marginBottom: 20 },
+  inputContainer: { marginBottom: 16 },
+  row: { flexDirection: 'row', gap: 12 },
+  halfWidth: { flex: 1 },
+  label: { fontSize: 14, fontWeight: '600', color: Colors.text, marginBottom: 8 },
   input: {
     borderWidth: 1,
     borderColor: Colors.border,
@@ -236,18 +193,8 @@ const styles = StyleSheet.create({
     color: Colors.text,
     backgroundColor: Colors.surface,
   },
-  submitButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  submitButtonText: {
-    color: Colors.surface,
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  submitButton: { backgroundColor: Colors.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 10 },
+  submitButtonText: { color: Colors.surface, fontSize: 16, fontWeight: '600' },
 });
 
 export default PaymentScreen;

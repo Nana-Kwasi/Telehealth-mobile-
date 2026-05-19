@@ -12,6 +12,7 @@ import {
 import { TherapistColors } from '../../constants/colors';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +29,7 @@ const chartConfig = {
 
 const TherapistHomeScreen = ({ navigation }) => {
   const [therapistProfile, setTherapistProfile] = useState(null);
+  const [locationProfile, setLocationProfile] = useState(null);
   const [kpis, setKpis] = useState({ activeClients: 0, todaySessions: 0, pendingNotes: 0, completionRate: 0 });
   const [todayAppointments, setTodayAppointments] = useState([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState([]);
@@ -66,11 +68,17 @@ const TherapistHomeScreen = ({ navigation }) => {
 
   const loadProfile = async () => {
     try {
+      let roleData = null;
       const snap = await getDoc(doc(db, 'therapists', currentUser.uid));
-      if (snap.exists()) { setTherapistProfile(snap.data()); return; }
-      // Fallback: check doctors collection
-      const docSnap = await getDoc(doc(db, 'doctors', currentUser.uid));
-      if (docSnap.exists()) setTherapistProfile(docSnap.data());
+      if (snap.exists()) roleData = snap.data();
+      else {
+        const docSnap = await getDoc(doc(db, 'doctors', currentUser.uid));
+        if (docSnap.exists()) roleData = docSnap.data();
+      }
+      const authLoc = await fetchAuthLocationProfile(currentUser.uid);
+      const merged = mergeLocationProfile(authLoc, roleData);
+      setTherapistProfile(roleData);
+      setLocationProfile(merged);
     } catch (e) { console.error('loadProfile error:', e); }
   };
 
@@ -353,7 +361,10 @@ const TherapistHomeScreen = ({ navigation }) => {
           </Text>
         </View>
       </View>
-      <LocationSummaryCardMobile profile={therapistProfile} onEdit={() => navigation.navigate('TherapistSettings')} />
+      <LocationSummaryCardMobile
+        profile={locationProfile || therapistProfile}
+        onEdit={() => navigation.navigate('TherapistSettings')}
+      />
 
       {/* ── KPI Cards ── */}
       <View style={styles.kpiGrid}>

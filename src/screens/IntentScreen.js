@@ -6,22 +6,50 @@ import {
   TouchableOpacity,
   ImageBackground,
   StatusBar,
-  Dimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors, MedicalColors } from '../constants/colors';
+import { Colors } from '../constants/colors';
 
-const { width } = Dimensions.get('window');
+const INTENT_OPTIONS = [
+  {
+    key: 'therapy',
+    title: 'Therapy',
+    sub: 'Mental health',
+    emoji: '🧠',
+    styleKey: 'pillTherapy',
+  },
+  {
+    key: 'medical',
+    title: 'Doctor',
+    sub: 'Medical care',
+    emoji: '🩺',
+    styleKey: 'pillMedical',
+  },
+  {
+    key: 'homecare',
+    title: 'Home-Care',
+    sub: 'At-home support',
+    emoji: '🏠',
+    styleKey: 'pillHomeCare',
+  },
+];
 
 const IntentScreen = ({ navigation }) => {
   const handleSelect = async (intent) => {
     try {
       await AsyncStorage.setItem('userIntent', intent);
     } catch (_) {}
+
     if (intent === 'therapy') {
       navigation.navigate('Welcome');
-    } else {
+      return;
+    }
+    if (intent === 'medical') {
       navigation.navigate('MedicalIntake');
+      return;
+    }
+    if (intent === 'homecare') {
+      navigation.navigate('HomeCareFlow', { screen: 'HomeCareHome' });
     }
   };
 
@@ -33,8 +61,6 @@ const IntentScreen = ({ navigation }) => {
     >
       <StatusBar barStyle="light-content" />
       <View style={styles.overlay}>
-
-        {/* Brand */}
         <View style={styles.brand}>
           <View style={styles.logoMark}>
             <Text style={styles.logoLetter}>N</Text>
@@ -42,42 +68,26 @@ const IntentScreen = ({ navigation }) => {
           <Text style={styles.logoName}>NessaHub</Text>
         </View>
 
-        {/* Headline */}
         <View style={styles.headline}>
           <Text style={styles.title}>Your health,{'\n'}your way.</Text>
           <Text style={styles.sub}>What do you need today?</Text>
         </View>
 
-        {/* Pill Buttons */}
-        <View style={styles.pills}>
-          <TouchableOpacity
-            style={[styles.pill, styles.pillTherapy]}
-            onPress={() => handleSelect('therapy')}
-            activeOpacity={0.82}
-          >
-            <Text style={styles.pillEmoji}>🧠</Text>
-            <View>
-              <Text style={styles.pillTitle}>Therapy</Text>
-              <Text style={styles.pillSub}>Mental health support</Text>
-            </View>
-            <Text style={styles.pillArrow}>→</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.pill, styles.pillMedical]}
-            onPress={() => handleSelect('medical')}
-            activeOpacity={0.82}
-          >
-            <Text style={styles.pillEmoji}>🩺</Text>
-            <View>
-              <Text style={styles.pillTitle}>Doctor</Text>
-              <Text style={styles.pillSub}>Medical consultations</Text>
-            </View>
-            <Text style={styles.pillArrow}>→</Text>
-          </TouchableOpacity>
+        <View style={styles.pillsRow}>
+          {INTENT_OPTIONS.map((opt) => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.pill, styles[opt.styleKey]]}
+              onPress={() => handleSelect(opt.key)}
+              activeOpacity={0.82}
+            >
+              <Text style={styles.pillEmoji}>{opt.emoji}</Text>
+              <Text style={styles.pillTitle}>{opt.title}</Text>
+              <Text style={styles.pillSub}>{opt.sub}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Login link */}
         <TouchableOpacity
           style={styles.loginBtn}
           onPress={() => navigation.navigate('Login')}
@@ -85,7 +95,6 @@ const IntentScreen = ({ navigation }) => {
         >
           <Text style={styles.loginBtnText}>Already have an account? Sign in</Text>
         </TouchableOpacity>
-
       </View>
     </ImageBackground>
   );
@@ -100,13 +109,11 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(10,20,14,0.72)',
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingTop: 80,
     paddingBottom: 48,
     justifyContent: 'space-between',
   },
-
-  /* Brand */
   brand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -116,7 +123,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#4a7c59',
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -131,8 +138,6 @@ const styles = StyleSheet.create({
     color: 'white',
     letterSpacing: -0.3,
   },
-
-  /* Headline */
   headline: {
     marginTop: -40,
   },
@@ -149,19 +154,20 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     fontWeight: '400',
   },
-
-  /* Pills */
-  pills: {
-    gap: 14,
+  pillsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'stretch',
   },
   pill: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 20,
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 16,
     borderWidth: 1.5,
+    minHeight: 118,
   },
   pillTherapy: {
     backgroundColor: 'rgba(74,124,89,0.18)',
@@ -171,27 +177,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(30,107,184,0.18)',
     borderColor: 'rgba(147,197,253,0.35)',
   },
+  pillHomeCare: {
+    backgroundColor: 'rgba(180,83,9,0.18)',
+    borderColor: 'rgba(253,186,116,0.4)',
+  },
   pillEmoji: {
     fontSize: 26,
+    marginBottom: 8,
   },
   pillTitle: {
-    fontSize: 17,
+    fontSize: 13,
     fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 2,
+    textAlign: 'center',
+    marginBottom: 4,
   },
   pillSub: {
-    fontSize: 12,
+    fontSize: 10,
     color: 'rgba(255,255,255,0.55)',
     fontWeight: '400',
+    textAlign: 'center',
+    lineHeight: 13,
   },
-  pillArrow: {
-    marginLeft: 'auto',
-    fontSize: 18,
-    color: 'rgba(255,255,255,0.4)',
-  },
-
-  /* Login */
   loginBtn: {
     alignItems: 'center',
     paddingVertical: 14,

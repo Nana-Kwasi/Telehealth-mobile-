@@ -95,15 +95,29 @@ const WelcomeScreen = ({ navigation }) => {
   const handleStart = async (type) => {
     try {
       // Clear any existing data and start fresh (matching web version)
-      await AsyncStorage.multiRemove(['th.onboard', 'th.subscription', 'th.match', 'th.parentInfo', 'th.childInfo', 'th.parentConsent']);
-      
-      // For teen therapy, navigate to parent/guardian info first
+      await AsyncStorage.multiRemove([
+        'th.onboard',
+        'th.subscription',
+        'th.match',
+        'th.parentInfo',
+        'th.childInfo',
+        'th.parentConsent',
+        'th.coupleId',
+        'th.couplePartnerRole',
+        'th.coupleInviteToken',
+      ]);
+
       if (type === 'teen') {
         navigation.navigate('ParentGuardianInfo');
         return;
       }
-      
-      // For individual and couples, proceed with normal flow
+
+      if (type === 'couples') {
+        navigation.navigate('CoupleInitiation');
+        return;
+      }
+
+      // Individual — standard questionnaire
       // Save therapy type to AsyncStorage (matching web localStorage)
       const data = { 
         therapyType: type, 
@@ -117,6 +131,8 @@ const WelcomeScreen = ({ navigation }) => {
       // Still navigate even if save fails
       if (type === 'teen') {
         navigation.navigate('ParentGuardianInfo');
+      } else if (type === 'couples') {
+        navigation.navigate('CoupleInitiation');
       } else {
         navigation.navigate('Questionnaire', { therapyType: type });
       }

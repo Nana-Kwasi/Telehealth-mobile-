@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,24 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../services/firebaseConfig';
 import { collection, addDoc } from 'firebase/firestore';
 import { Colors } from '../constants/colors';
 import { steps, phq9Questions } from '../constants/questionnaireSteps';
+import {
+  buildIndividualConsentRecord,
+  INDIVIDUAL_CONSENT_STEP,
+  needsIndividualQuestionnaireConsent,
+} from '../constants/individualTherapyConfig';
+import { nessaHubPolicyUrl, NESSA_HUB_POLICY_LINKS } from '../constants/nessaHubPolicies';
+import {
+  getQuestionnaireAgeOptions,
+  validateQuestionnaireAge,
+} from '../constants/therapyAgeValidation';
 
 const STORAGE_KEY = 'th.onboard';
 
@@ -66,8 +78,16 @@ const QuestionnaireScreen = ({ route, navigation }) => {
     }
   };
 
-  const currentStep = steps[currentStepIndex];
-  const progress = ((currentStepIndex + 1) / steps.length) * 100;
+  const activeSteps = useMemo(() => {
+    if (needsIndividualQuestionnaireConsent(data.therapyType)) {
+      return [...steps, INDIVIDUAL_CONSENT_STEP];
+    }
+    return steps;
+  }, [data.therapyType]);
+
+  const isTeen = data.therapyType === 'teen';
+  const currentStep = activeSteps[currentStepIndex];
+  const progress = ((currentStepIndex + 1) / activeSteps.length) * 100;
 
   const isFieldComplete = (field) => {
     if (field.showIf) {
@@ -82,6 +102,15 @@ const QuestionnaireScreen = ({ route, navigation }) => {
       return value.length > 0;
     } else if (field.type === 'phq9_single') {
       return data[field.name] !== undefined && data[field.name] !== '';
+    } else if (field.type === 'consent_check') {
+      return data[field.name] === true;
+    } else if (field.type === 'signature') {
+      return String(data[field.name] || '').trim() !== '';
+    } else if (field.type === 'consent_footer') {
+      return true;
+    } else if (field.name === 'age') {
+      if (!data.age) return false;
+      return !validateQuestionnaireAge(data.therapyType, data.age);
     } else {
       return data[field.name] && data[field.name] !== '';
     }
@@ -93,11 +122,16 @@ const QuestionnaireScreen = ({ route, navigation }) => {
 
   const handleNext = () => {
     if (!isCurrentStepComplete()) {
+      const ageErr = data.age ? validateQuestionnaireAge(data.therapyType, data.age) : null;
+      if (ageErr) {
+        Alert.alert('Invalid age', ageErr);
+        return;
+      }
       Alert.alert('Incomplete', 'Please answer all questions before continuing');
       return;
     }
 
-    if (currentStepIndex < steps.length - 1) {
+    if (currentStepIndex < activeSteps.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
     } else {
       handleSubmit();
@@ -130,8 +164,13 @@ const QuestionnaireScreen = ({ route, navigation }) => {
         completedAt: new Date().toISOString(),
         status: 'pending',
         displayName: data.name || data.firstName + ' ' + data.lastName || 'Client',
-        clientName: data.name || data.firstName + ' ' + data.lastName || 'Client'
+        clientName: data.name || data.firstName + ' ' + data.lastName || 'Client',
       };
+
+      if (needsIndividualQuestionnaireConsent(data.therapyType)) {
+        clientData.individualConsent = buildIndividualConsentRecord(data);
+        clientData.consentComplete = true;
+      }
 
       const docRef = await addDoc(collection(db, 'clients'), clientData);
       await AsyncStorage.setItem('th.clientId', docRef.id);
@@ -173,6 +212,12 @@ const QuestionnaireScreen = ({ route, navigation }) => {
     }
 
     if (field.type === 'select') {
+      const isAgeField = field.name === 'age';
+      const selectOptions = isAgeField
+        ? getQuestionnaireAgeOptions(data.therapyType)
+        : field.options;
+      const ageError =
+        isAgeField && data.age ? validateQuestionnaireAge(data.therapyType, data.age) : null;
       return (
         <View key={field.name} style={styles.fieldContainer}>
           <Text style={styles.label}>
@@ -185,7 +230,7 @@ const QuestionnaireScreen = ({ route, navigation }) => {
             style={styles.optionsContainer}
             contentContainerStyle={styles.optionsContent}
           >
-            {field.options.map((option) => (
+            {selectOptions.map((option) => (
               <TouchableOpacity
                 key={option}
                 style={[
@@ -205,6 +250,14 @@ const QuestionnaireScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             ))}
           </ScrollView>
+          {ageError ? <Text style={styles.fieldError}>{ageError}</Text> : null}
+          {isAgeField && !ageError ? (
+            <Text style={styles.hint}>
+              {data.therapyType === 'teen'
+                ? 'Teen therapy is for ages 13–17.'
+                : 'You must be 18 or older for this program.'}
+            </Text>
+          ) : null}
         </View>
       );
     }
@@ -295,6 +348,77 @@ const QuestionnaireScreen = ({ route, navigation }) => {
       );
     }
 
+    if (field.type === 'consent_check') {
+      const checked = !!data[field.name];
+      return (
+        <View key={field.name} style={styles.consentItem}>
+          <TouchableOpacity
+            style={styles.consentMain}
+            onPress={() => saveData({ [field.name]: !checked })}
+            activeOpacity={0.7}
+          >
+            <View style={styles.consentCheckbox}>
+              {checked ? <View style={styles.consentCheckmark} /> : null}
+            </View>
+            <View style={styles.consentContent}>
+              <Text style={styles.consentTitle}>{field.label}</Text>
+              {field.description ? (
+                <Text style={styles.consentDescription}>{field.description}</Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+          {field.policySlug ? (
+            <TouchableOpacity
+              style={styles.consentLinkBtn}
+              onPress={() => Linking.openURL(nessaHubPolicyUrl(field.policySlug))}
+              accessibilityLabel={`Read full ${field.label} policy`}
+            >
+              <Ionicons name="open-outline" size={18} color={Colors.primary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      );
+    }
+
+    if (field.type === 'signature') {
+      const date = new Date().toISOString().split('T')[0];
+      return (
+        <View key={field.name} style={styles.fieldContainer}>
+          <Text style={styles.label}>
+            {field.label}
+            {isFieldComplete(field) ? <Text style={styles.checkmark}> ✓</Text> : null}
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={data[field.name] || ''}
+            onChangeText={(text) => saveData({ [field.name]: text })}
+            placeholder="Type your full legal name"
+            autoCapitalize="words"
+          />
+          <Text style={styles.hint}>Date: {date}</Text>
+        </View>
+      );
+    }
+
+    if (field.type === 'consent_footer') {
+      return (
+        <View key="consent_footer" style={styles.consentNote}>
+          <Text style={styles.consentNoteTitle}>Important</Text>
+          <Text style={styles.consentNoteText}>
+            By proceeding, you agree to our{' '}
+            <Text style={styles.consentNoteLink} onPress={() => Linking.openURL(NESSA_HUB_POLICY_LINKS.terms)}>
+              Terms of Service
+            </Text>{' '}
+            and{' '}
+            <Text style={styles.consentNoteLink} onPress={() => Linking.openURL(NESSA_HUB_POLICY_LINKS.privacy)}>
+              Privacy Policy
+            </Text>
+            .
+          </Text>
+        </View>
+      );
+    }
+
     if (field.type === 'phq9_single') {
       const phq9Options = [
         { value: 0, label: 'Not at all' },
@@ -341,9 +465,11 @@ const QuestionnaireScreen = ({ route, navigation }) => {
     <View style={styles.container}>
       <View style={styles.progressContainer}>
         <View style={styles.progressHeader}>
-          <Text style={styles.progressTitle}>Getting to know you</Text>
+          <Text style={styles.progressTitle}>
+            {isTeen ? 'Getting to know your teen' : 'Getting to know you'}
+          </Text>
           <Text style={styles.progressText}>
-            {currentStepIndex + 1} of {steps.length}
+            {currentStepIndex + 1} of {activeSteps.length}
           </Text>
         </View>
         <View style={styles.progressBar}>
@@ -358,8 +484,11 @@ const QuestionnaireScreen = ({ route, navigation }) => {
       >
         <Text style={styles.title}>{currentStep.title}</Text>
         <Text style={styles.subtitle}>
-          Help us match you to the right therapist{'\n'}
-          It's important to have a therapist who you can establish a personal connection with. The following questions are designed to match you to a licensed therapist based on your therapy needs and personal preferences.
+          {isTeen
+            ? "Help us match your child to the right therapist.\nThese questions help us find a licensed therapist suited to your teen's needs."
+            : currentStep.key === 'consent'
+              ? 'Please review and accept the following before we create your account.\nTap the icon on each row to read the full policy.'
+              : "Help us match you to the right therapist\nIt's important to have a therapist who you can establish a personal connection with. The following questions are designed to match you to a licensed therapist based on your therapy needs and personal preferences."}
         </Text>
 
         {currentStep.fields.map((field) => renderField(field))}
@@ -387,7 +516,7 @@ const QuestionnaireScreen = ({ route, navigation }) => {
             <ActivityIndicator color={Colors.surface} />
           ) : (
             <Text style={styles.nextButtonText}>
-              {currentStepIndex === steps.length - 1 ? 'Done' : 'Next'}
+              {currentStepIndex === activeSteps.length - 1 ? 'Done' : 'Next'}
             </Text>
           )}
         </TouchableOpacity>
@@ -478,6 +607,12 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 8,
     marginBottom: 12,
+  },
+  fieldError: {
+    fontSize: 14,
+    color: Colors.error,
+    marginTop: 8,
+    fontWeight: '500',
   },
   input: {
     borderWidth: 2,
@@ -588,6 +723,87 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.5,
+  },
+  consentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: Colors.border,
+  },
+  consentMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  consentLinkBtn: {
+    marginLeft: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+  },
+  consentCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+  },
+  consentCheckmark: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+  },
+  consentContent: {
+    flex: 1,
+  },
+  consentTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  consentDescription: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  consentNote: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  consentNoteTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  consentNoteText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 22,
+  },
+  consentNoteLink: {
+    color: Colors.primary,
+    fontWeight: '600',
   },
 });
 

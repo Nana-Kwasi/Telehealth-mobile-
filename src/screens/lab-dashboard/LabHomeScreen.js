@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Modal, TextInput,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
+import { db } from '../../services/firebaseConfig';
 import {
-  collection, query, where, getDocs, doc, updateDoc,
+  collection, query, where, getDocs,
 } from 'firebase/firestore';
-import { updatePassword as updatePwd } from 'firebase/auth';
 import { LabColors as C } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 import { normalizeDiagnosticOrderStatus } from '../../utils/diagnosticOrderStatus';
@@ -29,21 +28,9 @@ export default function LabHomeScreen({ profile, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [mustChange, setMustChange] = useState(profile?.mustChangePassword === true);
-  const [newPw, setNewPw] = useState('');
-  const [confirmPw, setConfirmPw] = useState('');
-  const [pwError, setPwError] = useState('');
-  const [pwSaving, setPwSaving] = useState(false);
-
   const isBranch = profile?.role === 'lab_branch';
 
   useEffect(() => { loadStats(); }, []);
-
-  useEffect(() => {
-    setMustChange(profile?.mustChangePassword === true);
-  }, [profile?.mustChangePassword]);
-
-  const pwCollection = isBranch ? 'labBranches' : 'labs';
 
   const loadStats = async () => {
     try {
@@ -104,23 +91,6 @@ export default function LabHomeScreen({ profile, navigation }) {
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  };
-
-  const handleChangePassword = async () => {
-    setPwError('');
-    if (newPw.length < 8) { setPwError('Password must be at least 8 characters.'); return; }
-    if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
-    setPwSaving(true);
-    try {
-      const user = auth.currentUser;
-      await updatePwd(user, newPw);
-      await updateDoc(doc(db, pwCollection, profile.id), { mustChangePassword: false });
-      setMustChange(false);
-    } catch (err) {
-      if (err.code === 'auth/requires-recent-login') {
-        setPwError('Log out, sign in with your temporary password again, then try.');
-      } else { setPwError('Failed to update password. Try again.'); }
-    } finally { setPwSaving(false); }
   };
 
   const ordersNav = isBranch ? 'LabBranchOrders' : 'LabOrders';
@@ -245,31 +215,6 @@ export default function LabHomeScreen({ profile, navigation }) {
 
         <View style={{ height: 32 }} />
       </ScrollView>
-
-      <Modal visible={mustChange} transparent animationType="slide">
-        <View style={styles.overlay}>
-          <View style={styles.pwCard}>
-            <Text style={styles.pwTitle}>🔐 Password Reset Required</Text>
-            <Text style={styles.pwSub}>You must set a new password before accessing your dashboard.</Text>
-            {pwError ? <Text style={styles.pwError}>{pwError}</Text> : null}
-            {[
-              { label: 'New Password', val: newPw, set: setNewPw },
-              { label: 'Confirm New Password', val: confirmPw, set: setConfirmPw },
-            ].map(f => (
-              <View key={f.label} style={{ marginBottom: 12 }}>
-                <Text style={styles.pwLabel}>{f.label}</Text>
-                <TextInput style={styles.pwInput} secureTextEntry value={f.val} onChangeText={f.set} placeholder="••••••••" />
-              </View>
-            ))}
-            <TouchableOpacity style={[styles.pwBtn, pwSaving && { opacity: 0.6 }]} onPress={handleChangePassword} disabled={pwSaving}>
-              <Text style={styles.pwBtnText}>{pwSaving ? 'Saving…' : 'Set New Password & Continue'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={async () => { try { await auth.signOut(); } catch (_) {} }} style={styles.pwLogout}>
-              <Text style={styles.pwLogoutText}>Log Out</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 }
@@ -310,15 +255,4 @@ const styles = StyleSheet.create({
   sectionMutedText: { fontSize: 13, color: '#64748b', lineHeight: 18 },
   infoCard: { flexDirection: 'row', gap: 10, backgroundColor: C.primaryLight, margin: 16, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.border },
   infoText: { flex: 1, fontSize: 13, color: C.primary, fontWeight: '500', lineHeight: 18 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  pwCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 400 },
-  pwTitle: { fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 8, textAlign: 'center' },
-  pwSub: { fontSize: 13, color: C.textSecondary, marginBottom: 16, textAlign: 'center' },
-  pwError: { backgroundColor: '#fff1f2', borderRadius: 8, padding: 10, color: '#be123c', fontSize: 13, marginBottom: 12 },
-  pwLabel: { fontSize: 12, fontWeight: '700', color: C.text, marginBottom: 6 },
-  pwInput: { borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, fontSize: 15, color: C.text },
-  pwBtn: { backgroundColor: C.primary, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8 },
-  pwBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  pwLogout: { alignItems: 'center', marginTop: 12 },
-  pwLogoutText: { color: C.textSecondary, fontSize: 14, fontWeight: '600' },
 });

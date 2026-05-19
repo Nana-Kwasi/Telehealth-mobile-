@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { NavigationContainer, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { View, ActivityIndicator, DeviceEventEmitter } from 'react-native';
@@ -7,8 +7,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
 import { resolveRole } from '../services/authService';
+import { applyCoupleLandingIfNeeded } from '../services/coupleTherapyService';
+import { PRIVACY_STORAGE_KEY, syncPrivacyConsentToUser } from '../services/privacyConsentService';
 
 // Onboarding / Auth screens
+import IntroHomeScreen from '../screens/IntroHomeScreen';
 import IntentScreen from '../screens/IntentScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
@@ -19,6 +22,13 @@ import PaymentScreen from '../screens/PaymentScreen';
 import ParentGuardianInfoScreen from '../screens/ParentGuardianInfoScreen';
 import ChildInfoScreen from '../screens/ChildInfoScreen';
 import ParentConsentScreen from '../screens/ParentConsentScreen';
+import CoupleInitiationScreen from '../screens/couple/CoupleInitiationScreen';
+import CoupleIntakeScreen from '../screens/couple/CoupleIntakeScreen';
+import CoupleWaitingPartnerScreen from '../screens/couple/CoupleWaitingPartnerScreen';
+import CoupleInviteEntryScreen from '../screens/couple/CoupleInviteEntryScreen';
+import CouplePartnerBWelcomeScreen from '../screens/couple/CouplePartnerBWelcomeScreen';
+import CoupleDashboardScreen from '../screens/couple/CoupleDashboardScreen';
+import TherapistCoupleCaseScreen from '../screens/therapist-dashboard/TherapistCoupleCaseScreen';
 
 // Therapy dashboard screens (existing)
 import ClientHomeScreen from '../screens/dashboard/ClientHomeScreen';
@@ -118,6 +128,9 @@ import PharmacyDrawerContent from '../components/PharmacyDrawerContent';
 import LabDrawerContent from '../components/LabDrawerContent';
 import ScanDrawerContent from '../components/ScanDrawerContent';
 import DashboardLocationGateMobile from '../components/DashboardLocationGateMobile';
+import ForcedPasswordChangeGateMobile from '../components/ForcedPasswordChangeGateMobile';
+import HomeCarePatientNavigator from './HomeCarePatientNavigator';
+import HomeCareNurseNavigator from './HomeCareNurseNavigator';
 
 import { Colors, MedicalColors, TherapistColors, DoctorColors, PharmacyColors, LabColors, ScanColors } from '../constants/colors';
 
@@ -367,6 +380,29 @@ const TherapistDrawerNavigator = ({ profile }) => {
   );
 };
 
+/** Redirect incomplete couple partners off Main (therapy dashboard). */
+function TherapyMainCoupleGate({ profile, children }) {
+  const navigation = useNavigation();
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        try {
+          const profileStr = await AsyncStorage.getItem('userProfile');
+          const resolved = profileStr ? JSON.parse(profileStr) : profile;
+          if (active && resolved) await applyCoupleLandingIfNeeded(navigation, resolved);
+        } catch (_) {}
+      })();
+      return () => {
+        active = false;
+      };
+    }, [navigation, profile]),
+  );
+
+  return children;
+}
+
 // ── Therapy Drawer ──
 const TherapyDrawerNavigator = ({ profile }) => {
   return (
@@ -441,9 +477,15 @@ const AppNavigator = () => {
       }
 
       try {
-        const { role, profile: resolvedProfile } = await resolveRole(user.uid);
+        let { role, profile: resolvedProfile } = await resolveRole(user.uid);
+        if (role === 'guest') {
+          await new Promise((r) => setTimeout(r, 600));
+          const retry = await resolveRole(user.uid);
+          role = retry.role;
+          resolvedProfile = retry.profile;
+        }
 
-        const allowedRoles = ['client', 'therapist', 'admin', 'doctor', 'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch'];
+        const allowedRoles = ['client', 'therapist', 'admin', 'doctor', 'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch', 'homecare_nurse'];
         if (!allowedRoles.includes(role)) {
           await auth.signOut();
           setIsAuthenticated(false);
@@ -471,9 +513,18 @@ const AppNavigator = () => {
         else if (role === 'lab_branch')  intent = 'lab_branch';
         else if (role === 'scan')        intent = 'scan';
         else if (role === 'scan_branch') intent = 'scan_branch';
+        else if (role === 'homecare_nurse') intent = 'homecare_nurse';
         else intent = resolvedProfile?.userIntent || await AsyncStorage.getItem('userIntent') || 'therapy';
 
         await AsyncStorage.setItem('userIntent', intent);
+        const privacyAccepted = await AsyncStorage.getItem(PRIVACY_STORAGE_KEY);
+        if (privacyAccepted === 'true') {
+          syncPrivacyConsentToUser({
+            userId: user.uid,
+            role,
+            profileId: mergedProfile?.id || user.uid,
+          }).catch(() => {});
+        }
         setProfile(mergedProfile);
         setUserRole(role);
         setIsAuthenticated(true);
@@ -519,16 +570,41 @@ const AppNavigator = () => {
       if (userIntent === 'lab_branch') return 'LabBranchMain';
       if (userIntent === 'scan')       return 'ScanMain';
       if (userIntent === 'scan_branch')return 'ScanBranchMain';
+      if (userIntent === 'homecare_nurse') return 'HomeCareNurseMain';
+      if (userIntent === 'homecare') return 'HomeCareFlow';
       return 'Main';
     }
-    return 'Intent';
+    return 'IntroHome';
+  };
+
+  const linking = {
+    prefixes: ['nessahub://', 'https://nessahub.com', 'https://www.nessahub.com'],
+    config: {
+      screens: {
+        CoupleInviteEntry: {
+          path: 'couple/join',
+          parse: {
+            token: (token) => token,
+          },
+        },
+      },
+    },
   };
 
   if (isLoading) return <LoadingScreen />;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <DashboardLocationGateMobile role={userRole} profile={profile} userIntent={userIntent} active={isAuthenticated && !isLoading} />
+      <ForcedPasswordChangeGateMobile
+        active={isAuthenticated && !isLoading}
+        userRole={userRole}
+        profile={profile}
+        onSuccess={() => {
+          setProfile((p) => (p ? { ...p, mustChangePassword: false } : null));
+          DeviceEventEmitter.emit('refreshProfile');
+        }}
+      />
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: Colors.primary },
@@ -537,6 +613,7 @@ const AppNavigator = () => {
         }}
         initialRouteName={getInitialRoute()}
       >
+        <Stack.Screen name="IntroHome" component={IntroHomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Intent" component={IntentScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Login' }} />
@@ -547,6 +624,17 @@ const AppNavigator = () => {
         <Stack.Screen name="ParentGuardianInfo" component={ParentGuardianInfoScreen} options={{ title: 'Parent/Guardian Information' }} />
         <Stack.Screen name="ChildInfo" component={ChildInfoScreen} options={{ title: 'Child Information' }} />
         <Stack.Screen name="ParentConsent" component={ParentConsentScreen} options={{ title: 'Parent Consent' }} />
+        <Stack.Screen name="CoupleInitiation" component={CoupleInitiationScreen} options={{ title: 'Couple therapy' }} />
+        <Stack.Screen
+          name="CoupleIntake"
+          component={CoupleIntakeScreen}
+          options={{ title: 'Couple intake', gestureEnabled: true }}
+        />
+        <Stack.Screen name="CoupleWaitingPartner" component={CoupleWaitingPartnerScreen} options={{ title: 'Couple status' }} />
+        <Stack.Screen name="CoupleInviteEntry" component={CoupleInviteEntryScreen} options={{ title: 'Partner invitation' }} />
+        <Stack.Screen name="CouplePartnerBWelcome" component={CouplePartnerBWelcomeScreen} options={{ title: 'Join couple therapy' }} />
+        <Stack.Screen name="CoupleDashboard" component={CoupleDashboardScreen} options={{ title: 'Couple therapy' }} />
+        <Stack.Screen name="TherapistCoupleCase" component={TherapistCoupleCaseScreen} options={{ title: 'Couple case' }} />
 
         <Stack.Screen name="MedicalIntake" component={MedicalIntakeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="DoctorSearch" component={DoctorSearchScreen} options={{ title: 'Find a Doctor', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
@@ -567,7 +655,11 @@ const AppNavigator = () => {
           {() => <TherapistDrawerNavigator profile={profile} />}
         </Stack.Screen>
         <Stack.Screen name="Main" options={{ headerShown: false }}>
-          {() => <TherapyDrawerNavigator profile={profile} />}
+          {() => (
+            <TherapyMainCoupleGate profile={profile}>
+              <TherapyDrawerNavigator profile={profile} />
+            </TherapyMainCoupleGate>
+          )}
         </Stack.Screen>
         <Stack.Screen name="MedicalMain" options={{ headerShown: false }}>
           {() => <MedicalDrawerNavigator profile={profile} />}
@@ -583,6 +675,11 @@ const AppNavigator = () => {
         </Stack.Screen>
         <Stack.Screen name="ScanBranchMain" options={{ headerShown: false }}>
           {() => <ScanBranchDrawerNavigator profile={profile} />}
+        </Stack.Screen>
+
+        <Stack.Screen name="HomeCareFlow" component={HomeCarePatientNavigator} options={{ headerShown: false }} />
+        <Stack.Screen name="HomeCareNurseMain" options={{ headerShown: false }}>
+          {() => <HomeCareNurseNavigator profile={profile} />}
         </Stack.Screen>
 
         <Stack.Screen name="InsuranceDetails" component={InsuranceDetailsScreen} options={{ title: 'Insurance Details', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />

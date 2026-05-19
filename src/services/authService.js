@@ -79,6 +79,17 @@ export async function resolveRole(uid) {
     return { role: 'branch_user', profile: { id: branchSnap.id, ...data, role: 'branch_user' } };
   }
 
+  // Home-care nurses
+  const nurseRef = doc(db, 'homeCareNurses', uid);
+  const nurseSnap = await getDoc(nurseRef);
+  if (nurseSnap.exists()) {
+    const data = nurseSnap.data();
+    return {
+      role: 'homecare_nurse',
+      profile: { id: nurseSnap.id, ...data, role: 'homecare_nurse' },
+    };
+  }
+
   // Check doctors collection
   const doctorRef = doc(db, 'doctors', uid);
   const doctorSnap = await getDoc(doctorRef);
@@ -99,12 +110,17 @@ export async function resolveRole(uid) {
   const therapistSnap = await getDoc(therapistRef);
 
   if (therapistSnap.exists()) {
+    const therapistData = therapistSnap.data();
+    const isAdminTherapist =
+      therapistData.role === 'admin' || therapistData.type === 'Administrator';
     return {
       role: 'therapist',
       profile: {
         id: therapistSnap.id,
-        ...therapistSnap.data()
-      }
+        ...therapistData,
+        role: isAdminTherapist ? 'admin' : therapistData.role || 'user',
+        isAdminTherapist,
+      },
     };
   }
 
@@ -116,21 +132,27 @@ export async function resolveRole(uid) {
     const authData = authSnap.data();
     let clientStatus = authData.status || 'active';
 
-    if (authData.clientId) {
-      try {
-        const clientRef = doc(db, 'clients', authData.clientId);
-        const clientSnap = await getDoc(clientRef);
-        if (clientSnap.exists()) {
-          const clientData = clientSnap.data();
+    let clientData = null;
+    const clientDocId = authData.clientId || uid;
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientDocId));
+      if (clientSnap.exists()) {
+        clientData = clientSnap.data();
+        clientStatus = clientData.status || clientStatus;
+      } else if (clientDocId !== uid) {
+        const altSnap = await getDoc(doc(db, 'clients', uid));
+        if (altSnap.exists()) {
+          clientData = altSnap.data();
           clientStatus = clientData.status || clientStatus;
         }
-      } catch (error) {
-        console.log('Error checking clients collection:', error);
       }
+    } catch (error) {
+      console.log('Error checking clients collection:', error);
     }
 
-    if (clientStatus !== 'active') {
-      throw new Error('Your account is not active. Please contact your therapist or administrator for assistance.');
+    const blocked = ['inactive', 'discharged', 'on_hold', 'suspended', 'disabled'];
+    if (blocked.includes(String(clientStatus).toLowerCase())) {
+      throw new Error('Your account is not active. Please contact support for assistance.');
     }
 
     return {
@@ -138,10 +160,11 @@ export async function resolveRole(uid) {
       profile: {
         id: authSnap.id,
         ...authData,
+        ...(clientData || {}),
         status: clientStatus,
-        // Preserve userIntent if set (therapy or medical)
-        userIntent: authData.userIntent || 'therapy'
-      }
+        userIntent: authData.userIntent || clientData?.userIntent,
+        name: authData.name || clientData?.clientName || clientData?.displayName,
+      },
     };
   }
 
@@ -221,11 +244,21 @@ export async function findUserByUsernameOrEmail(identifier) {
   const sbrRE = await getDocs(sbrQE);
   if (!sbrRE.empty) return { id: sbrRE.docs[0].id, ...sbrRE.docs[0].data() };
 
+  const hnQ = query(collection(db, 'homeCareNurses'), where('username', '==', identifier));
+  const hnR = await getDocs(hnQ);
+  if (!hnR.empty) return { id: hnR.docs[0].id, ...hnR.docs[0].data() };
+
+  const hnQE = query(collection(db, 'homeCareNurses'), where('email', '==', identifier));
+  const hnRE = await getDocs(hnQE);
+  if (!hnRE.empty) return { id: hnRE.docs[0].id, ...hnRE.docs[0].data() };
+
   return null;
 }
 
 export async function logUserLogout(userId, userRole, profile) {
   try {
+    if (!auth.currentUser) return;
+
     const logoutLog = {
       userId,
       userRole,
@@ -243,6 +276,18 @@ export async function logUserLogout(userId, userRole, profile) {
   } catch (error) {
     console.error('Error logging user logout:', error);
   }
+}
+
+export async function performLogout({ userId, role, profile, clearCoupleKeys = false } = {}) {
+  const uid = userId || auth.currentUser?.uid;
+  if (uid && auth.currentUser) {
+    await logUserLogout(uid, role, profile);
+  }
+  if (clearCoupleKeys) {
+    const { clearCoupleLocalSession } = await import('./coupleTherapyService');
+    await clearCoupleLocalSession();
+  }
+  await signOut(auth);
 }
 
 export { signOut };

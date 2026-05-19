@@ -7,9 +7,13 @@ import {
   ScrollView,
   Alert,
   TextInput,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
+import { TEEN_CONSENT_ITEMS } from '../constants/teenTherapyConfig';
+import { nessaHubPolicyUrl, NESSA_HUB_POLICY_LINKS } from '../constants/nessaHubPolicies';
 
 const ParentConsentScreen = ({ navigation }) => {
   const [consents, setConsents] = useState({
@@ -78,22 +82,27 @@ const ParentConsentScreen = ({ navigation }) => {
     }
   };
 
-  const ConsentItem = ({ title, description, checked, onToggle }) => (
-    <TouchableOpacity
-      style={styles.consentItem}
-      onPress={onToggle}
-      activeOpacity={0.7}
-    >
-      <View style={styles.consentCheckbox}>
-        {checked && <View style={styles.consentCheckmark} />}
-      </View>
-      <View style={styles.consentContent}>
-        <Text style={styles.consentTitle}>{title}</Text>
-        {description && (
-          <Text style={styles.consentDescription}>{description}</Text>
-        )}
-      </View>
-    </TouchableOpacity>
+  const ConsentItem = ({ title, description, checked, onToggle, policySlug }) => (
+    <View style={styles.consentItem}>
+      <TouchableOpacity style={styles.consentMain} onPress={onToggle} activeOpacity={0.7}>
+        <View style={styles.consentCheckbox}>
+          {checked && <View style={styles.consentCheckmark} />}
+        </View>
+        <View style={styles.consentContent}>
+          <Text style={styles.consentTitle}>{title}</Text>
+          {description ? <Text style={styles.consentDescription}>{description}</Text> : null}
+        </View>
+      </TouchableOpacity>
+      {policySlug ? (
+        <TouchableOpacity
+          style={styles.consentLinkBtn}
+          onPress={() => Linking.openURL(nessaHubPolicyUrl(policySlug))}
+          accessibilityLabel={`Read full ${title} policy`}
+        >
+          <Ionicons name="chevron-forward" size={22} color={Colors.primary} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
   );
 
   return (
@@ -111,40 +120,16 @@ const ParentConsentScreen = ({ navigation }) => {
         </View>
 
         <View style={styles.consentSection}>
-          <ConsentItem
-            title="Consent for Treatment"
-            description="I consent to my child receiving therapy services from licensed mental health professionals through this platform. I understand that therapy sessions will be conducted online and that I may be involved in the treatment process as appropriate."
-            checked={consents.treatmentConsent}
-            onToggle={() => toggleConsent('treatmentConsent')}
-          />
-
-          <ConsentItem
-            title="Privacy and Confidentiality"
-            description="I understand that my child's therapy sessions are confidential, except as required by law (e.g., child abuse, harm to self or others). I consent to the collection and use of my child's health information as described in the Privacy Policy."
-            checked={consents.privacyConsent}
-            onToggle={() => toggleConsent('privacyConsent')}
-          />
-
-          <ConsentItem
-            title="Emergency Contact Authorization"
-            description="I authorize the therapy platform to contact emergency services or the emergency contact I provided if there is a concern about my child's safety or well-being."
-            checked={consents.emergencyConsent}
-            onToggle={() => toggleConsent('emergencyConsent')}
-          />
-
-          <ConsentItem
-            title="Communication Consent"
-            description="I consent to receiving communications via email, phone, or text message regarding my child's therapy appointments, treatment updates, and important information. I understand I can opt out of non-essential communications at any time."
-            checked={consents.communicationConsent}
-            onToggle={() => toggleConsent('communicationConsent')}
-          />
-
-          <ConsentItem
-            title="Billing and Payment Authorization"
-            description="I understand that I am responsible for payment of therapy services. I authorize charges to my payment method on file and agree to the billing terms and conditions."
-            checked={consents.billingConsent}
-            onToggle={() => toggleConsent('billingConsent')}
-          />
+          {TEEN_CONSENT_ITEMS.map((item) => (
+            <ConsentItem
+              key={item.key}
+              title={item.title}
+              description={item.description}
+              policySlug={item.policySlug}
+              checked={consents[item.key]}
+              onToggle={() => toggleConsent(item.key)}
+            />
+          ))}
         </View>
 
         <View style={styles.signatureSection}>
@@ -169,7 +154,7 @@ const ParentConsentScreen = ({ navigation }) => {
         <View style={styles.importantNote}>
           <Text style={styles.importantNoteTitle}>Important Note</Text>
           <Text style={styles.importantNoteText}>
-            By proceeding, you acknowledge that you are the legal parent or guardian of the child being registered, and you have the authority to consent to treatment on their behalf. You also agree to our Terms of Service and Privacy Policy.
+            By proceeding, you acknowledge that you are the legal parent or guardian of the child being registered, and you have the authority to consent to treatment on their behalf. You also agree to our hosted Terms of Service and Privacy Policy on Nessa Hub.
           </Text>
         </View>
 
@@ -222,6 +207,7 @@ const styles = StyleSheet.create({
   },
   consentItem: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Colors.surface,
     borderRadius: 12,
     padding: 16,
@@ -233,6 +219,18 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
+  },
+  consentMain: { flex: 1, flexDirection: 'row', alignItems: 'flex-start' },
+  consentLinkBtn: {
+    marginLeft: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
   },
   consentCheckbox: {
     width: 24,

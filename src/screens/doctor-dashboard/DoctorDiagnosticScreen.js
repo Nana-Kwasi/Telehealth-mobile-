@@ -33,6 +33,10 @@ function generateOrderId() {
 
 const SEARCH_TIERS_KM = [30, 80, 150, 400, 2500, 100000];
 
+function customEntryLabel(entry) {
+  return String(entry?.label ?? entry?.name ?? '').trim();
+}
+
 export default function DoctorDiagnosticScreen({ navigation }) {
   const [step, setStep] = useState(1);
   const [orderType, setOrderType] = useState(null); // 'lab' | 'scan'
@@ -229,7 +233,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
 
   const deleteCustomEntry = (entry) => {
     if (!doctorId || !entry?.id) return;
-    Alert.alert('Remove custom item?', entry.label, [
+    Alert.alert('Remove custom item?', customEntryLabel(entry) || 'this item', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -237,7 +241,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
         onPress: async () => {
           try {
             await deleteDoc(doc(db, 'doctors', doctorId, 'diagnosticCustomEntries', entry.id));
-            if (testType === entry.label) setTestType(null);
+            if (testType === customEntryLabel(entry)) setTestType(null);
           } catch {
             Alert.alert('Error', 'Could not delete.');
           }
@@ -432,19 +436,31 @@ export default function DoctorDiagnosticScreen({ navigation }) {
                   <Text style={[styles.testChipText, testType === t && styles.testChipTextActive]}>{t}</Text>
                 </TouchableOpacity>
               ))}
-              {customEntries.filter(c => c.category === orderType).map(c => (
-                <View key={c.id} style={[styles.customChipWrap, testType === c.label && styles.testChipActive]}>
-                  <TouchableOpacity
-                    style={{ flex: 1 }}
-                    onPress={() => setTestType(c.label)}
-                  >
-                    <Text style={[styles.testChipText, testType === c.label && styles.testChipTextActive]}>{c.label}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => deleteCustomEntry(c)} hitSlop={8} style={styles.trashMini}>
-                    <Ionicons name="trash-outline" size={16} color={testType === c.label ? '#fff' : '#dc2626'} />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {customEntries.filter(c => c.category === orderType).map((c) => {
+                const label = customEntryLabel(c);
+                const display = label || 'Unnamed — tap delete to remove';
+                const selected = Boolean(label) && testType === label;
+                return (
+                  <View key={c.id} style={[styles.customChipWrap, selected && styles.testChipActive]}>
+                    <TouchableOpacity
+                      style={styles.customChipLabelHit}
+                      onPress={() => label && setTestType(label)}
+                      activeOpacity={0.85}
+                      disabled={!label}
+                    >
+                      <Text
+                        style={[styles.testChipText, selected && styles.testChipTextActive]}
+                        numberOfLines={2}
+                      >
+                        {display}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => deleteCustomEntry(c)} hitSlop={8} style={styles.trashMini}>
+                      <Ionicons name="trash-outline" size={16} color={selected ? '#fff' : '#dc2626'} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </View>
             <View style={styles.navRow}>
               <TouchableOpacity style={styles.backBtn} onPress={() => setStep(1)}>
@@ -752,6 +768,7 @@ const styles = StyleSheet.create({
   customChipWrap: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     paddingLeft: 14,
     paddingVertical: 10,
     paddingRight: 8,
@@ -761,6 +778,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     maxWidth: '100%',
   },
+  customChipLabelHit: { flexShrink: 1, paddingRight: 4 },
   trashMini: { padding: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'center', padding: 24 },
   modalCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20 },

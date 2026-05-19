@@ -36,7 +36,7 @@ export const steps = [
         type: 'select',
         name: 'age',
         label: 'Age',
-        options: Array.from({length: 88}, (_, i) => (i + 13).toString())
+        options: Array.from({ length: 83 }, (_, i) => (i + 18).toString())
       },
       {
         type: 'select',
