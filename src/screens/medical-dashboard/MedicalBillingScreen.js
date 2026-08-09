@@ -8,7 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../../services/firebaseConfig';
+import { getStoredUserId } from '../../services/apiClient';
 import { fetchClientAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 
@@ -24,9 +24,9 @@ const MedicalBillingScreen = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        const appts = await fetchClientAppointments(currentUser.uid);
+      const uid = await getStoredUserId();
+      if (uid) {
+        const appts = await fetchClientAppointments(uid);
         setCompletedAppts(appts.filter((a) => a.status === 'completed'));
       }
     } catch (err) {

@@ -12,8 +12,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from '../services/firebaseConfig';
-import { collection, addDoc } from 'firebase/firestore';
 import { Colors } from '../constants/colors';
 import { steps, phq9Questions } from '../constants/questionnaireSteps';
 import {
@@ -158,13 +156,22 @@ const QuestionnaireScreen = ({ route, navigation }) => {
         }
       }
 
+      // The questionnaire never collects firstName/lastName, so `a + ' ' + b` used to
+      // build the literal string "undefined undefined" — truthy, so the 'Client'
+      // fallback never fired and SignUp pre-filled the name field with it. The only
+      // name the visitor actually types is the consent step's electronic signature
+      // (full legal name), so use that; otherwise leave it blank for them to fill in.
+      const signedName = String(data.consentSignature || '').trim();
+      const resolvedName =
+        data.name || [data.firstName, data.lastName].filter(Boolean).join(' ') || signedName || '';
+
       const clientData = {
         ...data,
         phq9: phq9Data,
         completedAt: new Date().toISOString(),
         status: 'pending',
-        displayName: data.name || data.firstName + ' ' + data.lastName || 'Client',
-        clientName: data.name || data.firstName + ' ' + data.lastName || 'Client',
+        displayName: resolvedName,
+        clientName: resolvedName,
       };
 
       if (needsIndividualQuestionnaireConsent(data.therapyType)) {
@@ -172,8 +179,12 @@ const QuestionnaireScreen = ({ route, navigation }) => {
         clientData.consentComplete = true;
       }
 
-      const docRef = await addDoc(collection(db, 'clients'), clientData);
-      await AsyncStorage.setItem('th.clientId', docRef.id);
+      // Pre-signup questionnaire: the visitor has no account/token yet, so there is
+      // nothing to persist server-side here (POST /api/v1/clients requires auth and
+      // a real clientId). Mirror the web flow — carry the answers forward to SignUp,
+      // which creates the auth account and the patient/client profile after login.
+      // Clear any stale clientId so SignUp writes under the freshly-created user id.
+      await AsyncStorage.removeItem('th.clientId');
 
       navigation.navigate('SignUp', { clientData });
     } catch (error) {

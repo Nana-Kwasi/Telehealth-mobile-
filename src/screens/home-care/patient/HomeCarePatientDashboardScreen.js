@@ -2,13 +2,11 @@ import React, { useCallback, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StyleSheet, Alert,
 } from 'react-native';
-import { signOut } from 'firebase/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../../../services/firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
+import { api, clearSession } from '../../../services/apiClient';
 import LocationSummaryCardMobile from '../../../components/LocationSummaryCardMobile';
 import { mergeLocationProfile, fetchAuthLocationProfile } from '../../../utils/locationProfile';
 import {
@@ -64,7 +62,7 @@ export default function HomeCarePatientDashboardScreen({ navigation }) {
   const [locationProfile, setLocationProfile] = useState(null);
 
   const load = async () => {
-    const uid = auth.currentUser?.uid;
+    const uid = await AsyncStorage.getItem('th.userId');
     if (!uid) {
       setActive([]);
       setUserName('');
@@ -87,14 +85,7 @@ export default function HomeCarePatientDashboardScreen({ navigation }) {
       setUserName(name || 'Guest');
 
       const authLoc = await fetchAuthLocationProfile(uid);
-      let clientData = null;
-      try {
-        const clientSnap = await getDoc(doc(db, 'clients', uid));
-        if (clientSnap.exists()) clientData = clientSnap.data();
-      } catch {
-        /* ignore */
-      }
-      setLocationProfile(mergeLocationProfile(authLoc, clientData));
+      setLocationProfile(mergeLocationProfile(authLoc, profile));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -118,7 +109,13 @@ export default function HomeCarePatientDashboardScreen({ navigation }) {
         style: 'destructive',
         onPress: async () => {
           try {
-            await signOut(auth);
+            // Was `signOut(auth)` — Firebase-era code; neither symbol exists in
+            // this file any more, so tapping Log out threw
+            // "Property 'signOut' doesn't exist" and the user stayed signed in.
+            // clearSession() is how every other screen ends a session: it drops
+            // the stored token/refresh token so the API client stops using them.
+            api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
+            await clearSession();
             await AsyncStorage.multiRemove([
               'userIntent', 'userRole', 'isAuthenticated', 'th.clientId', 'userName',
             ]);
@@ -148,7 +145,7 @@ export default function HomeCarePatientDashboardScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.hero, { paddingTop: insets.top + 16 }]}>
-          {auth.currentUser ? (
+          {userName && userName !== 'Guest' ? (
             <TouchableOpacity
               style={[styles.logoutBtn, { top: insets.top + 12 }]}
               onPress={handleLogout}

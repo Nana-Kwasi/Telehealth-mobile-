@@ -4,11 +4,11 @@ import {
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { ScanColors as C } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 import { normalizeDiagnosticOrderStatus } from '../../utils/diagnosticOrderStatus';
+import { toDateSafe } from '../../utils/dateDisplay';
 
 function fmtEventAction(action) {
   const map = {
@@ -37,54 +37,24 @@ export default function ScanHomeScreen({ profile, navigation }) {
       const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
       if (isBranch) {
-        const [ordersSnap, eventsSnap] = await Promise.all([
-          getDocs(query(collection(db, 'diagnosticOrders'), where('branchId', '==', pid))),
-          getDocs(query(collection(db, 'diagnosticBranchEvents'), where('branchId', '==', pid))),
+        const [ordersRaw, eventsRaw] = await Promise.all([
+          api(`/api/v1/diagnostics/operations/orders?branchId=${pid}`).catch(() => []),
+          api(`/api/v1/diagnostics/operations/events?branchId=${pid}`).catch(() => []),
         ]);
-        const orders = ordersSnap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter((o) => o.centerType === 'scan');
-
+        const orders = (ordersRaw || []).filter(o => o.centerType === 'scan');
         const norm = normalizeDiagnosticOrderStatus;
         let weekCompleted = 0;
-        orders.forEach((o) => {
-          if (norm(o.status) !== 'COMPLETED') return;
-          const ts = o.completedAt?.seconds ? o.completedAt.seconds * 1000 : (o.updatedAt?.seconds ? o.updatedAt.seconds * 1000 : 0);
-          if (ts >= weekAgo) weekCompleted += 1;
-        });
-
-        setStats({
-          branches: 0,
-          total: orders.length,
-          pending: orders.filter(o => norm(o.status) === 'PENDING').length,
-          inProgress: orders.filter(o => norm(o.status) === 'IN_PROGRESS').length,
-          completed: orders.filter(o => norm(o.status) === 'COMPLETED').length,
-          rejected: orders.filter(o => norm(o.status) === 'REJECTED').length,
-          weekCompleted,
-        });
-
-        const events = eventsSnap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter((e) => (e.centerType || 'scan') === 'scan')
-          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-          .slice(0, 8);
-        setRecentEvents(events);
+        orders.forEach(o => { if (norm(o.status) === 'COMPLETED' && new Date(o.completedAt || 0).getTime() >= weekAgo) weekCompleted += 1; });
+        setStats({ branches: 0, total: orders.length, pending: orders.filter(o => norm(o.status) === 'PENDING').length, inProgress: orders.filter(o => norm(o.status) === 'IN_PROGRESS').length, completed: orders.filter(o => norm(o.status) === 'COMPLETED').length, rejected: orders.filter(o => norm(o.status) === 'REJECTED').length, weekCompleted });
+        setRecentEvents((eventsRaw || []).filter(e => (e.centerType || 'scan') === 'scan').sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 8));
       } else {
-        const [branchSnap, ordersSnap] = await Promise.all([
-          getDocs(query(collection(db, 'scanBranches'), where('scanId', '==', pid))),
-          getDocs(query(collection(db, 'diagnosticOrders'), where('centerId', '==', pid), where('centerType', '==', 'scan'))),
+        const [branches, orders] = await Promise.all([
+          api(`/api/v1/scan-branches?scanId=${pid}`).catch(() => []),
+          api(`/api/v1/diagnostics/operations/orders?centerId=${pid}&centerType=scan`).catch(() => []),
         ]);
-        const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const orderList = orders || [];
         const norm = normalizeDiagnosticOrderStatus;
-        setStats({
-          branches: branchSnap.size,
-          total: orders.length,
-          pending: orders.filter(o => norm(o.status) === 'PENDING').length,
-          inProgress: orders.filter(o => norm(o.status) === 'IN_PROGRESS').length,
-          completed: orders.filter(o => norm(o.status) === 'COMPLETED').length,
-          rejected: orders.filter(o => norm(o.status) === 'REJECTED').length,
-          weekCompleted: 0,
-        });
+        setStats({ branches: (branches || []).length, total: orderList.length, pending: orderList.filter(o => norm(o.status) === 'PENDING').length, inProgress: orderList.filter(o => norm(o.status) === 'IN_PROGRESS').length, completed: orderList.filter(o => norm(o.status) === 'COMPLETED').length, rejected: orderList.filter(o => norm(o.status) === 'REJECTED').length, weekCompleted: 0 });
         setRecentEvents([]);
       }
     } catch (e) { console.error(e); }
@@ -187,9 +157,10 @@ export default function ScanHomeScreen({ profile, navigation }) {
                       </Text>
                     </View>
                     <Text style={styles.activityTime}>
-                      {e.createdAt?.seconds
-                        ? new Date(e.createdAt.seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-                        : ''}
+                      {(() => {
+                        const d = toDateSafe(e.createdAt);
+                        return d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+                      })()}
                     </Text>
                   </View>
                 ))}

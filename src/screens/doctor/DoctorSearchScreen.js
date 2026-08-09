@@ -436,7 +436,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
         <FlatList
           data={filteredDoctors}
           renderItem={renderDoctorCard}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => String(item.id ?? item.userId ?? index)}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
           refreshControl={

@@ -5,8 +5,7 @@ import {
   Modal, TextInput, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import { dedupePatientPharmacies, hasPatientPharmacy } from '../../utils/patientPharmacyDedupe';
@@ -113,8 +112,8 @@ export default function DoctorHomeScreen({ navigation }) {
     (async () => {
       setEphLoadingPh(true);
       try {
-        const snap = await getDocs(query(collection(db, 'pharmacies'), where('status', '==', 'active')));
-        if (!cancelled) setEphPharmacies(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const snap = await api('/api/v1/pharmacies?status=active');
+        if (!cancelled) setEphPharmacies(snap || []);
       } catch {
         if (!cancelled) setEphPharmacies([]);
       } finally {
@@ -132,12 +131,8 @@ export default function DoctorHomeScreen({ navigation }) {
     setEphLoadingBranches(true);
     setEphBranches([]);
     try {
-      const snap = await getDocs(query(
-        collection(db, 'pharmacyBranches'),
-        where('pharmacyId', '==', pharmacyId),
-        where('status', '==', 'active'),
-      ));
-      setEphBranches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const snap = await api(`/api/v1/pharmacy-branches?pharmacyId=${pharmacyId}&status=active`);
+      setEphBranches(snap || []);
     } catch {
       setEphBranches([]);
     } finally {
@@ -148,13 +143,12 @@ export default function DoctorHomeScreen({ navigation }) {
   // Reload profile photo immediately when updated from Settings
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('refreshProfile', async () => {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
       try {
-        const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-        if (dSnap.exists()) {
-          const dData = dSnap.data();
-          setProfile(prev => ({ ...(prev || {}), ...dData, id: cu.uid, photoURL: dData.photoURL || cu.photoURL || null }));
+        const dData = await api(`/api/v1/doctors/${uid}`);
+        if (dData) {
+          setProfile(prev => ({ ...(prev || {}), ...dData, id: uid, photoURL: dData.photoURL || null }));
         }
       } catch (_) {}
     });
@@ -163,19 +157,15 @@ export default function DoctorHomeScreen({ navigation }) {
 
   const loadData = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      if (dSnap.exists()) {
-        const dData = dSnap.data();
-        setProfile({ id: cu.uid, ...dData, photoURL: dData.photoURL || cu.photoURL || null });
+      const dData = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      if (dData) {
+        setProfile({ id: uid, ...dData, photoURL: dData.photoURL || null });
       }
 
-      const apptSnap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
-      const rawAppts = apptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const rawAppts = await api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []) || [];
 
       // Build name map for enrichment
       const tempPatMap = new Map();
@@ -387,14 +377,13 @@ export default function DoctorHomeScreen({ navigation }) {
       let added = 0;
       let skippedDup = 0;
       for (const patientId of selectedPatientIds) {
-        const patRef = doc(db, 'patientProfiles', patientId);
-        const snap = await getDoc(patRef);
-        const cleaned = dedupePatientPharmacies(snap.exists() ? (snap.data().pharmacies || []) : []);
+        const patData = await api(`/api/v1/patients/${patientId}`).catch(() => null);
+        const cleaned = dedupePatientPharmacies(patData?.pharmacies || []);
         if (hasPatientPharmacy(cleaned, pharmacy)) {
           skippedDup += 1;
           continue;
         }
-        await setDoc(patRef, { pharmacies: [...cleaned, pharmacy] }, { merge: true });
+        await api(`/api/v1/patients/${patientId}`, { method: 'PATCH', body: { pharmacies: [...cleaned, pharmacy] } });
         added += 1;
       }
       setShowEPharmacyModal(false);
@@ -731,7 +720,7 @@ export default function DoctorHomeScreen({ navigation }) {
           <TouchableOpacity
             key={p.id}
             style={styles.patientRow}
-            onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: p.id, patientName: p.name })}
+            onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: p.id, patientName: p.name, patientEmail: p.email })}
           >
             <View style={styles.patientAvatar}>
               <Text style={styles.patientAvatarText}>{(p.name || 'P')[0].toUpperCase()}</Text>

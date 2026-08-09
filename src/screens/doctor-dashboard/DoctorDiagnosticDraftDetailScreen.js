@@ -3,12 +3,10 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, doc, getDoc, deleteDoc, addDoc, serverTimestamp,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors as C } from '../../constants/colors';
 import { getDoctorDisplayName } from '../../utils/doctorDisplayName';
+import { formatDateTime } from '../../utils/dateDisplay';
 
 function generateOrderId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -23,26 +21,20 @@ export default function DoctorDiagnosticDraftDetailScreen({ route, navigation })
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const doctorId = auth.currentUser?.uid;
+  const [doctorId, setDoctorId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      if (!doctorId || !draftId) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const snap = await getDoc(doc(db, 'doctors', doctorId, 'diagnosticDrafts', draftId));
-        if (!cancelled && snap.exists()) setDraft({ id: snap.id, ...snap.data() });
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    getStoredUserId().then(uid => {
+      setDoctorId(uid);
+      if (!uid || !draftId) { setLoading(false); return; }
+      api(`/api/v1/doctors/${uid}/diagnostic-drafts/${draftId}`)
+        .then(data => { if (!cancelled && data) setDraft(data); })
+        .catch(console.error)
+        .finally(() => { if (!cancelled) setLoading(false); });
+    });
     return () => { cancelled = true; };
-  }, [doctorId, draftId]);
+  }, [draftId]);
 
   const handleDelete = () => {
     Alert.alert('Delete draft?', 'This cannot be undone.', [
@@ -53,7 +45,7 @@ export default function DoctorDiagnosticDraftDetailScreen({ route, navigation })
         onPress: async () => {
           setBusy(true);
           try {
-            await deleteDoc(doc(db, 'doctors', doctorId, 'diagnosticDrafts', draftId));
+            await api(`/api/v1/doctors/${doctorId}/diagnostic-drafts/${draftId}`, { method: 'DELETE' });
             navigation.goBack();
           } catch (e) {
             Alert.alert('Error', 'Could not delete draft.');
@@ -70,61 +62,36 @@ export default function DoctorDiagnosticDraftDetailScreen({ route, navigation })
     setBusy(true);
     try {
       const orderType = draft.orderType;
-      const centerIdField = orderType === 'lab' ? 'labId' : 'scanId';
-      const centerDocRef = doc(db, orderType === 'lab' ? 'labs' : 'scanCenters', draft.centerId);
-      const centerSnap = await getDoc(centerDocRef).catch(() => null);
-      const centerName =
-        draft.centerName ||
-        centerSnap?.data()?.labName ||
-        centerSnap?.data()?.centerName ||
-        'Center';
-
+      const doctorName = await getDoctorDisplayName(null, doctorId, []);
       const orderId = generateOrderId();
-      const doctorName = await getDoctorDisplayName(db, doctorId, [auth.currentUser?.displayName]);
-      const orderData = {
-        orderId,
-        type: orderType,
-        centerType: orderType,
-        testType: draft.testType,
-        patientId: draft.patientId,
-        patientName: draft.patientName || 'Patient',
-        patientNameLower: (draft.patientNameLower || draft.patientName || 'patient').toLowerCase(),
-        doctorId,
-        doctorName,
-        branchId: draft.branchId,
-        branchName: draft.branchName,
-        centerId: draft.centerId,
-        centerName,
-        notes: (draft.notes || '').trim(),
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      await addDoc(collection(db, 'diagnosticOrders'), orderData);
-
-      await addDoc(collection(db, 'patientTimeline'), {
-        patientId: draft.patientId,
-        type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER',
-        title: `${orderType === 'lab' ? 'Lab test' : 'Scan'} ordered: ${draft.testType}`,
-        status: 'PENDING',
-        relatedId: orderId,
-        actor: { role: 'DOCTOR', name: doctorName },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const newOrder = await api('/api/v1/diagnostics/operations/orders', {
+        method: 'POST',
+        body: {
+          orderId,
+          type: orderType,
+          centerType: orderType,
+          testType: draft.testType,
+          patientId: draft.patientId,
+          patientName: draft.patientName || 'Patient',
+          doctorId,
+          doctorName,
+          branchId: draft.branchId,
+          branchName: draft.branchName,
+          centerId: draft.centerId,
+          centerName: draft.centerName || 'Center',
+          notes: (draft.notes || '').trim(),
+          status: 'pending',
+        },
       });
-
-      await addDoc(collection(db, 'notifications'), {
-        targetId: draft.patientId,
-        title: `${orderType === 'lab' ? 'Lab Test' : 'Scan'} Ordered`,
-        body: `Your doctor has ordered a ${draft.testType} at ${draft.branchName}. Please present your National ID when you visit.`,
-        type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER',
-        relatedId: orderId,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
-
-      await deleteDoc(doc(db, 'doctors', doctorId, 'diagnosticDrafts', draftId));
+      api('/api/v1/patient-timeline', {
+        method: 'POST',
+        body: { patientId: draft.patientId, type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER', title: `${orderType === 'lab' ? 'Lab test' : 'Scan'} ordered: ${draft.testType}`, status: 'PENDING', relatedId: newOrder?.id || orderId, actor: { role: 'DOCTOR', name: doctorName } },
+      }).catch(() => {});
+      api('/api/v1/notifications/events', {
+        method: 'POST',
+        body: { targetUserId: draft.patientId, type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER', title: `${orderType === 'lab' ? 'Lab Test' : 'Scan'} Ordered`, body: `Your doctor has ordered a ${draft.testType} at ${draft.branchName}.` },
+      }).catch(() => {});
+      await api(`/api/v1/doctors/${doctorId}/diagnostic-drafts/${draftId}`, { method: 'DELETE' });
 
       Alert.alert('Order submitted', `Order ID: ${orderId}`, [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (e) {
@@ -175,7 +142,7 @@ export default function DoctorDiagnosticDraftDetailScreen({ route, navigation })
           label="Updated"
           value={
             draft.updatedAt?.seconds
-              ? new Date(draft.updatedAt.seconds * 1000).toLocaleString()
+              ? formatDateTime(draft.updatedAt)
               : '—'
           }
         />

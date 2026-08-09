@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../services/firebaseConfig';
 
 export async function setHomeCareReturnTarget(returnScreen, returnParams = {}) {
   await AsyncStorage.setItem('userIntent', 'homecare');
@@ -9,8 +8,9 @@ export async function setHomeCareReturnTarget(returnScreen, returnParams = {}) {
   );
 }
 
-export function requireHomeCarePatient(navigation, { returnScreen, returnParams, message } = {}) {
-  if (auth.currentUser) return true;
+export async function requireHomeCarePatient(navigation, { returnScreen, returnParams, message } = {}) {
+  const token = await AsyncStorage.getItem('th.token');
+  if (token) return true;
   navigation.navigate('HomeCareSignUpModal', {
     returnScreen: returnScreen || 'HomeCareHome',
     returnParams: returnParams || {},

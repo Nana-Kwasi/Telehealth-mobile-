@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 
 export default function PharmacyBranchesScreen({ profile }) {
+  const navigation = useNavigation();
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -16,17 +17,18 @@ export default function PharmacyBranchesScreen({ profile }) {
 
   const loadBranches = async () => {
     try {
-      const snap = await getDocs(query(
-        collection(db, 'pharmacyBranches'),
-        where('pharmacyId', '==', profile.id)
-      ));
-      setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const data = await api(`/api/v1/pharmacy-branches?pharmacyId=${profile?.id}`).catch(() => []);
+      setBranches(data || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
   const renderBranch = ({ item }) => (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.85}
+      onPress={() => navigation.navigate('PharmacyBranchDetail', { branchId: item.id })}
+    >
       <View style={styles.cardHeader}>
         <View style={styles.iconWrap}>
           <Ionicons name="storefront" size={22} color={C.primary} />
@@ -47,7 +49,11 @@ export default function PharmacyBranchesScreen({ profile }) {
           <Text style={styles.credValue}>{item.username}</Text>
         </View>
       )}
-    </View>
+      <View style={styles.openRow}>
+        <Text style={styles.openText}>Manage branch</Text>
+        <Ionicons name="chevron-forward" size={15} color={C.primary} />
+      </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -78,6 +84,8 @@ export default function PharmacyBranchesScreen({ profile }) {
 }
 
 const styles = StyleSheet.create({
+  openRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 10 },
+  openText: { fontSize: 12, fontWeight: '700', color: C.primary },
   container: { flex: 1, backgroundColor: C.background },
   header: { fontSize: 14, fontWeight: '700', color: C.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   card: { backgroundColor: '#fff', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: C.border },

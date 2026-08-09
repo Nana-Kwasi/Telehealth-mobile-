@@ -2,8 +2,9 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { DrawerContentScrollView } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
-import { signOut } from 'firebase/auth';
-import { auth } from '../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { performLogout } from '../services/authService';
+
 import { PharmacyColors as C } from '../constants/colors';
 
 const PHARMACY_NAV = [
@@ -11,12 +12,21 @@ const PHARMACY_NAV = [
   { name: 'PharmacyPrescriptions', label: 'Prescriptions', icon: 'medical-outline' },
   { name: 'PharmacyBranches',      label: 'Branches',      icon: 'storefront-outline' },
   { name: 'PharmacyWalkIn',        label: 'Walk-in Verify',icon: 'search-outline' },
+  { name: 'PharmacyActivity',      label: 'Activity',      icon: 'receipt-outline' },
+  { name: 'PharmacyReports',       label: 'Reports',       icon: 'stats-chart-outline' },
+  { name: 'PharmacyReportIssue',   label: 'Report Issue',  icon: 'mail-outline' },
+  { name: 'PharmacyPreferences',   label: 'Settings',      icon: 'settings-outline' },
 ];
 
 const BRANCH_NAV = [
   { name: 'BranchHome',          label: 'Dashboard',     icon: 'grid-outline' },
   { name: 'BranchPrescriptions', label: 'Prescriptions', icon: 'medical-outline' },
   { name: 'BranchWalkIn',        label: 'Walk-in Verify',icon: 'search-outline' },
+  { name: 'BranchTransfers',     label: 'Transfers',     icon: 'swap-horizontal-outline' },
+  { name: 'BranchActivity',      label: 'Activity',      icon: 'receipt-outline' },
+  { name: 'BranchReports',       label: 'Reports',       icon: 'stats-chart-outline' },
+  { name: 'BranchReportIssue',   label: 'Report Issue',  icon: 'mail-outline' },
+  { name: 'BranchPreferences',   label: 'Settings',      icon: 'settings-outline' },
 ];
 
 export default function PharmacyDrawerContent({ navigation, state, profile, isBranch = false }) {
@@ -26,7 +36,17 @@ export default function PharmacyDrawerContent({ navigation, state, profile, isBr
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => { try { await signOut(auth); } catch (_) {} } },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          // Clearing the session is not enough: without resetting navigation the
+          // dashboard stays mounted and the user appears to still be logged in.
+          try { await performLogout(); } catch (_) {}
+          try { await AsyncStorage.clear(); } catch (_) {}
+          navigation.getParent()?.replace('Intent');
+        },
+      },
     ]);
   };
 
@@ -40,9 +60,13 @@ export default function PharmacyDrawerContent({ navigation, state, profile, isBr
           <View style={styles.badge}><Text style={styles.badgeText}>{isBranch ? 'Branch' : 'Pharmacy'}</Text></View>
         </View>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{(profile?.pharmacyName || profile?.branchName || 'P')[0].toUpperCase()}</Text>
+          <Text style={styles.avatarText}>
+            {((isBranch ? (profile?.branchName || profile?.pharmacyName) : (profile?.pharmacyName || profile?.branchName)) || 'P')[0].toUpperCase()}
+          </Text>
         </View>
-        <Text style={styles.pharmacyName}>{profile?.pharmacyName || profile?.branchName || 'Pharmacy'}</Text>
+        <Text style={styles.pharmacyName}>
+          {(isBranch ? (profile?.branchName || profile?.pharmacyName) : (profile?.pharmacyName || profile?.branchName)) || 'Pharmacy'}
+        </Text>
         <Text style={styles.pharmacyRole}>{isBranch ? 'Branch Account' : 'Parent Account'}</Text>
       </View>
 

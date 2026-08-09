@@ -1,21 +1,5 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  setDoc,
-  query,
-  where,
-  serverTimestamp,
-  limit,
-  orderBy,
-  arrayUnion,
-  increment,
-} from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage, functions, httpsCallable } from './firebaseConfig';
+import { api, uploadFile, STORAGE_KEYS, getStoredUserId } from './apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   NURSE_ACCOUNT_STATUS,
   BOOKING_STATUS,
@@ -32,151 +16,355 @@ import {
   packageSpanDaysInclusive,
   localTodayYmd,
 } from '../utils/homeCarePackage';
-import { attachDistance, withinRadiusKm, parseCoords } from '../utils/homeCareGeo';
+import { attachDistance, withinRadiusKm } from '../utils/homeCareGeo';
 import { geocodeAddressMobile, getCurrentLocationMobile, reverseGeocodeMobile } from './homeCareGeoService';
-
-const NURSES = 'homeCareNurses';
-const BOOKINGS = 'homeCareBookings';
-const COMPLAINTS = 'homeCareComplaints';
-const EARNINGS = 'homeCareNurseEarnings';
-const NOTIFICATIONS = 'notifications';
 
 export { getCurrentLocationMobile, geocodeAddressMobile, reverseGeocodeMobile };
 
-export function mapNurseDoc(id, data) {
-  return { id, ...data };
+/**
+ * Normalise a nurse record coming off the API.
+ *
+ * `languages`, `specialties`, `fees` and `availability` are TEXT columns holding
+ * JSON, but every screen treats them as arrays/objects — the profile screen calls
+ * `nurse.languages.join(', ')`, which threw "join is not a function" and took the
+ * whole screen down. Parse them once here so no screen has to guess.
+ */
+function parseJsonField(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value !== 'string') return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed ?? fallback;
+  } catch {
+    // Not JSON — a plain "English, Twi" string is still meaningful as a list.
+    return Array.isArray(fallback)
+      ? value.split(',').map((x) => x.trim()).filter(Boolean)
+      : fallback;
+  }
 }
 
+export function hydrateNurse(nurse) {
+  if (!nurse) return nurse;
+  const meta = parseJsonField(nurse.metadataJson, {});
+  return {
+    ...meta,
+    ...nurse,
+    languages: parseJsonField(nurse.languages, []),
+    specialties: parseJsonField(nurse.specialties, []),
+    fees: parseJsonField(nurse.fees, {}),
+    availability: parseJsonField(nurse.availability, {}),
+  };
+}
+
+export function mapNurseDoc(id, data) {
+  return hydrateNurse({ id, ...data });
+}
+
+// ── Nurse browsing ─────────────────────────────────────────────────────────────
 export async function fetchApprovedNurses(filters = {}) {
-  const snap = await getDocs(
-    query(collection(db, NURSES), where('accountStatus', '==', NURSE_ACCOUNT_STATUS.APPROVED), limit(80)),
-  );
-  let list = snap.docs.map((d) => mapNurseDoc(d.id, d.data())).filter(nurseIsBookable);
-
-  if (filters.specialty) {
-    const s = filters.specialty.toLowerCase();
-    list = list.filter(
-      (n) =>
-        (n.specialty || '').toLowerCase().includes(s) ||
-        (n.specialties || []).some((x) => String(x).toLowerCase().includes(s)),
-    );
-  }
-  if (filters.gender) {
-    list = list.filter((n) => (n.gender || '').toLowerCase() === filters.gender.toLowerCase());
-  }
-  if (filters.minRating) {
-    list = list.filter((n) => (n.ratingAvg || 0) >= Number(filters.minRating));
-  }
-  if (filters.onlineOnly) {
-    list = list.filter((n) => n.presenceStatus === NURSE_PRESENCE.ONLINE);
-  }
-  if (filters.language) {
-    const lang = filters.language.toLowerCase();
-    list = list.filter((n) => (n.languages || []).some((l) => String(l).toLowerCase().includes(lang)));
-  }
-
-  const anchor =
-    filters.latitude != null && filters.longitude != null
-      ? { latitude: Number(filters.latitude), longitude: Number(filters.longitude) }
-      : null;
+  const params = new URLSearchParams();
+  if (filters.specialty) params.set('specialty', filters.specialty);
+  if (filters.gender) params.set('gender', filters.gender);
+  if (filters.minRating) params.set('minRating', String(filters.minRating));
+  if (filters.onlineOnly) params.set('onlineOnly', 'true');
+  if (filters.language) params.set('language', filters.language);
+  if (filters.latitude != null) params.set('latitude', String(filters.latitude));
+  if (filters.longitude != null) params.set('longitude', String(filters.longitude));
   const radiusKm = Number(filters.radiusKm) || DEFAULT_SEARCH_RADIUS_KM;
+  params.set('radiusKm', String(radiusKm));
+
+  const list = await api(`/api/v1/homecare/nurses?${params.toString()}`) || [];
+  let nurses = (Array.isArray(list) ? list : []).map(hydrateNurse).filter(nurseIsBookable);
+
+  const hasLocation = filters.latitude != null && filters.longitude != null;
+
+  // A location search returns only nurses inside `radiusKm`. That is correct, but
+  // it renders as a blank screen with no reason — and it hits hard when the
+  // device's location is nowhere near the nurses (e.g. a simulator defaulting to
+  // San Francisco while every nurse is in Ghana). Fall back to the unfiltered
+  // list and flag it, so the screen can say why instead of showing nothing.
+  let outsideRadius = false;
+  if (hasLocation && nurses.length === 0) {
+    const wider = await api('/api/v1/homecare/nurses').catch(() => []);
+    const fallback = (Array.isArray(wider) ? wider : []).map(hydrateNurse).filter(nurseIsBookable);
+    if (fallback.length) {
+      nurses = fallback;
+      outsideRadius = true;
+    }
+  }
+
+  const anchor = hasLocation
+    ? { latitude: Number(filters.latitude), longitude: Number(filters.longitude) } : null;
 
   if (anchor) {
-    list = attachDistance(list, anchor).filter((n) => n.distanceKm == null || n.distanceKm <= radiusKm);
+    nurses = attachDistance(nurses, anchor);
   } else {
-    list.sort((a, b) => (b.ratingAvg || 0) - (a.ratingAvg || 0));
+    nurses.sort((a, b) => (b.ratingAvg || 0) - (a.ratingAvg || 0));
   }
-  return list;
+  // Non-enumerable-ish marker the list screen can read without it affecting keys.
+  nurses.outsideRadius = outsideRadius;
+  nurses.searchRadiusKm = radiusKm;
+  return nurses;
 }
 
 export async function fetchNurseById(nurseId) {
-  const snap = await getDoc(doc(db, NURSES, nurseId));
-  if (!snap.exists()) return null;
-  return mapNurseDoc(snap.id, snap.data());
+  try {
+    return hydrateNurse(await api(`/api/v1/homecare/nurses/${nurseId}`));
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchNurseProfile(uid) {
-  return fetchNurseById(uid);
+  // uid is the user's auth ID; look up nurse profile by userId
+  try {
+    const nurses = await api(`/api/v1/homecare/nurses?userId=${uid}`);
+    const nurse = Array.isArray(nurses) ? nurses[0] : null;
+    if (nurse?.id) await AsyncStorage.setItem(STORAGE_KEYS.nurseId, String(nurse.id));
+    return nurse ? hydrateNurse(nurse) : null;
+  } catch {
+    return null;
+  }
 }
 
+async function resolveNurseId() {
+  return AsyncStorage.getItem(STORAGE_KEYS.nurseId);
+}
+
+// ── Presence & location ────────────────────────────────────────────────────────
 export async function updateNursePresence(uid, presenceStatus) {
-  await updateDoc(doc(db, NURSES, uid), {
-    presenceStatus,
-    updatedAt: serverTimestamp(),
+  const nurseId = await resolveNurseId();
+  if (!nurseId) return;
+  await api(`/api/v1/homecare/nurses/${nurseId}/presence`, {
+    method: 'PATCH',
+    body: { presenceStatus },
   });
 }
 
 export async function updateNurseLocation(uid, { latitude, longitude }) {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-  await updateDoc(doc(db, NURSES, uid), {
-    latitude,
-    longitude,
-    locationUpdatedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const nurseId = await resolveNurseId();
+  if (!nurseId) return;
+  await api(`/api/v1/homecare/nurses/${nurseId}/location`, {
+    method: 'PATCH',
+    body: { latitude, longitude },
   });
+}
+
+export async function updateNurseAvailability(uid, availability) {
+  const nurseId = await resolveNurseId();
+  if (!nurseId) return;
+  await api(`/api/v1/homecare/nurses/${nurseId}/availability`, {
+    method: 'PATCH',
+    body: { availability: typeof availability === 'string' ? availability : JSON.stringify(availability) },
+  });
+}
+
+/**
+ * Save the nurse's profile.
+ *
+ * Two things used to make edits vanish while the screen said "Saved":
+ *  • a missing stored nurseId returned early WITHOUT throwing, so the caller's
+ *    success path ran on a request that was never sent;
+ *  • the form sends arrays/objects (languages, specialties, fees) and extra keys
+ *    (yearsExperience, licenseNumber, profileComplete) that the API binds as
+ *    strings or not at all, so Jackson dropped them silently.
+ */
+export async function updateNurseProfile(uid, patch = {}) {
+  let nurseId = await resolveNurseId();
+  if (!nurseId && uid) {
+    // Fall back to looking the profile up by user id rather than no-op'ing.
+    const found = await api(`/api/v1/homecare/nurses?userId=${uid}`).catch(() => []);
+    nurseId = Array.isArray(found) && found[0]?.id ? found[0].id : null;
+    if (nurseId) await AsyncStorage.setItem(STORAGE_KEYS.nurseId, nurseId);
+  }
+  if (!nurseId) throw new Error('Your nurse profile could not be found. Please sign in again.');
+
+  const asText = (v) => (v === undefined || v === null
+    ? undefined
+    : (typeof v === 'string' ? v : JSON.stringify(v)));
+
+  // Keys the columns can't hold travel in metadataJson instead of being dropped.
+  const KNOWN = new Set([
+    'fullName', 'phone', 'whatsapp', 'email', 'gender', 'specialty', 'specialties',
+    'languages', 'bio', 'availability', 'fees', 'profilePhotoUrl',
+    'accountStatus', 'documentsStatus', 'licenseVerified', 'adminNote', 'metadataJson',
+  ]);
+  const extra = {};
+  Object.entries(patch).forEach(([k, v]) => { if (!KNOWN.has(k)) extra[k] = v; });
+
+  const body = {
+    ...Object.fromEntries(Object.entries(patch).filter(([k]) => KNOWN.has(k))),
+    ...(patch.specialties !== undefined ? { specialties: asText(patch.specialties) } : {}),
+    ...(patch.languages !== undefined ? { languages: asText(patch.languages) } : {}),
+    ...(patch.fees !== undefined ? { fees: asText(patch.fees) } : {}),
+    ...(patch.availability !== undefined ? { availability: asText(patch.availability) } : {}),
+    ...(Object.keys(extra).length ? { metadataJson: JSON.stringify(extra) } : {}),
+  };
+
+  return api(`/api/v1/homecare/nurses/${nurseId}`, { method: 'PATCH', body });
+}
+
+export async function uploadNursePhoto(uid, fileOrUri, mimeType = 'image/jpeg') {
+  const nurseId = await resolveNurseId();
+  if (!nurseId) throw new Error('Nurse profile not found.');
+  const uri = fileOrUri instanceof Blob ? URL.createObjectURL(fileOrUri) : fileOrUri;
+  const photoUrl = await uploadFile(`homecare/nurses/${nurseId}/photo`, uri, mimeType);
+  await api(`/api/v1/homecare/nurses/${nurseId}`, {
+    method: 'PATCH',
+    body: { profilePhotoUrl: photoUrl },
+  });
+  // Also save it as the user's avatar. The nurse row is only read by home-care
+  // screens, so without this the nurse's picture never appeared anywhere else in
+  // the app (headers, chat, admin lists) that resolves avatars by user id.
+  const userId = uid || (await getStoredUserId());
+  if (userId) {
+    await api(`/api/v1/auth/mobile/users/${userId}/avatar`, {
+      method: 'PATCH',
+      body: { avatarUrl: photoUrl },
+    }).catch(() => {});
+  }
+  return photoUrl;
+}
+
+export async function uploadNurseDocument(uid, type, uri, mimeType = 'image/jpeg') {
+  const nurseId = await resolveNurseId();
+  if (!nurseId) throw new Error('Nurse profile not found.');
+  const url = await uploadFile(`homecare/nurses/${nurseId}/${type}`, uri, mimeType);
+  await api(`/api/v1/homecare/nurses/${nurseId}/documents`, {
+    method: 'POST',
+    body: { type, fileUrl: url, mimeType },
+  });
+  return url;
+}
+
+// ── Patient auth helper ────────────────────────────────────────────────────────
+export async function getHomeCareAuthUser() {
+  const userId = await AsyncStorage.getItem(STORAGE_KEYS.userId);
+  return userId ? { uid: userId } : null;
 }
 
 export async function resolveBookingCoords(address, coords) {
   if (coords?.latitude != null && coords?.longitude != null) return coords;
-  if (address) {
-    const g = await geocodeAddressMobile(address);
-    if (g) return g;
-  }
+  if (address) { const g = await geocodeAddressMobile(address); if (g) return g; }
   return getCurrentLocationMobile();
 }
 
-export async function getHomeCareAuthUser() {
-  if (typeof auth.authStateReady === 'function') {
-    await auth.authStateReady();
+// ── Patient profile (best-effort from stored data) ────────────────────────────
+export async function fetchHomeCarePatientProfile(uid) {
+  try {
+    const data = await api(`/api/v1/patients/${uid}`);
+    return {
+      name: data?.fullName || data?.name || '',
+      location: formatProfileLocation(data) || '',
+      phone: String(data?.phone || data?.phoneNumber || '').trim(),
+    };
+  } catch {
+    const raw = await AsyncStorage.getItem('userProfile').catch(() => null);
+    const profile = raw ? JSON.parse(raw) : {};
+    return {
+      name: profile?.name || profile?.fullName || '',
+      location: formatProfileLocation(profile) || '',
+      phone: String(profile?.phone || profile?.phoneNumber || '').trim(),
+    };
   }
-  return auth.currentUser;
 }
 
+// ── Bookings — patient side ────────────────────────────────────────────────────
 export async function createBooking(payload) {
   const user = await getHomeCareAuthUser();
   if (!user) throw new Error('Your session expired. Please sign in again to book.');
 
   const { patientPhone: payloadPhone, ...restPayload } = payload || {};
-  const patientSnap = await getDoc(doc(db, 'auth', user.uid));
-  const patientData = patientSnap.exists() ? patientSnap.data() : {};
-
-  const fromForm = String(payloadPhone ?? '').trim();
-  const fromProfile = String(patientData.phone || patientData.phoneNumber || '').trim();
-  const patientPhone = fromForm || fromProfile;
+  const profile = await fetchHomeCarePatientProfile(user.uid);
+  const patientPhone = String(payloadPhone ?? '').trim() || profile.phone;
 
   if (!isValidEmergencyPhone(patientPhone)) {
     throw new Error('A valid phone number is required so your nurse can reach you (at least 8 digits).');
   }
 
-  const ref = await addDoc(collection(db, BOOKINGS), {
-    ...restPayload,
-    patientId: user.uid,
-    patientName: patientData.name || patientData.displayName || 'Patient',
-    patientPhone,
-    status: BOOKING_STATUS.PENDING,
-    bookingType: restPayload.bookingType || 'scheduled',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const booking = await api('/api/v1/homecare/bookings', {
+    method: 'POST',
+    body: {
+      ...restPayload,
+      patientId: user.uid,
+      patientPhone,
+      bookingType: restPayload.bookingType || 'scheduled',
+    },
   });
+  return booking?.id;
+}
 
-  await setDoc(
-    doc(db, 'auth', user.uid),
-    { phone: patientPhone, phoneNumber: patientPhone, updatedAt: serverTimestamp() },
-    { merge: true },
-  ).catch(() => {});
-  await setDoc(
-    doc(db, 'clients', user.uid),
-    { phone: patientPhone, phoneNumber: patientPhone, updatedAt: serverTimestamp() },
-    { merge: true },
-  ).catch(() => {});
+export async function createEmergencyBooking(payload) {
+  const user = await getHomeCareAuthUser();
+  if (!user) throw new Error('Your session expired. Please sign in again.');
 
-  return ref.id;
+  const { patientPhone: payloadPhone, ...restPayload } = payload;
+  const fromForm = String(payloadPhone ?? '').trim();
+  if (!fromForm) throw new Error('Phone number is required for emergency requests so the nurse can reach you.');
+  if (!isValidEmergencyPhone(fromForm)) throw new Error('Enter a valid phone number (at least 8 digits).');
+
+  const booking = await api('/api/v1/homecare/bookings/emergency', {
+    method: 'POST',
+    body: {
+      ...restPayload,
+      patientId: user.uid,
+      patientPhone: fromForm,
+      bookingType: 'emergency',
+      isEmergency: true,
+      urgency: restPayload.urgency || 'high',
+    },
+  });
+  return booking?.id;
 }
 
 export async function fetchBooking(bookingId) {
-  const snap = await getDoc(doc(db, BOOKINGS, bookingId));
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() };
+  try {
+    return await api(`/api/v1/homecare/bookings/${bookingId}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPatientBookings(patientId) {
+  const data = await api(`/api/v1/homecare/bookings?patientId=${patientId}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchNurseBookings(nurseId, statuses = null) {
+  const data = await api(`/api/v1/homecare/bookings?nurseId=${nurseId}`);
+  let list = Array.isArray(data) ? data : [];
+  if (statuses?.length) list = list.filter((b) => statuses.includes(b.status));
+  return list;
+}
+
+export async function fetchPendingRequestsForNurse(nurseId) {
+  const data = await api(`/api/v1/homecare/bookings?nurseId=${nurseId}&status=pending`);
+  return Array.isArray(data) ? data : [];
+}
+
+// ── Booking lifecycle mutations ────────────────────────────────────────────────
+export async function updateBookingStatus(bookingId, status, extra = {}) {
+  await api(`/api/v1/homecare/bookings/${bookingId}/status`, {
+    method: 'PATCH',
+    body: { status, ...extra },
+  });
+}
+
+export async function cancelBooking(bookingId, { cancelledBy, reason = '' }) {
+  const booking = await fetchBooking(bookingId);
+  if (!booking) throw new Error('Booking not found.');
+  if ([BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED].includes(booking.status)) {
+    throw new Error('Cannot cancel this booking.');
+  }
+  await api(`/api/v1/homecare/bookings/${bookingId}/cancel`, {
+    method: 'PATCH',
+    body: { cancelledBy, cancelReason: reason },
+  });
+}
+
+export async function markBookingOngoing(bookingId) {
+  await api(`/api/v1/homecare/bookings/${bookingId}/ongoing`, { method: 'PATCH', body: {} });
 }
 
 export async function maybeCloseExpiredHomeCarePackage(booking) {
@@ -185,81 +373,74 @@ export async function maybeCloseExpiredHomeCarePackage(booking) {
   if (!booking.endDate) return booking;
   if (localTodayYmd() <= booking.endDate) return booking;
 
-  await updateDoc(doc(db, BOOKINGS, booking.id), {
-    status: BOOKING_STATUS.COMPLETED,
-    packageClosureReason: 'period_end',
-    completedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  await api(`/api/v1/homecare/bookings/${booking.id}/status`, {
+    method: 'PATCH',
+    body: { status: BOOKING_STATUS.COMPLETED },
   });
-  if (booking.nurseId) {
-    await updateDoc(doc(db, NURSES, booking.nurseId), {
-      presenceStatus: NURSE_PRESENCE.ONLINE,
-      updatedAt: serverTimestamp(),
-    }).catch(() => {});
-  }
   return { ...booking, status: BOOKING_STATUS.COMPLETED, packageClosureReason: 'period_end' };
 }
 
-export async function fetchPatientBookings(patientId) {
-  const snap = await getDocs(query(collection(db, BOOKINGS), where('patientId', '==', patientId), limit(50)));
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-}
-
-export async function fetchNurseBookings(nurseId, statuses = null) {
-  const snap = await getDocs(query(collection(db, BOOKINGS), where('nurseId', '==', nurseId), limit(50)));
-  let list = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-  if (statuses?.length) list = list.filter((b) => statuses.includes(b.status));
-  return list;
-}
-
-export async function fetchPendingRequestsForNurse(nurseId) {
-  const snap = await getDocs(
-    query(
-      collection(db, BOOKINGS),
-      where('nurseId', '==', nurseId),
-      where('status', '==', BOOKING_STATUS.PENDING),
-      limit(30),
-    ),
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-}
-
+// ── Nurse accept/decline/claim ─────────────────────────────────────────────────
 export async function nurseAcceptBooking(bookingId, nurse) {
   const booking = await fetchBooking(bookingId);
-  const nextStatus =
-    booking && isPackageDuration(booking.durationType)
-      ? BOOKING_STATUS.ONGOING
-      : BOOKING_STATUS.ACCEPTED;
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    status: nextStatus,
-    nursePhone: nurse.phone || '',
-    nurseWhatsapp: nurse.whatsapp || nurse.phone || '',
-    acceptedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-  await updateDoc(doc(db, NURSES, nurse.id), {
-    presenceStatus: NURSE_PRESENCE.BUSY,
-    updatedAt: serverTimestamp(),
+  await api(`/api/v1/homecare/bookings/${bookingId}/accept`, {
+    method: 'POST',
+    body: { nursePhone: nurse.phone || '', nurseWhatsapp: nurse.whatsapp || nurse.phone || '' },
   });
 }
 
 export async function nurseDeclineBooking(bookingId) {
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    status: BOOKING_STATUS.DECLINED,
-    updatedAt: serverTimestamp(),
+  await api(`/api/v1/homecare/bookings/${bookingId}/decline`, { method: 'POST', body: {} });
+}
+
+export async function claimEmergencyBooking(bookingId, nurse) {
+  const booking = await fetchBooking(bookingId);
+  if (!booking) throw new Error('Request not found.');
+  if (booking.nurseId) throw new Error('Already claimed by another nurse.');
+  await api(`/api/v1/homecare/bookings/${bookingId}/claim-emergency`, {
+    method: 'POST',
+    body: { nurseId: nurse.id, nurseName: nurse.fullName, nursePhone: nurse.phone || '' },
   });
 }
 
-export async function updateBookingStatus(bookingId, status, extra = {}) {
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    status,
-    ...extra,
-    updatedAt: serverTimestamp(),
+export async function fetchOpenEmergencyRequests(nurseAnchor = null, radiusKm = EMERGENCY_RADIUS_KM) {
+  const data = await api('/api/v1/homecare/bookings/emergency/open');
+  let list = Array.isArray(data) ? data : [];
+  if (nurseAnchor) {
+    list = list.filter((b) => withinRadiusKm(b, nurseAnchor, radiusKm));
+    list = attachDistance(list, nurseAnchor);
+  }
+  return list;
+}
+
+export async function fetchOngoingEngagements(nurseId) {
+  const list = await fetchNurseBookings(nurseId);
+  return list.filter(
+    (b) => b.status === BOOKING_STATUS.ONGOING ||
+      (['accepted', 'in_progress'].includes(b.status) && isPackageDuration(b.durationType)),
+  );
+}
+
+// ── Visit logs ─────────────────────────────────────────────────────────────────
+export async function addVisitLog(bookingId, log) {
+  await api(`/api/v1/homecare/bookings/${bookingId}/visit-logs`, {
+    method: 'POST',
+    body: {
+      vitals: typeof log.vitals === 'string' ? log.vitals : JSON.stringify(log.vitals || {}),
+      careProvided: log.careSummary || log.careProvided || '',
+      medicationsGiven: log.medicationsGiven || '',
+      concerns: log.concerns || '',
+      incidentFlag: !!log.incidentFlag,
+      incidentDescription: log.incidentDescription || '',
+      visitDate: log.visitDate || null,
+      planCycleNotes: log.planCycleNotes || null,
+    },
   });
+}
+
+export async function fetchVisitLogs(bookingId) {
+  const data = await api(`/api/v1/homecare/bookings/${bookingId}/visit-logs`);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function submitVisitReport(bookingId, report) {
@@ -278,15 +459,9 @@ export async function submitVisitReport(bookingId, report) {
 
   if (isPackage) {
     const visitDateRaw = String(report.visitDate || '').trim();
-    if (!isValidBookingYmd(visitDateRaw)) {
-      throw new Error('Visit date is required (calendar day of this visit).');
-    }
-    if (!booking.startDate || !booking.endDate) {
-      throw new Error('This plan is missing start/end dates.');
-    }
-    if (visitDateRaw < booking.startDate || visitDateRaw > booking.endDate) {
-      throw new Error('Visit date must fall between plan start and expected end.');
-    }
+    if (!isValidBookingYmd(visitDateRaw)) throw new Error('Visit date is required (calendar day of this visit).');
+    if (!booking.startDate || !booking.endDate) throw new Error('This plan is missing start/end dates.');
+    if (visitDateRaw < booking.startDate || visitDateRaw > booking.endDate) throw new Error('Visit date must fall between plan start and expected end.');
     const today = localTodayYmd();
     if (today > booking.endDate) {
       booking = await maybeCloseExpiredHomeCarePackage({ ...booking, status: BOOKING_STATUS.ONGOING });
@@ -294,15 +469,10 @@ export async function submitVisitReport(bookingId, report) {
     }
   }
 
-  const dayNum =
-    isPackage && booking.startDate && report.visitDate
-      ? packageInclusiveDayNumber(booking.startDate, String(report.visitDate).trim())
-      : null;
-  const weekOrd =
-    isPackage && booking.startDate && report.visitDate
-      ? packageWeekOrdinal(booking.startDate, String(report.visitDate).trim())
-      : null;
-
+  const dayNum = isPackage && booking.startDate && report.visitDate
+    ? packageInclusiveDayNumber(booking.startDate, String(report.visitDate).trim()) : null;
+  const weekOrd = isPackage && booking.startDate && report.visitDate
+    ? packageWeekOrdinal(booking.startDate, String(report.visitDate).trim()) : null;
   const planNotes = typeof report.planCycleNotes === 'string' ? report.planCycleNotes.trim() : '';
 
   await addVisitLog(bookingId, {
@@ -312,109 +482,82 @@ export async function submitVisitReport(bookingId, report) {
     concerns: report.concerns || '',
     incidentFlag: !!report.incidentFlag,
     incidentDescription: report.incidentDescription || '',
-    ...(isPackage
-      ? {
-          visitDate: String(report.visitDate).trim(),
-          durationTypeSnapshot: booking.durationType,
-          packageDayNumber: dayNum,
-          weekOrdinal: weekOrd,
-          ...(planNotes ? { planCycleNotes: planNotes } : {}),
-        }
-      : {}),
+    ...(isPackage ? {
+      visitDate: String(report.visitDate).trim(),
+      planCycleNotes: planNotes || undefined,
+    } : {}),
   });
 
-  const summary = {
-    vitals: report.vitals || {},
-    careSummary: report.careProvided || '',
-    medicationsGiven: report.medicationsGiven || '',
-    concerns: report.concerns || '',
-    incidentsFlagged: !!report.incidentFlag,
-  };
-
-  if (isPackage) {
-    const span = packageSpanDaysInclusive(booking.startDate, booking.endDate);
-    const patch = {
-      visitReport: report,
-      patientVisitSummary: summary,
-      loggedVisitDates: arrayUnion(String(report.visitDate).trim()),
-      lastVisitReportDate: String(report.visitDate).trim(),
-      status: BOOKING_STATUS.ONGOING,
-      updatedAt: serverTimestamp(),
-    };
-    if (!booking.plannedSpanDays && span != null) patch.plannedSpanDays = span;
-    await updateDoc(doc(db, BOOKINGS, bookingId), patch);
-    return;
-  }
-
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    visitReport: report,
-    patientVisitSummary: summary,
-    status: BOOKING_STATUS.COMPLETED,
-    completedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-  if (booking?.nurseId) {
-    const nurseRef = doc(db, NURSES, booking.nurseId);
-    const n = await getDoc(nurseRef);
-    const count = (n.exists() ? n.data().completedVisits || 0 : 0) + 1;
-    await updateDoc(nurseRef, {
-      completedVisits: count,
-      presenceStatus: NURSE_PRESENCE.ONLINE,
-      updatedAt: serverTimestamp(),
+  if (!isPackage) {
+    await api(`/api/v1/homecare/bookings/${bookingId}/status`, {
+      method: 'PATCH',
+      body: { status: BOOKING_STATUS.COMPLETED },
     });
   }
 }
 
-export async function uploadComplaintEvidence(uri) {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Sign in required.');
-  const res = await fetch(uri);
-  const blob = await res.blob();
-  const path = `homeCare/complaints/${user.uid}_${Date.now()}`;
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, blob);
-  return getDownloadURL(storageRef);
-}
-
-export async function submitComplaint({ bookingId, nurseId, nature, description, evidenceUrls = [] }) {
-  const user = auth.currentUser;
-  await addDoc(collection(db, COMPLAINTS), {
-    bookingId,
-    nurseId,
-    patientId: user?.uid || '',
-    nature,
-    description,
-    evidenceUrls,
-    status: 'open',
-    createdAt: serverTimestamp(),
+// ── Patient feedback ───────────────────────────────────────────────────────────
+export async function submitPatientFeedback(bookingId, feedback) {
+  if (!feedback?.rating) return;
+  await api(`/api/v1/homecare/bookings/${bookingId}/feedback`, {
+    method: 'PATCH',
+    body: { rating: Number(feedback.rating), comment: feedback.comment || feedback.text || '' },
   });
 }
 
-export async function cancelBooking(bookingId, { cancelledBy, reason = '' }) {
-  const booking = await fetchBooking(bookingId);
-  if (!booking) throw new Error('Booking not found.');
-  const terminal = [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED];
-  if (terminal.includes(booking.status)) throw new Error('Cannot cancel this booking.');
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    status: BOOKING_STATUS.CANCELLED,
-    cancelledBy,
-    cancelReason: reason,
-    cancelledAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+// ── Package extension ──────────────────────────────────────────────────────────
+export async function extendHomeCarePackage(bookingId, newEndDate, durationTypeOpt) {
+  return api(`/api/v1/homecare/bookings/${bookingId}/extend-package`, {
+    method: 'POST',
+    body: { newEndDate, durationType: durationTypeOpt ?? null },
   });
-  if (booking.nurseId) {
-    await updateDoc(doc(db, NURSES, booking.nurseId), {
-      presenceStatus: NURSE_PRESENCE.ONLINE,
-      updatedAt: serverTimestamp(),
-    });
+}
+
+// ── Patient active/ongoing bookings ───────────────────────────────────────────
+const ACTIVE_PATIENT_STATUSES = [
+  BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.EN_ROUTE,
+  BOOKING_STATUS.ARRIVED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.ONGOING,
+];
+
+export async function fetchPatientOngoingBookings(patientId) {
+  const all = await fetchPatientBookings(patientId);
+  const synced = [];
+  for (const b of all) {
+    let row = b;
+    if (row.status === BOOKING_STATUS.ONGOING && isPackageDuration(row.durationType) && row.endDate) {
+      row = await maybeCloseExpiredHomeCarePackage(row);
+    }
+    synced.push(row);
   }
+  return synced.filter(
+    (b) => b.status === BOOKING_STATUS.ONGOING ||
+      (isPackageDuration(b.durationType) && ['accepted', 'in_progress', 'ongoing', 'en_route', 'arrived'].includes(b.status)),
+  );
 }
 
-export async function updateNurseAvailability(uid, availability) {
-  await updateDoc(doc(db, NURSES, uid), {
-    availability,
-    updatedAt: serverTimestamp(),
-  });
+export async function fetchPatientActiveBookings(patientId) {
+  const all = await fetchPatientBookings(patientId);
+  const synced = await Promise.all(
+    all.map(async (b) =>
+      b.status === BOOKING_STATUS.ONGOING && isPackageDuration(b.durationType) && b.endDate
+        ? maybeCloseExpiredHomeCarePackage(b) : b,
+    ),
+  );
+  const active = synced.filter((b) => ACTIVE_PATIENT_STATUSES.includes(b.status));
+  const nurseIds = [...new Set(active.map((b) => b.nurseId).filter(Boolean))];
+  const nurseById = {};
+  await Promise.all(
+    nurseIds.map(async (id) => {
+      const n = await fetchNurseById(id);
+      if (n) nurseById[id] = n;
+    }),
+  );
+  return collapseActivePatientBookingsByNurse(
+    active.map((b) => ({
+      ...b,
+      nursePhotoURL: nurseById[b.nurseId]?.profilePhotoUrl || b.nursePhotoURL || null,
+    })),
+  );
 }
 
 export async function fetchRecentlyHiredNurses(patientId, limitCount = 5) {
@@ -431,391 +574,104 @@ export async function fetchRecentlyHiredNurses(patientId, limitCount = 5) {
   return nurses;
 }
 
-export async function createEmergencyBooking(payload) {
+// ── Complaints ────────────────────────────────────────────────────────────────
+export async function uploadComplaintEvidence(uri) {
+  return uploadFile('homecare/complaints', uri, 'image/jpeg');
+}
+
+export async function submitComplaint({ bookingId, nurseId, nature, description, evidenceUrls = [] }) {
   const user = await getHomeCareAuthUser();
-  if (!user) throw new Error('Your session expired. Please sign in again.');
-
-  const { patientPhone: payloadPhone, ...restPayload } = payload;
-  const patientSnap = await getDoc(doc(db, 'auth', user.uid));
-  const patientData = patientSnap.exists() ? patientSnap.data() : {};
-
-  const fromForm = String(payloadPhone ?? '').trim();
-  const fromProfile = String(patientData.phone || patientData.phoneNumber || '').trim();
-  const patientPhone = fromForm || fromProfile;
-
-  if (!fromForm) {
-    throw new Error('Phone number is required for emergency requests so the nurse can reach you.');
-  }
-  if (!isValidEmergencyPhone(patientPhone)) {
-    throw new Error('Enter a valid phone number (at least 8 digits).');
-  }
-
-  const ref = await addDoc(collection(db, BOOKINGS), {
-    ...restPayload,
-    patientId: user.uid,
-    patientName: patientData.name || patientData.displayName || 'Patient',
-    patientPhone,
-    bookingType: 'emergency',
-    isEmergency: true,
-    nurseId: restPayload.nurseId || null,
-    nurseName: restPayload.nurseName || null,
-    status: BOOKING_STATUS.PENDING,
-    urgency: restPayload.urgency || 'high',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  await setDoc(
-    doc(db, 'auth', user.uid),
-    { phone: patientPhone, phoneNumber: patientPhone, updatedAt: serverTimestamp() },
-    { merge: true },
-  ).catch(() => {});
-  await setDoc(
-    doc(db, 'clients', user.uid),
-    { phone: patientPhone, phoneNumber: patientPhone, updatedAt: serverTimestamp() },
-    { merge: true },
-  ).catch(() => {});
-
-  return ref.id;
-}
-
-export async function fetchOpenEmergencyRequests(nurseAnchor = null, radiusKm = EMERGENCY_RADIUS_KM) {
-  const snap = await getDocs(
-    query(
-      collection(db, BOOKINGS),
-      where('bookingType', '==', 'emergency'),
-      where('status', '==', BOOKING_STATUS.PENDING),
-      limit(40),
-    ),
-  );
-  let list = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((b) => !b.nurseId);
-  if (nurseAnchor) {
-    list = list.filter((b) => withinRadiusKm(b, nurseAnchor, radiusKm));
-    list = attachDistance(list, nurseAnchor);
-  }
-  return list;
-}
-
-export async function claimEmergencyBooking(bookingId, nurse) {
-  const snap = await getDoc(doc(db, BOOKINGS, bookingId));
-  if (!snap.exists()) throw new Error('Request not found.');
-  const data = snap.data();
-  if (data.nurseId) throw new Error('Already claimed by another nurse.');
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    nurseId: nurse.id,
-    nurseName: nurse.fullName,
-    nursePhone: nurse.phone || '',
-    status: BOOKING_STATUS.ACCEPTED,
-    acceptedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-  await updateDoc(doc(db, NURSES, nurse.id), {
-    presenceStatus: NURSE_PRESENCE.BUSY,
-    updatedAt: serverTimestamp(),
+  await api('/api/v1/homecare/complaints', {
+    method: 'POST',
+    body: {
+      bookingId,
+      patientId: user?.uid,
+      nurseId,
+      nature,
+      description,
+      evidenceUrls: JSON.stringify(evidenceUrls),
+    },
   });
 }
 
-export async function fetchOngoingEngagements(nurseId) {
-  const list = await fetchNurseBookings(nurseId);
-  return list.filter(
-    (b) =>
-      b.status === BOOKING_STATUS.ONGOING ||
-      (['accepted', 'in_progress'].includes(b.status) && isPackageDuration(b.durationType)),
-  );
-}
-
-export async function markBookingOngoing(bookingId) {
-  await updateBookingStatus(bookingId, BOOKING_STATUS.ONGOING);
-}
-
-export async function submitPatientFeedback(bookingId, feedback) {
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    patientFeedback: feedback,
-    updatedAt: serverTimestamp(),
-  });
-  const booking = await fetchBooking(bookingId);
-  if (!booking?.nurseId || !feedback?.rating) return;
-
-  const nurseRef = doc(db, NURSES, booking.nurseId);
-  const n = await getDoc(nurseRef);
-  if (!n.exists()) return;
-  const prev = n.data();
-  const count = (prev.ratingCount || 0) + 1;
-  const avg = ((prev.ratingAvg || 0) * (prev.ratingCount || 0) + Number(feedback.rating)) / count;
-  await updateDoc(nurseRef, {
-    ratingAvg: Math.round(avg * 10) / 10,
-    ratingCount: count,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-// ── Admin ────────────────────────────────────────────────────────────────────
+// ── Admin operations ───────────────────────────────────────────────────────────
 export async function fetchAllNursesAdmin() {
-  const snap = await getDocs(query(collection(db, NURSES), limit(200)));
-  return snap.docs
-    .map((d) => mapNurseDoc(d.id, d.data()))
-    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  const data = await api('/api/v1/homecare/admin/nurses');
+  return Array.isArray(data) ? data : [];
 }
 
 export async function updateNurseAccountStatus(nurseId, accountStatus) {
-  await updateDoc(doc(db, NURSES, nurseId), {
-    accountStatus,
-    updatedAt: serverTimestamp(),
+  await api(`/api/v1/homecare/admin/nurses/${nurseId}/account-status`, {
+    method: 'PATCH',
+    body: { accountStatus },
   });
 }
 
 export async function updateNurseFeesAdmin(nurseId, fees) {
-  await updateDoc(doc(db, NURSES, nurseId), {
-    fees,
-    updatedAt: serverTimestamp(),
+  await api(`/api/v1/homecare/admin/nurses/${nurseId}/fees`, {
+    method: 'PATCH',
+    body: { fees: typeof fees === 'string' ? fees : JSON.stringify(fees) },
+  });
+}
+
+export async function verifyNurseDocumentsAdmin(nurseId, { licenseVerified, documentsStatus, adminNote }) {
+  await api(`/api/v1/homecare/admin/nurses/${nurseId}/verify-documents`, {
+    method: 'POST',
+    body: { licenseVerified: !!licenseVerified, documentsStatus: documentsStatus || 'verified', adminNote: adminNote || '' },
   });
 }
 
 export async function fetchAllBookingsAdmin(limitCount = 100) {
-  const snap = await getDocs(query(collection(db, BOOKINGS), limit(limitCount)));
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  const user = await getHomeCareAuthUser();
+  const data = await api('/api/v1/homecare/bookings');
+  return Array.isArray(data) ? data.slice(0, limitCount) : [];
 }
 
 export async function fetchAllComplaintsAdmin() {
-  const snap = await getDocs(query(collection(db, COMPLAINTS), limit(100)));
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  const data = await api('/api/v1/homecare/admin/complaints');
+  return Array.isArray(data) ? data : [];
 }
 
 export async function updateComplaintStatus(complaintId, status, adminNote = '') {
-  await updateDoc(doc(db, COMPLAINTS, complaintId), {
-    status,
-    adminNote,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-// ── Visit logs (weekly/monthly) ─────────────────────────────────────────────
-export async function addVisitLog(bookingId, log) {
-  const user = auth.currentUser;
-  await addDoc(collection(db, BOOKINGS, bookingId, 'visitLogs'), {
-    ...log,
-    createdBy: user?.uid || null,
-    createdAt: serverTimestamp(),
-  });
-  await updateDoc(doc(db, BOOKINGS, bookingId), {
-    visitLogCount: increment(1),
-    lastVisitAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function fetchVisitLogs(bookingId) {
-  const snap = await getDocs(
-    query(collection(db, BOOKINGS, bookingId, 'visitLogs'), orderBy('createdAt', 'desc'), limit(50)),
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-}
-
-export async function fetchPatientOngoingBookings(patientId) {
-  const all = await fetchPatientBookings(patientId);
-  const synced = [];
-  for (const b of all) {
-    let row = b;
-    if (
-      row.status === BOOKING_STATUS.ONGOING &&
-      isPackageDuration(row.durationType) &&
-      row.endDate
-    ) {
-      row = await maybeCloseExpiredHomeCarePackage(row);
-    }
-    synced.push(row);
-  }
-  return synced.filter(
-    (b) =>
-      b.status === BOOKING_STATUS.ONGOING ||
-      (isPackageDuration(b.durationType) &&
-        ['accepted', 'in_progress', 'ongoing', 'en_route', 'arrived'].includes(b.status)),
-  );
-}
-
-const extendHcPackageCallable = httpsCallable(functions, 'extendHomeCarePackage');
-
-export async function extendHomeCarePackage(bookingId, newEndDate, durationTypeOpt) {
-  const res = await extendHcPackageCallable({
-    bookingId,
-    newEndDate,
-    durationType: durationTypeOpt ?? null,
-  });
-  return res.data;
-}
-
-const ACTIVE_PATIENT_STATUSES = [
-  BOOKING_STATUS.PENDING,
-  BOOKING_STATUS.ACCEPTED,
-  BOOKING_STATUS.EN_ROUTE,
-  BOOKING_STATUS.ARRIVED,
-  BOOKING_STATUS.IN_PROGRESS,
-  BOOKING_STATUS.ONGOING,
-];
-
-export async function fetchPatientActiveBookings(patientId) {
-  const all = await fetchPatientBookings(patientId);
-  const synced = await Promise.all(
-    all.map(async (b) =>
-      b.status === BOOKING_STATUS.ONGOING && isPackageDuration(b.durationType) && b.endDate
-        ? maybeCloseExpiredHomeCarePackage(b)
-        : b,
-    ),
-  );
-  const active = synced.filter((b) => ACTIVE_PATIENT_STATUSES.includes(b.status));
-  const nurseIds = [...new Set(active.map((b) => b.nurseId).filter(Boolean))];
-  const nurseById = {};
-  await Promise.all(
-    nurseIds.map(async (id) => {
-      const n = await fetchNurseById(id);
-      if (n) nurseById[id] = n;
-    }),
-  );
-  return collapseActivePatientBookingsByNurse(
-    active.map((b) => ({
-      ...b,
-      nursePhotoURL: nurseById[b.nurseId]?.photoURL || b.nursePhotoURL || null,
-    })),
-  );
-}
-
-export async function fetchHomeCarePatientProfile(uid) {
-  const [authSnap, clientSnap] = await Promise.all([
-    getDoc(doc(db, 'auth', uid)),
-    getDoc(doc(db, 'clients', uid)),
-  ]);
-  const authData = authSnap.exists() ? authSnap.data() : null;
-  const clientData = clientSnap.exists() ? clientSnap.data() : null;
-  const name = resolvePatientDisplayName(authData, clientData, auth.currentUser);
-  const location = formatProfileLocation(authData) || formatProfileLocation(clientData);
-  const phone =
-    String(authData?.phone || authData?.phoneNumber || clientData?.phone || clientData?.phoneNumber || '').trim();
-  return { name, location, phone };
-}
-
-// ── Nurse profile & documents ───────────────────────────────────────────────
-export async function updateNurseProfile(uid, patch) {
-  await updateDoc(doc(db, NURSES, uid), { ...patch, updatedAt: serverTimestamp() });
-}
-
-export async function uploadNursePhoto(uid, fileOrUri, mimeType = 'image/jpeg') {
-  const nurseId = auth.currentUser?.uid || uid;
-  if (!nurseId) throw new Error('You must be signed in to upload a photo.');
-  if (uid && auth.currentUser?.uid && uid !== auth.currentUser.uid) {
-    throw new Error('You can only update your own profile photo.');
-  }
-  let blob;
-  let contentType = mimeType;
-  if (fileOrUri instanceof Blob) {
-    blob = fileOrUri;
-    contentType = fileOrUri.type || mimeType;
-  } else {
-    const res = await fetch(fileOrUri);
-    blob = await res.blob();
-  }
-  const path = `homeCare/nurses/${nurseId}/profile_${Date.now()}`;
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, blob, { contentType });
-  const photoURL = await getDownloadURL(storageRef);
-  await updateDoc(doc(db, NURSES, nurseId), { photoURL, updatedAt: serverTimestamp() });
-  return photoURL;
-}
-
-export async function uploadNurseDocument(uid, type, uri, mimeType = 'image/jpeg') {
-  const res = await fetch(uri);
-  const blob = await res.blob();
-  const path = `homeCare/nurses/${uid}/${type}_${Date.now()}`;
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, blob, { contentType: mimeType });
-  const url = await getDownloadURL(storageRef);
-  const field = type === 'license' ? 'licenseDocUrl' : 'idDocUrl';
-  await updateDoc(doc(db, NURSES, uid), {
-    [field]: url,
-    documentsStatus: 'pending_review',
-    updatedAt: serverTimestamp(),
-  });
-  return url;
-}
-
-export async function verifyNurseDocumentsAdmin(nurseId, { licenseVerified, documentsStatus, adminNote }) {
-  await updateDoc(doc(db, NURSES, nurseId), {
-    licenseVerified: !!licenseVerified,
-    documentsStatus: documentsStatus || 'verified',
-    documentAdminNote: adminNote || '',
-    updatedAt: serverTimestamp(),
-  });
-}
-
-// ── Earnings log (manual) ───────────────────────────────────────────────────
-export async function addNurseEarning(nurseId, { amount, note, bookingId }) {
-  await addDoc(collection(db, EARNINGS), {
-    nurseId,
-    amount: Number(amount) || 0,
-    note: note || '',
-    bookingId: bookingId || null,
-    createdAt: serverTimestamp(),
-  });
-}
-
-export async function fetchNurseEarnings(nurseId, limitCount = 50) {
-  const snap = await getDocs(
-    query(collection(db, EARNINGS), where('nurseId', '==', nurseId), limit(limitCount)),
-  );
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-}
-
-// ── Notifications inbox ───────────────────────────────────────────────────────
-export async function fetchUserNotifications(targetId, limitCount = 40) {
-  const snap = await getDocs(
-    query(collection(db, NOTIFICATIONS), where('targetId', '==', targetId), limit(limitCount)),
-  );
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-}
-
-export async function markNotificationRead(notifId) {
-  await updateDoc(doc(db, NOTIFICATIONS, notifId), { read: true });
-}
-
-export async function registerPushToken(uid, token, collectionName = 'homeCareNurses') {
-  if (!uid || !token) return;
-  await updateDoc(doc(db, collectionName, uid), {
-    pushTokens: arrayUnion(token),
-    updatedAt: serverTimestamp(),
+  await api(`/api/v1/homecare/admin/complaints/${complaintId}`, {
+    method: 'PATCH',
+    body: { status, adminNote },
   });
 }
 
 export async function fetchHomeCareAnalyticsAdmin() {
-  const [nursesSnap, bookingsSnap, complaintsSnap] = await Promise.all([
-    getDocs(query(collection(db, NURSES), limit(300))),
-    getDocs(query(collection(db, BOOKINGS), limit(300))),
-    getDocs(query(collection(db, COMPLAINTS), limit(100))),
-  ]);
-  const nurses = nursesSnap.docs.map((d) => d.data());
-  const bookings = bookingsSnap.docs.map((d) => d.data());
-  const complaints = complaintsSnap.docs.map((d) => d.data());
-  const completed = bookings.filter((b) => b.status === BOOKING_STATUS.COMPLETED).length;
-  const cancelled = bookings.filter((b) => b.status === BOOKING_STATUS.CANCELLED).length;
-  const emergency = bookings.filter((b) => b.bookingType === 'emergency').length;
-  const approvedNurses = nurses.filter((n) => n.accountStatus === 'approved').length;
-  return {
-    totalNurses: nurses.length,
-    approvedNurses,
-    totalBookings: bookings.length,
-    completed,
-    cancelled,
-    emergencyBookings: emergency,
-    openComplaints: complaints.filter((c) => c.status === 'open' || c.status === 'reviewing').length,
-    avgRating:
-      nurses.reduce((s, n) => s + (n.ratingAvg || 0), 0) / (nurses.filter((n) => n.ratingCount).length || 1),
-  };
+  return api('/api/v1/homecare/admin/analytics');
+}
+
+// ── Earnings ──────────────────────────────────────────────────────────────────
+export async function addNurseEarning(nurseId, { amount, note, bookingId }) {
+  await api(`/api/v1/homecare/nurses/${nurseId}/earnings`, {
+    method: 'POST',
+    body: { amount: Number(amount) || 0, note: note || '', bookingId: bookingId || null },
+  });
+}
+
+export async function fetchNurseEarnings(nurseId, limitCount = 50) {
+  const data = await api(`/api/v1/homecare/nurses/${nurseId}/earnings`);
+  const list = Array.isArray(data?.earnings) ? data.earnings : (Array.isArray(data) ? data : []);
+  return list.slice(0, limitCount);
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+export async function fetchUserNotifications(targetId, limitCount = 40) {
+  const data = await api(`/api/v1/homecare/notifications?targetId=${targetId}`);
+  const list = Array.isArray(data?.notifications) ? data.notifications : (Array.isArray(data) ? data : []);
+  return list.slice(0, limitCount);
+}
+
+export async function markNotificationRead(notifId) {
+  await api(`/api/v1/homecare/notifications/${notifId}/read`, { method: 'PATCH' });
+}
+
+export async function registerPushToken(uid, token, collectionName = 'homeCareNurses') {
+  if (!uid || !token) return;
+  await api('/api/v1/push-tokens', {
+    method: 'POST',
+    body: { userId: uid, token, role: 'HOME_CARE_NURSE', platform: 'expo' },
+  });
 }

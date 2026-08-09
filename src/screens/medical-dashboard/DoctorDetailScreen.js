@@ -9,8 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
 
 function getInitials(name) {
@@ -61,10 +60,8 @@ const DoctorDetailScreen = ({ route, navigation }) => {
 
   const loadDoctor = async () => {
     try {
-      const snap = await getDoc(doc(db, 'doctors', doctorId));
-      if (snap.exists()) {
-        setDoctor({ id: snap.id, ...snap.data() });
-      }
+      const data = await api(`/api/v1/doctors/${doctorId}`);
+      if (data) setDoctor({ id: doctorId, ...data });
     } catch (err) {
       console.error('Error loading doctor:', err);
     } finally {

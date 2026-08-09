@@ -4,10 +4,7 @@ import {
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs,
-} from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 
@@ -22,17 +19,17 @@ export default function PharmacyHomeScreen({ profile, navigation }) {
     try {
       const pid = profile?.id;
       if (!pid) return;
-      const [branchSnap, rxSnap] = await Promise.all([
-        getDocs(query(collection(db, 'pharmacyBranches'), where('pharmacyId', '==', pid))),
-        getDocs(query(collection(db, 'doctorPrescriptions'), where('pharmacyId', '==', pid))),
+      const [branches, rxList] = await Promise.all([
+        api(`/api/v1/pharmacy-branches?pharmacyId=${pid}`).catch(() => []),
+        api(`/api/v1/medical/prescriptions/pharmacy/${pid}`).catch(() => []),
       ]);
-      const rxList = rxSnap.docs.map(d => d.data());
+      const rxArr = rxList || [];
       setStats({
-        branches:  branchSnap.size,
-        incoming:  rxList.filter(r => r.pharmacyStatus === 'sent').length,
-        active:    rxList.filter(r => ['accepted', 'partially_fulfilled'].includes(r.pharmacyStatus)).length,
-        ready:     rxList.filter(r => r.pharmacyStatus === 'ready').length,
-        delivered: rxList.filter(r => r.pharmacyStatus === 'delivered').length,
+        branches:  (branches || []).length,
+        incoming:  rxArr.filter(r => r.pharmacyStatus === 'sent').length,
+        active:    rxArr.filter(r => ['accepted', 'partially_fulfilled'].includes(r.pharmacyStatus)).length,
+        ready:     rxArr.filter(r => r.pharmacyStatus === 'ready').length,
+        delivered: rxArr.filter(r => r.pharmacyStatus === 'delivered').length,
       });
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }

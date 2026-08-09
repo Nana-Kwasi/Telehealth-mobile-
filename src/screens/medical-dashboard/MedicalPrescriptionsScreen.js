@@ -4,10 +4,10 @@ import {
   ActivityIndicator, RefreshControl, Modal, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+import { patientVisibleNotes } from '../../utils/pharmacyRxNotes';
 
 const C = MedicalColors;
 const DEFAULT_TRANSFER_APPROVAL_TTL_HOURS = 6;
@@ -29,9 +29,9 @@ const MedicalPrescriptionsScreen = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const cu = auth.currentUser;
-      if (cu) {
-        const rxs = await fetchClientPrescriptions(cu.uid);
+      const uid = await getStoredUserId();
+      if (uid) {
+        const rxs = await fetchClientPrescriptions(uid);
         const isTransferRequestExpired = (med) => {
           if (!med || med.drugStatus !== 'transfer_requested' || med.transferRequestStatus !== 'pending_patient') return false;
           const requestedAt = med.transferRequestedAt ? new Date(med.transferRequestedAt).getTime() : NaN;
@@ -63,11 +63,7 @@ const MedicalPrescriptionsScreen = () => {
                 transferRequestBranchAddress: null,
               }
               : m));
-            await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-              medications: nextMeds,
-              pharmacyStatus: deriveRxStatusFromMeds(nextMeds),
-              updatedAt: serverTimestamp(),
-            }).catch(() => {});
+            await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: nextMeds, pharmacyStatus: deriveRxStatusFromMeds(nextMeds) } }).catch(() => {});
           });
         if (expiries.length) await Promise.all(expiries);
         setPrescriptions(rxs);
@@ -104,10 +100,7 @@ const MedicalPrescriptionsScreen = () => {
     if (!completingRx) return;
     setUpdating(true);
     try {
-      await updateDoc(doc(db, 'doctorPrescriptions', completingRx.id), {
-        status: 'completed',
-        completedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/medical/prescriptions/${completingRx.id}/patient-status`, { method: 'PATCH', body: { status: 'completed' } });
       setPrescriptions(prev =>
         prev.map(r => r.id === completingRx.id ? { ...r, status: 'completed' } : r)
       );
@@ -135,38 +128,18 @@ const MedicalPrescriptionsScreen = () => {
     const key = `${rx.id}:${medIndex}:${approve ? 'approve' : 'reject'}`;
     setTransferActionKey(key);
     try {
-      const nextMeds = meds.map((m, i) => {
-        if (i !== medIndex) return m;
-        if (approve) {
-          return {
-            ...m,
-            drugStatus: 'transferred',
-            transferRequestStatus: 'approved_by_patient',
-            transferApprovedByPatientAt: new Date().toISOString(),
-            transferBranchId: m.transferRequestBranchId || null,
-            transferBranchName: m.transferRequestBranchName || null,
-            transferBranchAddress: m.transferRequestBranchAddress || null,
-          };
-        }
-        return {
-          ...m,
-          drugStatus: 'not_available',
-          transferRequestStatus: 'rejected_by_patient',
-          transferRejectedByPatientAt: new Date().toISOString(),
-          transferBranchId: null,
-          transferBranchName: null,
-          transferBranchAddress: null,
-          transferRequestBranchId: null,
-          transferRequestBranchName: null,
-          transferRequestBranchAddress: null,
-        };
+      // The patient cannot PATCH the prescription itself — that endpoint is limited
+      // to doctors/pharmacies, so this used to fail with 403 ("Failed to process
+      // transfer decision"). The server applies the transfer state machine after
+      // checking the line really is awaiting THIS patient.
+      const updated = await api(`/api/v1/medical/prescriptions/${rx.id}/transfer-decision`, {
+        method: 'POST',
+        body: { medIndex, approve },
       });
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-        medications: nextMeds,
-        pharmacyStatus: deriveRxStatusFromMeds(nextMeds),
-        updatedAt: serverTimestamp(),
-      });
-      setPrescriptions(prev => prev.map(p => (p.id === rx.id ? { ...p, medications: nextMeds, pharmacyStatus: deriveRxStatusFromMeds(nextMeds) } : p)));
+      const nextMeds = updated?.medications || meds;
+      setPrescriptions(prev => prev.map(p => (p.id === rx.id
+        ? { ...p, medications: nextMeds, pharmacyStatus: updated?.pharmacyStatus || deriveRxStatusFromMeds(nextMeds) }
+        : p)));
     } catch {
       Alert.alert('Error', 'Failed to process transfer decision. Please try again.');
     } finally {
@@ -312,6 +285,15 @@ const MedicalPrescriptionsScreen = () => {
                         This drug ({m.name || 'Drug'}) is transfered to branch ({m.transferBranchName}{m.transferBranchAddress ? `, ${m.transferBranchAddress}` : ''}).
                       </Text>
                     ) : null}
+                    {/* Pharmacy notes reach the patient only once the doctor has approved them. */}
+                    {patientVisibleNotes(m).map((n, ni) => (
+                      <Text key={ni} style={styles.pharmacyNote}>
+                        💊 {n.label || 'Pharmacy note'}: {n.note}
+                        {n.requiresDoctorApproval
+                          ? ` · Approved${n.approvedByDoctorName ? ` · Dr. ${n.approvedByDoctorName}` : ''}`
+                          : ''}
+                      </Text>
+                    ))}
                   </View>
                 ))}
                 {viewingRx.instructions ? (
@@ -415,6 +397,11 @@ function RxCard({ rx, onTick, onOpen, onTransferDecision, transferActionKey }) {
                 This drug ({m.name || 'Drug'}) is transfered to branch ({m.transferBranchName}{m.transferBranchAddress ? `, ${m.transferBranchAddress}` : ''}).
               </Text>
             )}
+            {m.transferRequestStatus === 'superseded' && (
+              <Text style={[styles.altSuggested, { color: '#b45309' }]}>
+                An earlier transfer request for {m.name || 'this drug'} was withdrawn because you responded to a newer one. The pharmacy will follow up if it is still needed.
+              </Text>
+            )}
             {m.drugStatus === 'transfer_requested' && m.transferRequestStatus === 'pending_patient' && (
               <View style={styles.transferConsentCard}>
                 <Text style={styles.transferConsentText}>
@@ -493,6 +480,7 @@ const styles = StyleSheet.create({
   drugStatusPillText: { fontSize: 11, fontWeight: '700' },
   altSuggested: { fontSize: 11, color: '#7c3aed', fontWeight: '600', marginTop: 3 },
   altApproved: { fontSize: 11, color: '#16a34a', fontWeight: '600', marginTop: 3 },
+  pharmacyNote: { fontSize: 11, color: '#475569', fontWeight: '600', marginTop: 3 },
   transferConsentCard: { marginTop: 6, backgroundColor: '#f0fdfa', borderColor: '#99f6e4', borderWidth: 1, borderRadius: 10, padding: 8 },
   transferConsentText: { fontSize: 11, color: '#0f766e', fontWeight: '600' },
   transferConsentActions: { flexDirection: 'row', gap: 8, marginTop: 6 },

@@ -4,10 +4,7 @@ import {
   ActivityIndicator, FlatList, Alert, Modal, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp,
-} from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { ScanColors as C } from '../../constants/colors';
 
 function generateResultRef() {
@@ -38,15 +35,11 @@ export default function ScanVerifyScreen({ profile }) {
     try {
       const pid = profile?.id;
       const isBranch = profile?.role === 'scan_branch';
-      const snap = isBranch
-        ? await getDocs(query(collection(db, 'diagnosticOrders'), where('branchId', '==', pid)))
-        : await getDocs(
-            query(collection(db, 'diagnosticOrders'), where('centerId', '==', pid), where('centerType', '==', 'scan')),
-          );
-      let list = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(o => o.patientName?.toLowerCase().includes(searchName.toLowerCase()));
-      if (isBranch) list = list.filter((o) => o.centerType === 'scan');
+      const rawOrders = isBranch
+        ? await api(`/api/v1/diagnostics/operations/orders?branchId=${pid}`).catch(() => [])
+        : await api(`/api/v1/diagnostics/operations/orders?centerId=${pid}&centerType=scan`).catch(() => []);
+      let list = (rawOrders || []).filter(o => o.patientName?.toLowerCase().includes(searchName.toLowerCase()));
+      if (isBranch) list = list.filter(o => o.centerType === 'scan');
       setFoundOrders(list);
       setSearched(true);
     } catch (e) { console.error(e); } finally { setSearching(false); }
@@ -54,17 +47,8 @@ export default function ScanVerifyScreen({ profile }) {
 
   const handleMarkInProgress = async (order) => {
     try {
-      await updateDoc(doc(db, 'diagnosticOrders', order.id), { status: 'in_progress', updatedAt: serverTimestamp() });
-      await addDoc(collection(db, 'patientTimeline'), {
-        patientId: order.patientId,
-        type: 'SCAN_ORDER',
-        title: `Scan in progress: ${order.testType}`,
-        status: 'IN_PROGRESS',
-        relatedId: order.id,
-        actor: { role: 'SCAN', name: profile?.centerName || 'Scan Center' },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/diagnostics/operations/orders/${order.id}/status`, { method: 'PATCH', body: { status: 'in_progress' } });
+      api('/api/v1/patient-timeline', { method: 'POST', body: { patientId: order.patientId, type: 'SCAN_ORDER', title: `Scan in progress: ${order.testType}`, status: 'IN_PROGRESS', relatedId: order.id, actor: { role: 'SCAN', name: profile?.centerName || 'Scan Center' } } }).catch(() => {});
       setFoundOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'in_progress' } : o));
       Alert.alert('Updated', 'Order marked as In Progress');
     } catch (e) { Alert.alert('Error', 'Failed to update order'); }
@@ -75,48 +59,14 @@ export default function ScanVerifyScreen({ profile }) {
     setSubmitting(true);
     try {
       const resultRef = generateResultRef();
-      await updateDoc(doc(db, 'diagnosticOrders', selectedOrder.id), { status: 'completed', updatedAt: serverTimestamp() });
-      await addDoc(collection(db, 'diagnosticResults'), {
-        orderId: selectedOrder.id,
-        patientId: selectedOrder.patientId,
-        doctorId: selectedOrder.doctorId,
-        type: 'scan',
-        testType: selectedOrder.testType,
-        notes: resultNotes.trim(),
-        fileName: fileName.trim() || null,
-        resultRef,
-        uploadedAt: serverTimestamp(),
-        uploadedBy: profile?.id,
-        uploaderName: profile?.centerName || 'Scan Center',
+      await api(`/api/v1/diagnostics/operations/orders/${selectedOrder.id}/status`, { method: 'PATCH', body: { status: 'completed' } });
+      await api(`/api/v1/diagnostics/operations/orders/${selectedOrder.id}/results`, {
+        method: 'POST',
+        body: { orderId: selectedOrder.id, patientId: selectedOrder.patientId, doctorId: selectedOrder.doctorId, type: 'scan', testType: selectedOrder.testType, notes: resultNotes.trim(), fileName: fileName.trim() || null, resultRef, uploadedBy: profile?.id, uploaderName: profile?.centerName || 'Scan Center' },
       });
-      await addDoc(collection(db, 'notifications'), {
-        targetId: selectedOrder.doctorId,
-        title: 'Scan Report Ready',
-        body: `Report for ${selectedOrder.patientName} (${selectedOrder.testType}) is ready.`,
-        type: 'SCAN_RESULT',
-        relatedId: selectedOrder.id,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
-      await addDoc(collection(db, 'notifications'), {
-        targetId: selectedOrder.patientId,
-        title: 'Scan Report Ready',
-        body: `Your ${selectedOrder.testType} report is available.`,
-        type: 'SCAN_RESULT',
-        relatedId: selectedOrder.id,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
-      await addDoc(collection(db, 'patientTimeline'), {
-        patientId: selectedOrder.patientId,
-        type: 'SCAN_RESULT',
-        title: `Scan report ready: ${selectedOrder.testType}`,
-        status: 'COMPLETED',
-        relatedId: selectedOrder.id,
-        actor: { role: 'SCAN', name: profile?.centerName || 'Scan Center' },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      api('/api/v1/notifications/events', { method: 'POST', body: { targetUserId: selectedOrder.doctorId, type: 'SCAN_RESULT', title: 'Scan Report Ready', body: `Report for ${selectedOrder.patientName} (${selectedOrder.testType}) is ready.` } }).catch(() => {});
+      api('/api/v1/notifications/events', { method: 'POST', body: { targetUserId: selectedOrder.patientId, type: 'SCAN_RESULT', title: 'Scan Report Ready', body: `Your ${selectedOrder.testType} report is available.` } }).catch(() => {});
+      api('/api/v1/patient-timeline', { method: 'POST', body: { patientId: selectedOrder.patientId, type: 'SCAN_RESULT', title: `Scan report ready: ${selectedOrder.testType}`, status: 'COMPLETED', relatedId: selectedOrder.id, actor: { role: 'SCAN', name: profile?.centerName || 'Scan Center' } } }).catch(() => {});
       setFoundOrders(prev => prev.map(o => o.id === selectedOrder.id ? { ...o, status: 'completed' } : o));
       setShowResultModal(false);
       Alert.alert('Done', 'Report submitted. Doctor and patient have been notified.');

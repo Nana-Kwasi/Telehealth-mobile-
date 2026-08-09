@@ -5,8 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 
 const DRUG_STATUS = {
@@ -63,13 +62,10 @@ export default function PharmacyWalkInScreen({ profile }) {
     setRx(null);
     setNotFound(false);
     try {
-      const snap = await getDocs(query(
-        collection(db, 'doctorPrescriptions'),
-        where('prescriptionRef', '==', ref),
-        where('pharmacyId', '==', profile.id)
-      ));
-      if (!snap.empty) {
-        setRx({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      const queue = await api(`/api/v1/medical/prescriptions/pharmacy/${profile?.id}`).catch(() => []) || [];
+      const found = queue.find(r => (r.prescriptionRef || '').toUpperCase() === ref);
+      if (found) {
+        setRx(found);
       } else {
         setNotFound(true);
       }
@@ -82,9 +78,7 @@ export default function PharmacyWalkInScreen({ profile }) {
     if (!rx) return;
     setMarking(true);
     try {
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-        pharmacyStatus: 'delivered', deliveredAt: serverTimestamp(), updatedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { pharmacyStatus: 'delivered' } });
       setRx(prev => ({ ...prev, pharmacyStatus: 'delivered' }));
       Alert.alert('Done', 'Prescription marked as delivered.');
     } catch { Alert.alert('Error', 'Could not mark as delivered.'); }

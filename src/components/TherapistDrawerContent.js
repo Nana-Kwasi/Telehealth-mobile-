@@ -9,19 +9,21 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../services/firebaseConfig';
-import { signOut } from 'firebase/auth';
+
+import { performLogout } from '../services/authService';
 import { TherapistColors } from '../constants/colors';
 
 const drawerItems = [
   { screen: 'TherapistHome',      icon: 'home-outline',            label: 'Dashboard' },
   { screen: 'TherapistClients',   icon: 'people-outline',          label: 'My Clients' },
-  { screen: 'TherapistMessages',  icon: 'chatbubbles-outline',     label: 'Messages' },
-  { screen: 'TherapistSchedule',  icon: 'calendar-outline',        label: 'Schedule' },
-  { screen: 'TherapistNotes',     icon: 'document-text-outline',   label: 'Session Notes' },
+  { screen: 'TherapistMessages',  icon: 'people-outline',          label: 'Staff' },
+  { screen: 'TherapistVideo',     icon: 'videocam-outline',        label: 'Video Call' },
+  { screen: 'TherapistAppointments', icon: 'checkmark-circle-outline', label: 'Appointments' },
+  { screen: 'TherapistSchedule',  icon: 'calendar-outline',        label: 'Calendar' },
+  { screen: 'TherapistNotes',     icon: 'document-text-outline',   label: 'Notes' },
   { screen: 'TherapistMood',      icon: 'happy-outline',           label: 'Client Moods' },
   { screen: 'TherapistResources', icon: 'book-outline',            label: 'Resources' },
-  { screen: 'TherapistReports',   icon: 'flag-outline',            label: 'Reports' },
+  { screen: 'TherapistReportIssue', icon: 'document-text-outline', label: 'Report Issue' },
   { screen: 'TherapistSettings',  icon: 'settings-outline',        label: 'Settings & Profile' },
 ];
 
@@ -30,7 +32,7 @@ const TherapistDrawerContent = ({ navigation, profile, state }) => {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await performLogout();
       await AsyncStorage.clear();
       navigation.getParent()?.replace('Welcome');
     } catch (error) {
@@ -48,9 +50,16 @@ const TherapistDrawerContent = ({ navigation, profile, state }) => {
         <Text style={styles.logoText}>NessaHub</Text>
         <Text style={styles.logoSubtitle}>Therapist Portal</Text>
 
-        <View style={styles.userInfo}>
+        <TouchableOpacity
+          style={styles.userInfo}
+          activeOpacity={0.85}
+          onPress={() => {
+            navigation.navigate('TherapistSettings');
+            navigation.closeDrawer();
+          }}
+        >
           {profile?.photoURL ? (
-            <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
+            <Image source={{ uri: profile.photoURL }} style={styles.avatarImage} />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>{displayName[0]?.toUpperCase()}</Text>
@@ -62,7 +71,7 @@ const TherapistDrawerContent = ({ navigation, profile, state }) => {
             <Ionicons name="checkmark-circle" size={12} color={TherapistColors.success} />
             <Text style={styles.verifiedText}>Verified Therapist</Text>
           </View>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Navigation Items */}
@@ -137,18 +146,18 @@ const styles = StyleSheet.create({
   userInfo: {
     alignItems: 'center',
   },
-  avatar: {
+  avatarImage: {
     width: 68,
     height: 68,
-    borderRadius: 34,
+    borderRadius: 18,
     marginBottom: 10,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   avatarPlaceholder: {
     width: 68,
     height: 68,
-    borderRadius: 34,
+    borderRadius: 18,
     backgroundColor: TherapistColors.primary,
     justifyContent: 'center',
     alignItems: 'center',

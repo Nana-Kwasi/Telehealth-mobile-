@@ -4,8 +4,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../services/firebaseConfig';
-import { signOut } from 'firebase/auth';
+
+import { performLogout } from '../services/authService';
+import { api, getStoredUserId } from '../services/apiClient';
 import { DoctorColors } from '../constants/colors';
 
 const drawerItems = [
@@ -27,9 +28,23 @@ const drawerItems = [
 const DoctorDrawerContent = ({ navigation, profile, state }) => {
   const activeRoute = state?.routes?.[state.index]?.name;
 
+  // Self-heal: the cached login profile can be stale, so fetch the live doctor
+  // record and prefer its name/specialization for the sidebar.
+  const [freshProfile, setFreshProfile] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uid = profile?.id || (await getStoredUserId());
+      if (!uid) return;
+      const d = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      if (d && !cancelled) setFreshProfile(d);
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.id]);
+
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await performLogout();
       await AsyncStorage.clear();
       navigation.getParent()?.replace('Intent');
     } catch (error) {
@@ -37,8 +52,8 @@ const DoctorDrawerContent = ({ navigation, profile, state }) => {
     }
   };
 
-  const displayName = profile?.name || 'Doctor';
-  const specialty = profile?.specialty || profile?.specialization || 'General Practice';
+  const displayName = freshProfile?.name || freshProfile?.fullName || profile?.name || 'Doctor';
+  const specialty = freshProfile?.specialization || profile?.specialty || profile?.specialization || 'General Practice';
 
   return (
     <View style={styles.container}>

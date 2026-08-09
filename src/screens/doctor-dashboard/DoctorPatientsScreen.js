@@ -4,10 +4,8 @@ import {
   ActivityIndicator, TextInput, RefreshControl, ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, doc, getDoc,
-} from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 
@@ -52,52 +50,36 @@ export default function DoctorPatientsScreen({ navigation }) {
 
   const loadPatients = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const doctorId = await AsyncStorage.getItem('th.userId');
+      if (!doctorId) return;
 
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      const profile = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
-      setDoctorProfile(profile);
+      const doctorData = await api(`/api/v1/doctors/${doctorId}`).catch(() => null);
+      setDoctorProfile({ id: doctorId, ...doctorData });
 
-      const apptSnap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
+      const appointments = await api(`/api/v1/medical/appointments/doctor/${doctorId}`).catch(() => []);
+      const apptList = Array.isArray(appointments) ? appointments : [];
 
       const patMap = new Map();
-      apptSnap.docs.forEach(d => {
-        const data = d.data();
+      apptList.forEach(data => {
         if (!data.clientId) return;
         const prev = patMap.get(data.clientId);
         if (!prev) {
           patMap.set(data.clientId, {
-            id: data.clientId,
-            name: data.clientName || '',
-            email: data.clientEmail || '',
-            lastVisit: data.date || '',
-            visitCount: 1,
-            completedCount: data.status === 'completed' ? 1 : 0,
+            id: data.clientId, name: data.clientName || data.patientName || '',
+            email: data.clientEmail || '', lastVisit: data.date || data.scheduledAt?.split('T')[0] || '',
+            visitCount: 1, completedCount: data.status === 'completed' ? 1 : 0,
           });
         } else {
           prev.visitCount += 1;
           if (data.status === 'completed') prev.completedCount += 1;
-          if ((data.date || '') > prev.lastVisit) prev.lastVisit = data.date;
-          if (!prev.name && data.clientName) prev.name = data.clientName;
+          const newDate = data.date || data.scheduledAt?.split('T')[0] || '';
+          if (newDate > prev.lastVisit) prev.lastVisit = newDate;
+          if (!prev.name && (data.clientName || data.patientName)) prev.name = data.clientName || data.patientName;
         }
       });
 
-      // Enrich with real names from Firestore auth collection
       const enriched = await enrichPatientNames(patMap);
-
-      // Load patient statuses from patientProfiles
-      const list = Array.from(enriched.values());
-      for (const p of list) {
-        try {
-          const ppSnap = await getDoc(doc(db, 'patientProfiles', p.id));
-          if (ppSnap.exists()) p.status = ppSnap.data().status || 'active';
-          else p.status = 'active';
-        } catch { p.status = 'active'; }
-      }
-
+      const list = Array.from(enriched.values()).map(p => ({ ...p, status: 'active' }));
       const sorted = list.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit));
       setPatients(sorted);
       setFiltered(sorted);
@@ -115,7 +97,7 @@ export default function DoctorPatientsScreen({ navigation }) {
       <View style={styles.patientCard}>
         <TouchableOpacity
           style={styles.cardTop}
-          onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name })}
+          onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name, patientEmail: item.email })}
           activeOpacity={0.7}
         >
           <View style={styles.avatar}>
@@ -155,7 +137,7 @@ export default function DoctorPatientsScreen({ navigation }) {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name })}
+            onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId: item.id, patientName: item.name, patientEmail: item.email })}
           >
             <Ionicons name="chevron-forward-outline" size={14} color={DoctorColors.primary} />
             <Text style={styles.actionText}>View Profile</Text>

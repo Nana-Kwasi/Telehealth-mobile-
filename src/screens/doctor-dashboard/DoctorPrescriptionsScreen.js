@@ -6,11 +6,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, addDoc, updateDoc,
-  deleteDoc, doc, serverTimestamp, getDoc, onSnapshot,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 
 function generatePrescriptionRef() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -20,6 +16,7 @@ function generatePrescriptionRef() {
 }
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
+import { hasPendingDoctorNote, isRxDelivered } from '../../utils/pharmacyRxNotes';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -135,6 +132,7 @@ export default function DoctorPrescriptionsScreen() {
   const [altApprovalRx, setAltApprovalRx] = useState(null);
   const [altSaving, setAltSaving] = useState(false);
   const [viewingRx, setViewingRx] = useState(null);
+  const [showRxAll, setShowRxAll] = useState(false);
   const [reassignRx, setReassignRx] = useState(null);
   const [reassignBranchId, setReassignBranchId] = useState('');
   const [reassignSaving, setReassignSaving] = useState(false);
@@ -151,28 +149,6 @@ export default function DoctorPrescriptionsScreen() {
   useFocusEffect(useCallback(() => {
     loadAll();
     loadBranchDirectory();
-    // Real-time subscription for alt drug suggestions
-    const cu = auth.currentUser;
-    if (!cu) return;
-    const unsub = onSnapshot(
-      query(collection(db, 'doctorPrescriptions'), where('doctorId', '==', cu.uid)),
-      snap => {
-        setPrescriptions(prev => {
-          const updated = [...prev];
-          snap.docChanges().forEach(change => {
-            if (change.type === 'modified') {
-              const idx = updated.findIndex(r => r.id === change.doc.id);
-              if (idx !== -1) {
-                const data = change.doc.data();
-                updated[idx] = { ...updated[idx], ...data, id: change.doc.id };
-              }
-            }
-          });
-          return updated;
-        });
-      }
-    );
-    return unsub;
   }, []));
 
   useEffect(() => {
@@ -207,37 +183,26 @@ export default function DoctorPrescriptionsScreen() {
 
   const loadAll = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      const profile = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
-      setDoctorProfile(profile);
+      const profile = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      setDoctorProfile(profile ? { id: uid, ...profile } : { id: uid, name: 'Doctor' });
 
-      const apptSnap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
+      const appts = await api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []) || [];
       const patMap = new Map();
-      apptSnap.docs.forEach(d => {
-        const data = d.data();
-        if (data.clientId && !patMap.has(data.clientId)) {
-          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || '' });
+      appts.forEach(a => {
+        if (a.clientId && !patMap.has(a.clientId)) {
+          patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '' });
         }
       });
       const enriched = await enrichPatientNames(patMap);
       setPatients(Array.from(enriched.values()));
-
-      // Build name lookup from enriched patient map
       const nameById = {};
       for (const [id, p] of enriched.entries()) nameById[id] = p.name;
 
-      // Load prescriptions — no orderBy to avoid composite index requirement; sort in JS
-      const rxSnap = await getDocs(
-        query(collection(db, 'doctorPrescriptions'), where('doctorId', '==', cu.uid))
-      );
-      const rxList = rxSnap.docs.map(d => {
-        const data = d.data();
-        // Normalize: handle both flat format (from PatientDetail) and array format
+      const rxRaw = await api(`/api/v1/medical/prescriptions/doctor/${uid}`).catch(() => []) || [];
+      const rxList = rxRaw.map(data => {
         let medications = data.medications;
         if (!medications || medications.length === 0) {
           if (data.medication) {
@@ -246,37 +211,12 @@ export default function DoctorPrescriptionsScreen() {
             medications = [];
           }
         }
-        // Treat stored "Patient" as missing — it was a placeholder saved at creation time
         const storedName = data.patientName && data.patientName !== 'Patient' ? data.patientName : null;
-        const patientName = storedName || (data.patientId && nameById[data.patientId]) || '';
-        // Fallback diagnosis for old flat-format records that stored text in `instructions`
+        const patientName = storedName || (data.patientId && nameById[data.patientId]) || 'Patient';
         const diagnosis = data.diagnosis || data.instructions || '';
-        return { id: d.id, ...data, medications, patientName, diagnosis };
+        return { ...data, medications, patientName, diagnosis };
       });
-      rxList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-
-      // For any prescription still missing a real name, fetch directly from auth collection
-      const isNameMissing = r => !r.patientName || r.patientName === 'Patient';
-      const missingIds = [...new Set(
-        rxList.filter(isNameMissing).map(r => r.patientId).filter(Boolean)
-      )];
-      if (missingIds.length > 0) {
-        await Promise.all(missingIds.map(async id => {
-          try {
-            const snap = await getDoc(doc(db, 'auth', id));
-            if (snap.exists()) {
-              const d = snap.data();
-              const name = d.name || d.displayName || d.fullName || null;
-              if (name) {
-                rxList.forEach(r => { if (r.patientId === id && isNameMissing(r)) r.patientName = name; });
-              }
-            }
-          } catch {}
-        }));
-      }
-      // Final fallback label
-      rxList.forEach(r => { if (!r.patientName) r.patientName = 'Patient'; });
-
+      rxList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setPrescriptions(rxList);
     } catch (err) {
       console.error('DoctorPrescriptions load error:', err);
@@ -289,22 +229,15 @@ export default function DoctorPrescriptionsScreen() {
   const loadBranchDirectory = async () => {
     setLoadingBranchDirectory(true);
     try {
-      const phSnap = await getDocs(query(collection(db, 'pharmacies'), where('status', '==', 'active')));
+      const pharmacies = await api('/api/v1/pharmacies?status=active').catch(() => []) || [];
       const rows = [];
-      for (const phDoc of phSnap.docs) {
-        const ph = { id: phDoc.id, ...phDoc.data() };
+      for (const ph of pharmacies) {
         const parentName = ph.pharmacyName || ph.name || '';
-        const brSnap = await getDocs(query(
-          collection(db, 'pharmacyBranches'),
-          where('pharmacyId', '==', ph.id),
-          where('status', '==', 'active'),
-        ));
-        brSnap.docs.forEach(d => {
-          const br = d.data();
-          const branchName = br.branchName || br.name || d.id;
+        const branches = await api(`/api/v1/pharmacy-branches?pharmacyId=${ph.id}&status=active`).catch(() => []) || [];
+        branches.forEach(br => {
           rows.push({
-            branchId: d.id,
-            branchName,
+            branchId: br.id,
+            branchName: br.branchName || br.name || br.id,
             pharmacyId: ph.id,
             pharmacyName: parentName,
             addressLine: [br.address, br.city].filter(Boolean).join(', '),
@@ -325,6 +258,11 @@ export default function DoctorPrescriptionsScreen() {
   };
 
   const openEdit = (rx) => {
+    // A delivered prescription is a closed record — it is never edited afterwards.
+    if (isRxDelivered(rx)) {
+      Alert.alert('Delivered', 'This prescription has been delivered by the pharmacy and can no longer be edited.');
+      return;
+    }
     setEditing(rx);
     setForm({
       patientId: rx.patientId || '',
@@ -345,11 +283,9 @@ export default function DoctorPrescriptionsScreen() {
 
   const loadPatientAllergies = async (patientId) => {
     try {
-      const snap = await getDoc(doc(db, 'auth', patientId));
-      if (snap.exists()) {
-        const al = snap.data().allergies || '';
-        setPatientAllergies(al ? al.toLowerCase().split(/[,;]/).map(s => s.trim()) : []);
-      }
+      const data = await api(`/api/v1/patients/${patientId}`).catch(() => null);
+      const al = data?.allergies || '';
+      setPatientAllergies(al ? al.toLowerCase().split(/[,;]/).map(s => s.trim()) : []);
     } catch {}
   };
 
@@ -420,7 +356,7 @@ export default function DoctorPrescriptionsScreen() {
 
     setSaving(true);
     try {
-      const cu = auth.currentUser;
+      const uid = await getStoredUserId();
       const prescriptionRef = editing?.prescriptionRef || generatePrescriptionRef();
       const payload = {
         patientId: form.patientId,
@@ -446,7 +382,6 @@ export default function DoctorPrescriptionsScreen() {
           prn: m.direction === 'As Needed (PRN)' ? { indication: m.prn?.indication || '', maxPerDay: m.prn?.maxPerDay || '', interval: m.prn?.interval || '' } : null,
           refill: m.refill?.allowed ? { allowed: true, count: parseInt(m.refill.count) || 0, expiryDate: m.refill.expiryDate || '' } : { allowed: false },
           schedule: m.schedule || [],
-          // Form-specific fields
           ...(m.drugForm === 'Syrup' && { volumeUnit: m.volumeUnit || 'ml', shakeWell: m.shakeWell || false }),
           ...(m.drugForm === 'Injection' && { route: m.route || '', injectionSite: m.injectionSite?.trim() || '' }),
           ...(m.drugForm === 'Cream' && { applicationSite: m.applicationSite?.trim() || '' }),
@@ -455,28 +390,22 @@ export default function DoctorPrescriptionsScreen() {
           ...(m.drugForm === 'Patch' && { applicationSite: m.applicationSite?.trim() || '', changeInterval: m.changeInterval || '', rotationRequired: m.rotationRequired || false }),
           ...(m.drugForm === 'Suppository' && { route: m.route || '' }),
         })),
-        updatedAt: serverTimestamp(),
       };
       if (editing) {
-        await updateDoc(doc(db, 'doctorPrescriptions', editing.id), payload);
+        await api(`/api/v1/medical/prescriptions/${editing.id}`, { method: 'PATCH', body: payload });
       } else {
-        const newRx = await addDoc(collection(db, 'doctorPrescriptions'), {
-          ...payload,
-          doctorId: cu.uid,
-          doctorName: doctorProfile?.name || '',
-          date: TODAY,
-          pharmacyStatus: form.pharmacyId ? 'sent' : null,
-          createdAt: serverTimestamp(),
+        const newRx = await api('/api/v1/medical/prescriptions', {
+          method: 'POST',
+          body: { ...payload, doctorId: uid, doctorName: doctorProfile?.name || '', date: TODAY, pharmacyStatus: form.pharmacyId ? 'sent' : null },
         });
-        await addDoc(collection(db, 'patientTimeline'), {
-          patientId: form.patientId,
-          type: 'PRESCRIPTION',
-          title: `Prescription created by Dr. ${doctorProfile?.name || 'Doctor'}`,
-          status: 'PENDING',
-          relatedId: newRx.id,
-          actor: { role: 'DOCTOR', name: doctorProfile?.name || 'Doctor' },
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+        api('/api/v1/patient-timeline', {
+          method: 'POST',
+          body: {
+            patientId: form.patientId, type: 'PRESCRIPTION',
+            title: `Prescription created by Dr. ${doctorProfile?.name || 'Doctor'}`,
+            status: 'PENDING', relatedId: newRx?.id,
+            actor: { role: 'DOCTOR', name: doctorProfile?.name || 'Doctor' },
+          },
         }).catch(() => {});
       }
       setShowModal(false);
@@ -494,11 +423,38 @@ export default function DoctorPrescriptionsScreen() {
       const updatedMeds = rx.medications.map((m, i) =>
         i === medIndex ? { ...m, drugStatus: 'approved_replacement', approvedByDoctorName: doctorProfile?.name || 'Doctor' } : m
       );
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), { medications: updatedMeds, updatedAt: serverTimestamp() });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: updatedMeds } });
       setAltApprovalRx(prev => prev ? { ...prev, medications: updatedMeds } : null);
       setPrescriptions(prev => prev.map(r => r.id === rx.id ? { ...r, medications: updatedMeds } : r));
     } catch { Alert.alert('Error', 'Could not approve. Try again.'); }
     finally { setAltSaving(false); }
+  };
+
+  // Pharmacy clinical-impact notes: the branch cannot hand the drug over, and the
+  // patient never sees the note, until the prescribing doctor rules on it here.
+  const setPharmacyNoteApproval = async (rx, medIndex, noteIndex, approvalStatus) => {
+    setAltSaving(true);
+    try {
+      const updatedMeds = (rx.medications || []).map((m, i) => {
+        if (i !== medIndex) return m;
+        const notes = Array.isArray(m.pharmacyNotes) ? [...m.pharmacyNotes] : [];
+        if (!notes[noteIndex]) return m;
+        notes[noteIndex] = {
+          ...notes[noteIndex],
+          approvalStatus,
+          approvedByDoctorName: doctorProfile?.name || 'Doctor',
+          approvedAt: new Date().toISOString(),
+        };
+        return { ...m, pharmacyNotes: notes };
+      });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: updatedMeds } });
+      setPrescriptions(prev => prev.map(r => r.id === rx.id ? { ...r, medications: updatedMeds } : r));
+      setViewingRx(prev => prev && prev.id === rx.id ? { ...prev, medications: updatedMeds } : prev);
+    } catch {
+      Alert.alert('Error', `Could not ${approvalStatus === 'approved' ? 'approve' : 'reject'} the note.`);
+    } finally {
+      setAltSaving(false);
+    }
   };
 
   const rejectAlternative = async (rx, medIndex) => {
@@ -507,7 +463,7 @@ export default function DoctorPrescriptionsScreen() {
       const updatedMeds = rx.medications.map((m, i) =>
         i === medIndex ? { ...m, drugStatus: 'not_available', alternativeSuggested: null } : m
       );
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), { medications: updatedMeds, updatedAt: serverTimestamp() });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: updatedMeds } });
       setAltApprovalRx(prev => prev ? { ...prev, medications: updatedMeds } : null);
       setPrescriptions(prev => prev.map(r => r.id === rx.id ? { ...r, medications: updatedMeds } : r));
     } catch { Alert.alert('Error', 'Could not reject. Try again.'); }
@@ -538,7 +494,7 @@ export default function DoctorPrescriptionsScreen() {
             }
           : m
       );
-      await updateDoc(doc(db, 'doctorPrescriptions', reassignRx.id), { medications: updatedMeds, updatedAt: serverTimestamp() });
+      await api(`/api/v1/medical/prescriptions/${reassignRx.id}`, { method: 'PATCH', body: { medications: updatedMeds } });
       setPrescriptions(prev => prev.map(r => r.id === reassignRx.id ? { ...r, medications: updatedMeds } : r));
       setReassignRx(null);
       setReassignBranchId('');
@@ -550,11 +506,16 @@ export default function DoctorPrescriptionsScreen() {
   };
 
   const handleDelete = (rxId) => {
+    const target = prescriptions.find(r => r.id === rxId);
+    if (isRxDelivered(target)) {
+      Alert.alert('Delivered', 'This prescription has been delivered by the pharmacy and can no longer be deleted.');
+      return;
+    }
     Alert.alert('Delete Prescription', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await deleteDoc(doc(db, 'doctorPrescriptions', rxId));
+          await api(`/api/v1/medical/prescriptions/${rxId}`, { method: 'DELETE' });
           setPrescriptions(prev => prev.filter(r => r.id !== rxId));
         } catch {
           Alert.alert('Error', 'Could not delete prescription.');
@@ -598,11 +559,12 @@ export default function DoctorPrescriptionsScreen() {
   const renderRx = ({ item }) => {
     const sm = STATUS_META[item.status] || STATUS_META.active;
     const hasPendingAlts = (item.medications || []).some(m => m.drugStatus === 'alternative_suggested');
+    const hasPendingNotes = (item.medications || []).some(hasPendingDoctorNote);
     const hasTransferred = (item.medications || []).some(m => m.drugStatus === 'transferred');
     const hasUnavailable = (item.medications || []).some(m => m.drugStatus === 'not_available') && !hasTransferred;
     const pm = item.pharmacyStatus ? (PHARMACY_STATUS_META[item.pharmacyStatus] || null) : null;
     return (
-      <TouchableOpacity activeOpacity={0.92} onPress={() => setViewingRx(item)} style={[styles.rxCard, { borderLeftWidth: 3, borderLeftColor: sm.border }]}>
+      <TouchableOpacity activeOpacity={0.92} onPress={() => { setShowRxAll(false); setViewingRx(item); }} style={[styles.rxCard, { borderLeftWidth: 3, borderLeftColor: sm.border }]}>
         <View style={styles.rxHeader}>
           <View style={{ flex: 1 }}>
             <Text style={styles.rxPatient}>{item.patientName || 'Patient'}</Text>
@@ -630,6 +592,13 @@ export default function DoctorPrescriptionsScreen() {
         {hasPendingAlts && (
           <TouchableOpacity style={styles.altAlert} onPress={() => setAltApprovalRx(item)}>
             <Text style={styles.altAlertText}>🔁 Pharmacy suggested alternatives — Tap to review</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Clinical-impact note awaiting this doctor; delivery is blocked until ruled on */}
+        {hasPendingNotes && (
+          <TouchableOpacity style={styles.noteAlert} onPress={() => { setShowRxAll(false); setViewingRx(item); }}>
+            <Text style={styles.noteAlertText}>📝 Pharmacy clinical note needs your approval — Tap to review</Text>
           </TouchableOpacity>
         )}
 
@@ -806,10 +775,52 @@ export default function DoctorPrescriptionsScreen() {
               <ScrollView>
                 <Text style={styles.altModalSub}>{viewingRx.patientName || 'Patient'} · {viewingRx.diagnosis || '—'}</Text>
                 <Text style={[styles.altOriginalLabel, { marginBottom: 8 }]}>Date: {viewingRx.date || '—'} {viewingRx.prescriptionRef ? `· ${viewingRx.prescriptionRef}` : ''}</Text>
+                {showRxAll && (
+                  <View style={styles.rxAllBox}>
+                    {[
+                      ['Status', viewingRx.status],
+                      ['Follow-up', viewingRx.followUpDate],
+                      ['Pharmacy', viewingRx.pharmacyName],
+                      ['Branch', viewingRx.branchName],
+                      ['Reference', viewingRx.prescriptionRef],
+                    ].filter(([, v]) => v).map(([k, v]) => (
+                      <View key={k} style={styles.rxAllRow}>
+                        <Text style={styles.rxAllKey}>{k}</Text>
+                        <Text style={styles.rxAllVal}>{String(v)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
                 {(viewingRx.medications || []).map((m, i) => (
                   <View key={i} style={styles.altMedCard}>
                     <Text style={styles.altOriginalName}>{m.name || 'Medication'}{m.strength ? ` (${m.strength})` : ''}</Text>
                     <Text style={styles.altOriginalLabel}>{[m.dosage, m.frequency, m.duration].filter(Boolean).join(' · ') || '—'}</Text>
+                    {showRxAll && (
+                      <View style={{ marginTop: 6, borderTopWidth: 1, borderTopColor: '#eef2f7', paddingTop: 6 }}>
+                        {[
+                          ['Strength', m.strength],
+                          ['Form', m.drugForm],
+                          ['Dosage', m.dosage],
+                          ['Frequency', m.frequency],
+                          ['Direction', m.direction],
+                          ['Duration', m.duration ? `${m.duration} ${m.durationUnit || ''}`.trim() : ''],
+                          ['Special instructions', m.specialInstructions],
+                          ['PRN indication', m.prn?.indication],
+                          ['PRN max/day', m.prn?.maxPerDay],
+                          ['PRN interval', m.prn?.interval],
+                          ['Refill allowed', m.refill ? (m.refill.allowed ? 'Yes' : 'No') : ''],
+                          ['Refill count', m.refill?.count],
+                          ['Refill expiry', m.refill?.expiryDate],
+                          ['Schedule', Array.isArray(m.schedule) && m.schedule.length ? m.schedule.join(', ') : ''],
+                          ['Drug status', m.drugStatus],
+                        ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '').map(([k, v]) => (
+                          <View key={k} style={styles.rxAllRow}>
+                            <Text style={styles.rxAllKey}>{k}</Text>
+                            <Text style={styles.rxAllVal}>{String(v)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                     {m.alternativeSuggested ? (
                       <Text style={{ marginTop: 4, fontSize: 12, color: m.drugStatus === 'approved_replacement' ? '#16a34a' : '#7c3aed', fontWeight: '700' }}>
                         🔁 {m.alternativeSuggested} · {m.drugStatus === 'approved_replacement'
@@ -823,11 +834,52 @@ export default function DoctorPrescriptionsScreen() {
                         This drug ({m.name || 'Drug'}) is transfered to branch ({m.transferBranchName}{m.transferBranchAddress ? `, ${m.transferBranchAddress}` : ''}).
                       </Text>
                     ) : null}
+                    {(Array.isArray(m.pharmacyNotes) ? m.pharmacyNotes : []).map((n, ni) => {
+                      const pending = n?.requiresDoctorApproval && (n.approvalStatus || 'pending_doctor') === 'pending_doctor';
+                      return (
+                        <View key={ni} style={styles.rxNoteBox}>
+                          <Text style={styles.rxNoteLabel}>{n.label || n.type || 'Pharmacy note'}</Text>
+                          <Text style={styles.rxNoteText}>{n.note}</Text>
+                          <Text style={[styles.rxNoteStatus, {
+                            color: !n.requiresDoctorApproval ? '#64748b'
+                              : n.approvalStatus === 'approved' ? '#16a34a'
+                              : n.approvalStatus === 'rejected' ? '#dc2626' : '#d97706',
+                          }]}>
+                            {!n.requiresDoctorApproval ? 'Operational'
+                              : n.approvalStatus === 'approved' ? `Approved${n.approvedByDoctorName ? ` · Dr. ${n.approvedByDoctorName}` : ''}`
+                              : n.approvalStatus === 'rejected' ? `Rejected${n.approvedByDoctorName ? ` · Dr. ${n.approvedByDoctorName}` : ''}`
+                              : 'Pending your approval — the pharmacy cannot deliver this drug yet'}
+                          </Text>
+                          {pending && (
+                            <View style={styles.altActions}>
+                              <TouchableOpacity
+                                style={[styles.altBtn, styles.altBtnApprove, altSaving && { opacity: 0.5 }]}
+                                disabled={altSaving}
+                                onPress={() => setPharmacyNoteApproval(viewingRx, i, ni, 'approved')}
+                              >
+                                <Text style={styles.altBtnText}>{altSaving ? '…' : '✅ Approve'}</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.altBtn, styles.altBtnReject, altSaving && { opacity: 0.5 }]}
+                                disabled={altSaving}
+                                onPress={() => setPharmacyNoteApproval(viewingRx, i, ni, 'rejected')}
+                              >
+                                <Text style={[styles.altBtnText, { color: '#dc2626' }]}>{altSaving ? '…' : '❌ Reject'}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
                   </View>
                 ))}
                 {viewingRx.instructions ? <Text style={[styles.altOriginalLabel, { marginTop: 8 }]}>Instructions: {viewingRx.instructions}</Text> : null}
               </ScrollView>
             )}
+            <TouchableOpacity style={styles.rxViewAllBtn} onPress={() => setShowRxAll(v => !v)} activeOpacity={0.85}>
+              <Ionicons name={showRxAll ? 'chevron-up' : 'list'} size={16} color={DoctorColors.primary} />
+              <Text style={styles.rxViewAllText}>{showRxAll ? 'Hide details' : 'View all'}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1570,6 +1622,20 @@ const styles = StyleSheet.create({
   },
   altAlertText: { fontSize: 12, color: '#7c3aed', fontWeight: '600' },
 
+  // Pharmacy clinical-impact notes
+  noteAlert: {
+    backgroundColor: '#fffbeb', borderRadius: 8, padding: 8, marginBottom: 8,
+    borderWidth: 1, borderColor: '#fde68a',
+  },
+  noteAlertText: { fontSize: 12, color: '#b45309', fontWeight: '600' },
+  rxNoteBox: {
+    marginTop: 8, backgroundColor: '#f8fafc', borderRadius: 8,
+    borderWidth: 1, borderColor: '#e2e8f0', padding: 8,
+  },
+  rxNoteLabel: { fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.3 },
+  rxNoteText: { fontSize: 13, color: DoctorColors.text, marginTop: 2 },
+  rxNoteStatus: { fontSize: 11, fontWeight: '700', marginTop: 3 },
+
   // Alternative approval modal
   altModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   altModalCard: {
@@ -1585,6 +1651,12 @@ const styles = StyleSheet.create({
   },
   altOriginalLabel: { fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 },
   altOriginalName: { fontSize: 15, fontWeight: '700', color: DoctorColors.text },
+  rxAllBox: { backgroundColor: '#f8fafc', borderRadius: 10, borderWidth: 1, borderColor: '#eef2f7', padding: 10, marginBottom: 10 },
+  rxAllRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 12 },
+  rxAllKey: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', flexShrink: 0 },
+  rxAllVal: { fontSize: 13, color: '#334155', flex: 1, textAlign: 'right' },
+  rxViewAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: DoctorColors.primary },
+  rxViewAllText: { fontSize: 14, fontWeight: '700', color: DoctorColors.primary },
   altArrow: { fontSize: 12, color: '#7c3aed', fontWeight: '700', marginVertical: 6 },
   altSuggestedName: { fontSize: 15, fontWeight: '700', color: '#7c3aed', marginBottom: 12 },
   altActions: { flexDirection: 'row', gap: 10 },

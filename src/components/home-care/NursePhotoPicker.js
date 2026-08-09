@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { auth } from '../../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uploadNursePhoto } from '../../services/homeCareService';
 import { useHomeCareNurse } from '../../contexts/HomeCareNurseContext';
 import { HomeCareColors as C } from '../../constants/homeCareColors';
@@ -27,7 +27,7 @@ export default function NursePhotoPicker({ nurse, size = 56, style }) {
     });
     if (result.canceled || !result.assets?.[0]?.uri) return;
 
-    const nurseId = auth.currentUser?.uid || profile?.id;
+    const nurseId = await AsyncStorage.getItem('th.userId') || profile?.id;
     if (!nurseId) {
       Alert.alert('Error', 'You must be signed in to upload a photo.');
       return;

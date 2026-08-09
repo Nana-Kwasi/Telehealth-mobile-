@@ -5,11 +5,7 @@ import {
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, addDoc, updateDoc,
-  doc, serverTimestamp, setDoc, getDoc,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import { logAction, A } from '../../utils/auditLogger';
@@ -66,18 +62,13 @@ export default function DoctorAppointmentsScreen() {
 
   const loadAll = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      const profile = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
-      setDoctorProfile(profile);
+      const profile = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      setDoctorProfile(profile ? { id: uid, ...profile } : { id: uid, name: 'Doctor' });
 
-      const snap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
-      const appts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setAppointments(appts.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+      const appts = await api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []) || [];
 
       const patMap = new Map();
       appts.forEach(a => {
@@ -86,8 +77,6 @@ export default function DoctorAppointmentsScreen() {
         }
       });
       const enrichedPats = await enrichPatientNames(patMap);
-
-      // Back-fill real names onto loaded appointments
       const nameMap = {};
       for (const [id, p] of enrichedPats.entries()) nameMap[id] = p.name;
       const enrichedAppts = appts.map(a => ({
@@ -95,7 +84,16 @@ export default function DoctorAppointmentsScreen() {
         clientName: (a.clientId && nameMap[a.clientId]) ? nameMap[a.clientId] : (a.clientName || 'Patient'),
       }));
 
-      setAppointments(enrichedAppts.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+      // Current first: upcoming (today onward) sorted soonest→latest, then past
+      // appointments most-recent first.
+      const byCurrentFirst = (a, b) => {
+        const ad = a.date || '', bd = b.date || '';
+        const aUp = ad >= TODAY, bUp = bd >= TODAY;
+        if (aUp !== bUp) return aUp ? -1 : 1;
+        if (aUp) return ad.localeCompare(bd) || (a.time || '').localeCompare(b.time || '');
+        return bd.localeCompare(ad);
+      };
+      setAppointments(enrichedAppts.sort(byCurrentFirst));
       setPatients(Array.from(enrichedPats.values()));
     } catch (err) {
       console.error('DoctorAppointments load error:', err);
@@ -127,13 +125,7 @@ export default function DoctorAppointmentsScreen() {
   const updateStatus = async (apptId, newStatus, appt) => {
     setUpdating(apptId);
     try {
-      const cu = auth.currentUser;
-      await updateDoc(doc(db, 'doctorAppointments', apptId), { status: newStatus, updatedAt: serverTimestamp() });
-      if (newStatus === 'confirmed' && appt?.clientId) {
-        await setDoc(doc(db, 'doctors', cu.uid, 'patients', appt.clientId), {
-          patientId: appt.clientId, name: appt.clientName || 'Patient', addedAt: serverTimestamp(),
-        }, { merge: true });
-      }
+      await api(`/api/v1/medical/appointments/${apptId}`, { method: 'PATCH', body: { status: newStatus } });
       setAppointments(prev => prev.map(a => a.id === apptId ? { ...a, status: newStatus } : a));
       setSelectedAppt(null);
     } catch {
@@ -145,6 +137,16 @@ export default function DoctorAppointmentsScreen() {
 
   // ── Book appointment ──
   const openBook = (dateStr) => {
+    // Patients only appear once they've booked with this doctor. With none, the
+    // booking form's patient picker is empty and handleBook can never succeed —
+    // say so up front instead of opening an unusable form.
+    if (patients.length === 0) {
+      Alert.alert(
+        'No patients yet',
+        'You can schedule appointments once a patient has booked with you.',
+      );
+      return;
+    }
     setBookDate(dateStr || TODAY);
     setBookForm({ patientId: '', patientName: '', time: '09:00', type: 'video', reason: '' });
     setScheduleDay(null);
@@ -157,43 +159,25 @@ export default function DoctorAppointmentsScreen() {
     if (!bookDate) { Alert.alert('Required', 'Please enter a date.'); return; }
     setSaving(true);
     try {
-      const cu = auth.currentUser;
-
-      // Check system config limit
-      const cfgSnap = await getDoc(doc(db, 'systemConfig', 'settings')).catch(() => null);
-      const cfgData = cfgSnap?.exists() ? cfgSnap.data() : {};
-      const maxPerDay = cfgData?.appointments?.maxApptPerDoctorPerDay ?? 20;
-      const todaySnap = await getDocs(
-        query(collection(db, 'doctorAppointments'),
-          where('doctorId', '==', cu.uid), where('date', '==', bookDate))
-      );
-      if (todaySnap.size >= maxPerDay) {
-        Alert.alert('Limit Reached', `Maximum ${maxPerDay} appointments per day reached.`);
-        return;
-      }
-
-      const ref = await addDoc(collection(db, 'doctorAppointments'), {
-        doctorId: cu.uid,
-        doctorName: doctorProfile?.name || '',
-        doctorSpecialization: doctorProfile?.specialty || doctorProfile?.specialization || '',
-        clientId: bookForm.patientId,
-        clientName: bookForm.patientName,
-        date: bookDate,
-        time: bookForm.time,
-        consultationType: bookForm.type,
-        reason: bookForm.reason.trim(),
-        status: 'confirmed',
-        scheduledByDoctor: true,
-        createdAt: serverTimestamp(),
+      const uid = await getStoredUserId();
+      // Backend wants { doctorId, patientId, scheduledAt, notes, status }. Combine
+      // date+time into the LocalDateTime and fold the consultation type into notes.
+      const scheduledAt = `${bookDate}T${(bookForm.time || '09:00')}:00`;
+      const notes = [bookForm.type ? `[${bookForm.type}]` : '', bookForm.reason?.trim() || ''].filter(Boolean).join(' ').trim();
+      const created = await api('/api/v1/medical/appointments', {
+        method: 'POST',
+        body: {
+          doctorId: uid,
+          patientId: bookForm.patientId,
+          scheduledAt,
+          notes,
+          status: 'confirmed', // the doctor is scheduling it directly — no approval needed
+        },
       });
       logAction(A.APPOINTMENT_BOOKED, {
-        appointmentId: ref.id, patientId: bookForm.patientId,
+        appointmentId: created?.id, patientId: bookForm.patientId,
         patientName: bookForm.patientName, date: bookDate, type: bookForm.type,
       }, 'doctor');
-      // Add patient to doctor's subcollection
-      await setDoc(doc(db, 'doctors', cu.uid, 'patients', bookForm.patientId), {
-        patientId: bookForm.patientId, name: bookForm.patientName, addedAt: serverTimestamp(),
-      }, { merge: true });
       setShowBook(false);
       await loadAll();
       Alert.alert('Booked', `Appointment booked with ${bookForm.patientName} on ${bookDate}.`);
@@ -453,8 +437,11 @@ export default function DoctorAppointmentsScreen() {
                   <View style={styles.detailRows}>
                     <Text style={styles.detailRow}>📅 {selectedAppt.date}   🕐 {selectedAppt.time || '—'}</Text>
                     <Text style={styles.detailRow}>🎥 {selectedAppt.consultationType || 'Consultation'}</Text>
+                    {selectedAppt.clientEmail ? <Text style={styles.detailRow}>✉️ {selectedAppt.clientEmail}</Text> : null}
+                    {(selectedAppt.clientPhone || selectedAppt.patientPhone) ? <Text style={styles.detailRow}>📞 {selectedAppt.clientPhone || selectedAppt.patientPhone}</Text> : null}
                     {selectedAppt.reason ? <Text style={styles.detailRow}>📝 {selectedAppt.reason}</Text> : null}
                     {selectedAppt.consultationFee ? <Text style={styles.detailRow}>💰 GHS {selectedAppt.consultationFee}</Text> : null}
+                    <Text style={styles.detailRow}>🔖 {selectedAppt.prescriptionRef || selectedAppt.appointmentRef || selectedAppt.id}</Text>
                   </View>
                   <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.border, alignSelf: 'flex-start', marginBottom: 16 }]}>
                     <Text style={[styles.statusText, { color: sc.text }]}>{sc.label}</Text>

@@ -5,8 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { ScanColors as C } from '../../constants/colors';
 import { normalizeDiagnosticOrderStatus, patientMobileStatusStyleKey } from '../../utils/diagnosticOrderStatus';
 
@@ -37,14 +36,12 @@ export default function ScanOrdersScreen({ profile }) {
       const pid = profile?.id;
       if (!pid) return;
       const isBranch = profile?.role === 'scan_branch';
-      const snap = isBranch
-        ? await getDocs(query(collection(db, 'diagnosticOrders'), where('branchId', '==', pid)))
-        : await getDocs(
-            query(collection(db, 'diagnosticOrders'), where('centerId', '==', pid), where('centerType', '==', 'scan')),
-          );
-      let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (isBranch) list = list.filter((o) => o.centerType === 'scan');
-      list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      const rawOrders = isBranch
+        ? await api(`/api/v1/diagnostics/operations/orders?branchId=${pid}`).catch(() => [])
+        : await api(`/api/v1/diagnostics/operations/orders?centerId=${pid}&centerType=scan`).catch(() => []);
+      let list = rawOrders || [];
+      if (isBranch) list = list.filter(o => o.centerType === 'scan');
+      list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setOrders(list);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -57,6 +54,7 @@ export default function ScanOrdersScreen({ profile }) {
     return statusMatch && searchMatch;
   });
 
+  const detailScreen = profile?.role === 'scan_branch' ? 'ScanBranchOrderDetail' : 'ScanOrderDetail';
   const verifyScreen = profile?.role === 'scan_branch' ? 'ScanBranchVerify' : 'ScanVerify';
 
   const renderItem = ({ item }) => {
@@ -64,7 +62,11 @@ export default function ScanOrdersScreen({ profile }) {
     const sc = STATUS_COLORS[sk] || STATUS_COLORS.pending;
     const iconName = SCAN_ICONS[item.testType] || 'scan-outline';
     return (
-      <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.card}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate(detailScreen, { orderId: item.id })}
+      >
         <View style={styles.cardHeader}>
           <View style={styles.typeChip}>
             <Ionicons name={iconName} size={14} color={C.primary} />
@@ -78,9 +80,11 @@ export default function ScanOrdersScreen({ profile }) {
         <Text style={styles.cardSub}>Order ID: {item.orderId || item.id.slice(0, 8).toUpperCase()}</Text>
         {item.notes ? <Text style={styles.notes} numberOfLines={2}>{item.notes}</Text> : null}
         <Text style={styles.dateText}>
-          {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
+          {item.createdAt
+            ? new Date(item.createdAt.seconds ? item.createdAt.seconds * 1000 : item.createdAt).toLocaleDateString()
+            : 'Recently'}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 

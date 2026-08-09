@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Switch, ActivityIndicator, Alert, Image,
+  TextInput, Switch, ActivityIndicator, Alert, Image, Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { auth, db, storage } from '../../services/firebaseConfig';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { signOut, updatePassword, updateEmail } from 'firebase/auth';
+import { api, uploadFile } from '../../services/apiClient';
+import { performLogout } from '../../services/authService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TherapistColors } from '../../constants/colors';
+import { pickAndUploadAvatar } from '../../utils/profileImage';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
+import {
+  changeTherapistLoginEmail,
+  changeTherapistPassword,
+  mapEmailChangeError,
+  mapPasswordChangeError,
+} from '../../services/therapistEmailChangeService';
 
 const SPECIALIZATIONS = ['CBT','Trauma','Anxiety & Depression','Couples Therapy','Teen & Adolescent','Family Therapy','Substance Abuse','PTSD','Grief & Loss','Other'];
 const LANGUAGES = ['English','Spanish','French','Arabic','Mandarin','Portuguese','Other'];
@@ -19,29 +25,62 @@ const LANGUAGES = ['English','Spanish','French','Arabic','Mandarin','Portuguese'
 const TherapistSettingsScreen = ({ navigation }) => {
   const [profile, setProfile] = useState({
     name: '', email: '', phone: '', bio: '', specialization: '', experience: '',
-    languages: [], photoURL: '', availabilityStatus: 'available',
+    languages: [], photoURL: '', availabilityStatus: 'available', sessionRate: '',
     location: '', country: '', city: '', area: '', region: '', street: '', ghanaDigitalAddress: '', latitude: null, longitude: null,
   });
   const [notifications, setNotifications] = useState({ sessionReminders: true, newMessages: true, systemUpdates: true });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [activeSection, setActiveSection] = useState('profile');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState('');
+  const [passwordErr, setPasswordErr] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailMsg, setEmailMsg] = useState('');
+  const [emailErr, setEmailErr] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const { detectAddress, loading: locating, message: locationMsg } = useAddressAutofillMobile();
 
-  const currentUser = auth.currentUser;
+  const [therapistId, setTherapistId] = React.useState('');
+  const loginEmail = profile.email || '';
 
-  useEffect(() => { if (currentUser) loadProfile(); }, []);
+  useEffect(() => {
+    AsyncStorage.getItem('th.userId').then(uid => {
+      if (uid) { setTherapistId(uid); loadProfile(uid); }
+    });
+  }, []);
 
-  const loadProfile = async () => {
+  const handleChangeLoginEmail = async () => {
+    setEmailErr('');
+    setEmailMsg('');
+    setEmailSaving(true);
     try {
-      const snap = await getDoc(doc(db, 'therapists', currentUser.uid));
-      if (snap.exists()) {
-        const data = snap.data();
-        setProfile(prev => ({ ...prev, ...data, email: data.email || currentUser.email || '' }));
+      const result = await changeTherapistLoginEmail(newEmail, emailPassword, loginEmail);
+      setEmailMsg(result.message);
+      if (result.type === 'updated' && result.email) {
+        setProfile((p) => ({ ...p, email: result.email }));
+        setNewEmail('');
+        setEmailPassword('');
+      } else if (result.type === 'verification_sent') {
+        setNewEmail('');
+        setEmailPassword('');
       }
+    } catch (e) {
+      setEmailErr(mapEmailChangeError(e));
+    } finally {
+      setEmailSaving(false);
+    }
+  };
+
+  const loadProfile = async (uid) => {
+    try {
+      const data = await api(`/api/v1/therapists/${uid || therapistId}`);
+      if (data) setProfile(prev => ({ ...prev, ...data, name: data.fullName || data.name || prev.name }));
     } catch (e) { console.error('Load profile error:', e); }
     finally { setIsLoading(false); }
   };
@@ -50,12 +89,23 @@ const TherapistSettingsScreen = ({ navigation }) => {
     if (!profile.name.trim()) { Alert.alert('Error', 'Name is required.'); return; }
     setIsSaving(true);
     try {
-      await updateDoc(doc(db, 'therapists', currentUser.uid), {
+      // Only fullName/email/phone/specialization/bio/metadataJson exist on
+      // TherapistPatchRequest — every other key sent flat is dropped by Jackson.
+      // Everything else (experience, languages, location, availabilityStatus,
+      // sessionRate) has to ride in metadataJson, which the backend re-hoists to
+      // the top level on read. That is also how the client-facing session rate
+      // reaches the therapist cards and the payment screen.
+      // Spread the metadata already on the profile first: it also carries keys this
+      // screen has no field for (licenseNumber, specialties, therapyType, religion,
+      // gender, mustChangePassword). Rebuilding the object from scratch would erase
+      // them, since metadataJson is stored as a whole-value replace.
+      const rate = Number(profile.sessionRate);
+      const metadata = {
+        ...(profile.metadata && typeof profile.metadata === 'object' ? profile.metadata : {}),
         name: profile.name,
-        phone: profile.phone,
-        bio: profile.bio,
-        specialization: profile.specialization,
         experience: profile.experience,
+        yearsExperience: profile.experience,
+        languages: profile.languages,
         location: profile.location || '',
         country: profile.country || null,
         city: profile.city || null,
@@ -63,20 +113,19 @@ const TherapistSettingsScreen = ({ navigation }) => {
         region: profile.region || null,
         street: profile.street || null,
         ghanaDigitalAddress: profile.ghanaDigitalAddress || null,
+        availabilityStatus: profile.availabilityStatus,
+        photoURL: profile.photoURL || null,
+        sessionRate: Number.isFinite(rate) && rate > 0 ? rate : null,
         latitude: Number.isFinite(Number(profile.latitude)) ? Number(profile.latitude) : null,
         longitude: Number.isFinite(Number(profile.longitude)) ? Number(profile.longitude) : null,
-        locationMeta: {
-          country: profile.country || null,
-          city: profile.city || null,
-          area: profile.area || null,
-          region: profile.region || null,
-          street: profile.street || null,
-          latitude: Number.isFinite(Number(profile.latitude)) ? Number(profile.latitude) : null,
-          longitude: Number.isFinite(Number(profile.longitude)) ? Number(profile.longitude) : null,
+      };
+      await api(`/api/v1/therapists/${therapistId}`, {
+        method: 'PATCH',
+        body: {
+          fullName: profile.name, phone: profile.phone, bio: profile.bio,
+          specialization: profile.specialization,
+          metadataJson: JSON.stringify(metadata),
         },
-        languages: profile.languages,
-        availabilityStatus: profile.availabilityStatus,
-        updatedAt: serverTimestamp(),
       });
       Alert.alert('Saved', 'Profile updated successfully.');
     } catch (e) {
@@ -85,36 +134,44 @@ const TherapistSettingsScreen = ({ navigation }) => {
   };
 
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 6) { Alert.alert('Error', 'Password must be at least 6 characters.'); return; }
-    if (newPassword !== confirmPassword) { Alert.alert('Error', 'Passwords do not match.'); return; }
+    setPasswordErr('');
+    setPasswordMsg('');
+    setPasswordSaving(true);
     try {
-      await updatePassword(currentUser, newPassword);
-      setNewPassword(''); setConfirmPassword('');
-      Alert.alert('Success', 'Password updated.');
+      const result = await changeTherapistPassword(
+        currentPassword,
+        newPassword,
+        confirmPassword,
+        loginEmail
+      );
+      setPasswordMsg(result.message);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
     } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to update password.');
+      setPasswordErr(mapPasswordChangeError(e));
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
   const handlePickPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission required', 'Photo library access is needed.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1,1], quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      setUploadingPhoto(true);
-      try {
-        const asset = result.assets[0];
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        const storageRef = ref(storage, `therapistPhotos/${currentUser.uid}.jpg`);
-        await uploadBytes(storageRef, blob);
-        const url = await getDownloadURL(storageRef);
-        await updateDoc(doc(db, 'therapists', currentUser.uid), { photoURL: url });
-        setProfile(p => ({ ...p, photoURL: url }));
+    setUploadingPhoto(true);
+    try {
+      // The photo used to be PATCHed to /therapists/{id} as `photoURL`, but
+      // TherapistPatchRequest binds only six fields and none of them is a photo —
+      // Jackson dropped it every time, so the upload succeeded and the picture
+      // was gone on reload. pickAndUploadAvatar saves it on the user record,
+      // which is what every avatar in the app now reads.
+      const url = await pickAndUploadAvatar(therapistId);
+      if (url) {
+        setProfile(p => ({ ...p, photoURL: url, avatarUrl: url }));
         Alert.alert('Success', 'Profile photo updated.');
-      } catch (e) {
-        Alert.alert('Error', 'Failed to upload photo.');
-      } finally { setUploadingPhoto(false); }
+      }
+    } catch (e) {
+      Alert.alert('Could not update photo', e?.message || 'Please try again.');
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
@@ -122,7 +179,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: async () => {
-        await signOut(auth);
+        await performLogout();
         await AsyncStorage.clear();
         navigation.getParent()?.replace('Welcome');
       }},
@@ -152,27 +209,39 @@ const TherapistSettingsScreen = ({ navigation }) => {
   ];
 
   return (
-    <View style={styles.container}>
-      {/* Section Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabs}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScroll}
+        contentContainerStyle={styles.tabsContent}
+      >
         {sections.map(s => (
           <TouchableOpacity
             key={s.id}
-            style={[styles.tab, activeSection===s.id && styles.tabActive]}
+            style={[styles.tab, activeSection === s.id && styles.tabActive]}
             onPress={() => setActiveSection(s.id)}
+            activeOpacity={0.85}
           >
-            <Ionicons name={s.icon} size={16} color={activeSection===s.id ? '#fff' : TherapistColors.textSecondary} />
-            <Text style={[styles.tabText, activeSection===s.id && styles.tabTextActive]}>{s.label}</Text>
+            <Ionicons
+              name={s.icon}
+              size={16}
+              color={activeSection === s.id ? '#fff' : TherapistColors.textSecondary}
+            />
+            <Text style={[styles.tabText, activeSection === s.id && styles.tabTextActive]}>{s.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      <ScrollView style={{ flex:1 }} contentContainerStyle={{ padding:16, paddingBottom:40 }} showsVerticalScrollIndicator={false}>
-
+      <ScrollView
+        style={styles.contentScroll}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* ── Profile Section ── */}
         {activeSection === 'profile' && (
-          <View style={{ gap:14 }}>
-            {/* Photo */}
+          <View style={styles.sectionCard}>
             <View style={styles.photoSection}>
               <TouchableOpacity onPress={handlePickPhoto} style={styles.photoWrap} disabled={uploadingPhoto}>
                 {uploadingPhoto ? (
@@ -195,6 +264,18 @@ const TherapistSettingsScreen = ({ navigation }) => {
             <View>
               <Text style={styles.fieldLabel}>Full Name *</Text>
               <TextInput style={styles.input} value={profile.name} onChangeText={v=>setProfile(p=>({...p,name:v}))} placeholder="Your full name" placeholderTextColor={TherapistColors.textLight} />
+            </View>
+
+            <View>
+              <Text style={styles.fieldLabel}>Login email</Text>
+              <TextInput
+                style={[styles.input, styles.inputReadonly]}
+                value={loginEmail}
+                editable={false}
+                placeholder="—"
+                placeholderTextColor={TherapistColors.textLight}
+              />
+              <Text style={styles.fieldHint}>To change your sign-in email, use Security → Login email.</Text>
             </View>
 
             {/* Phone */}
@@ -268,6 +349,21 @@ const TherapistSettingsScreen = ({ navigation }) => {
               <TextInput style={styles.input} value={profile.experience} onChangeText={v=>setProfile(p=>({...p,experience:v}))} placeholder="e.g. 5" placeholderTextColor={TherapistColors.textLight} keyboardType="numeric" />
             </View>
 
+            {/* Session rate — what a client is charged on the payment screen
+                after choosing this therapist. Left blank, the payment screen
+                shows "Rate not set" rather than a generic plan price. */}
+            <View>
+              <Text style={styles.fieldLabel}>Session Rate (GHS)</Text>
+              <TextInput
+                style={styles.input}
+                value={String(profile.sessionRate ?? '')}
+                onChangeText={v=>setProfile(p=>({...p,sessionRate:v.replace(/[^0-9.]/g,'')}))}
+                placeholder="e.g. 150"
+                placeholderTextColor={TherapistColors.textLight}
+                keyboardType="numeric"
+              />
+            </View>
+
             {/* Languages */}
             <View>
               <Text style={styles.fieldLabel}>Languages</Text>
@@ -280,7 +376,11 @@ const TherapistSettingsScreen = ({ navigation }) => {
               </View>
             </View>
 
-            <TouchableOpacity style={[styles.saveBtn, {opacity:isSaving?0.7:1}]} onPress={handleSaveProfile} disabled={isSaving}>
+            <TouchableOpacity
+              style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
+              onPress={handleSaveProfile}
+              disabled={isSaving}
+            >
               {isSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveBtnText}>Save Profile</Text>}
             </TouchableOpacity>
           </View>
@@ -288,30 +388,119 @@ const TherapistSettingsScreen = ({ navigation }) => {
 
         {/* ── Security Section ── */}
         {activeSection === 'security' && (
-          <View style={{ gap:14 }}>
-            <View style={styles.infoCard}>
-              <Ionicons name="mail-outline" size={20} color={TherapistColors.primary} />
-              <View style={{ flex:1 }}>
-                <Text style={styles.infoCardLabel}>Email Address</Text>
-                <Text style={styles.infoCardValue}>{profile.email || currentUser?.email}</Text>
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionCardTitle}>Login email</Text>
+            <Text style={styles.fieldHint}>
+              Current: <Text style={styles.fieldHintStrong}>{loginEmail || '—'}</Text>. Changing this
+              updates Firebase Authentication and your therapist profile.
+            </Text>
+            {emailErr ? (
+              <View style={styles.alertErr}>
+                <Text style={styles.alertErrText}>{emailErr}</Text>
               </View>
+            ) : null}
+            {emailMsg ? (
+              <View style={styles.alertOk}>
+                <Text style={styles.alertOkText}>{emailMsg}</Text>
+              </View>
+            ) : null}
+            <View>
+              <Text style={styles.fieldLabel}>New login email</Text>
+              <TextInput
+                style={styles.input}
+                value={newEmail}
+                onChangeText={setNewEmail}
+                placeholder="new.email@example.com"
+                placeholderTextColor={TherapistColors.textLight}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+              />
             </View>
+            <View>
+              <Text style={styles.fieldLabel}>Current password</Text>
+              <TextInput
+                style={styles.input}
+                value={emailPassword}
+                onChangeText={setEmailPassword}
+                placeholder="Confirm with your password"
+                placeholderTextColor={TherapistColors.textLight}
+                secureTextEntry
+                autoComplete="password"
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.saveBtn, emailSaving && styles.saveBtnDisabled]}
+              onPress={handleChangeLoginEmail}
+              disabled={emailSaving}
+            >
+              {emailSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.saveBtnText}>Update login email</Text>
+              )}
+            </TouchableOpacity>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionCardTitle}>Change Password</Text>
-              <View style={{ gap:10 }}>
-                <View>
-                  <Text style={styles.fieldLabel}>New Password</Text>
-                  <TextInput style={styles.input} secureTextEntry value={newPassword} onChangeText={setNewPassword} placeholder="At least 6 characters" placeholderTextColor={TherapistColors.textLight} />
+            <View style={styles.subsection}>
+              <Text style={styles.sectionCardTitle}>Change password</Text>
+              <Text style={styles.fieldHint}>Enter your current password, then choose a new one (min. 6 characters).</Text>
+              {passwordErr ? (
+                <View style={styles.alertErr}>
+                  <Text style={styles.alertErrText}>{passwordErr}</Text>
                 </View>
-                <View>
-                  <Text style={styles.fieldLabel}>Confirm Password</Text>
-                  <TextInput style={styles.input} secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Repeat new password" placeholderTextColor={TherapistColors.textLight} />
+              ) : null}
+              {passwordMsg ? (
+                <View style={styles.alertOk}>
+                  <Text style={styles.alertOkText}>{passwordMsg}</Text>
                 </View>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleChangePassword}>
-                  <Text style={styles.saveBtnText}>Update Password</Text>
-                </TouchableOpacity>
+              ) : null}
+              <View>
+                <Text style={styles.fieldLabel}>Current password</Text>
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder="Your current password"
+                  placeholderTextColor={TherapistColors.textLight}
+                  autoComplete="password"
+                />
               </View>
+              <View>
+                <Text style={styles.fieldLabel}>New password</Text>
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="At least 6 characters"
+                  placeholderTextColor={TherapistColors.textLight}
+                  autoComplete="new-password"
+                />
+              </View>
+              <View>
+                <Text style={styles.fieldLabel}>Confirm new password</Text>
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Repeat new password"
+                  placeholderTextColor={TherapistColors.textLight}
+                  autoComplete="new-password"
+                />
+              </View>
+              <TouchableOpacity
+                style={[styles.saveBtn, passwordSaving && styles.saveBtnDisabled]}
+                onPress={handleChangePassword}
+                disabled={passwordSaving}
+              >
+                {passwordSaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveBtnText}>Update password</Text>
+                )}
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={styles.dangerBtn} onPress={handleLogout}>
@@ -323,7 +512,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
 
         {/* ── Availability Section ── */}
         {activeSection === 'availability' && (
-          <View style={{ gap:14 }}>
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Current Status</Text>
             {['available','busy','away','offline'].map(s => (
               <TouchableOpacity
@@ -346,7 +535,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
 
         {/* ── Notifications Section ── */}
         {activeSection === 'notifications' && (
-          <View style={{ gap:14 }}>
+          <View style={styles.sectionCard}>
             {[
               { key:'sessionReminders', label:'Session Reminders', desc:'Get notified before upcoming sessions' },
               { key:'newMessages', label:'New Messages', desc:'Notifications for client messages' },
@@ -369,31 +558,144 @@ const TherapistSettingsScreen = ({ navigation }) => {
         )}
 
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex:1, backgroundColor: TherapistColors.background },
-  loadingContainer: { flex:1, justifyContent:'center', alignItems:'center' },
+  container: { flex: 1, backgroundColor: TherapistColors.background },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  tabsScroll: { backgroundColor:'#fff', borderBottomWidth:1, borderBottomColor: TherapistColors.border },
-  tabs: { padding:12, gap:8 },
-  tab: { flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:14, paddingVertical:8, borderRadius:20, backgroundColor:'#f1f5f9' },
-  tabActive: { backgroundColor: TherapistColors.primary },
-  tabText: { fontSize:13, fontWeight:'600', color: TherapistColors.textSecondary },
-  tabTextActive: { color:'#fff' },
+  tabsScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: TherapistColors.border,
+    maxHeight: 56,
+  },
+  tabsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  tabActive: {
+    backgroundColor: TherapistColors.primary,
+    borderColor: TherapistColors.primary,
+  },
+  tabText: { fontSize: 13, fontWeight: '600', color: TherapistColors.textSecondary },
+  tabTextActive: { color: '#fff' },
 
-  photoSection: { alignItems:'center', paddingVertical:16 },
-  photoWrap: { position:'relative', marginBottom:8 },
-  photo: { width:90, height:90, borderRadius:45 },
-  photoPlaceholder: { width:90, height:90, borderRadius:45, backgroundColor: TherapistColors.primary, justifyContent:'center', alignItems:'center' },
-  photoPlaceholderText: { fontSize:36, fontWeight:'800', color:'#fff' },
-  cameraOverlay: { position:'absolute', bottom:0, right:0, width:28, height:28, borderRadius:14, backgroundColor: TherapistColors.secondary, justifyContent:'center', alignItems:'center', borderWidth:2, borderColor:'#fff' },
-  photoHint: { fontSize:12, color: TherapistColors.textLight },
+  contentScroll: { flex: 1 },
+  contentContainer: { padding: 16, paddingBottom: 40 },
 
-  fieldLabel: { fontSize:13, fontWeight:'600', color: TherapistColors.textSecondary, marginBottom:4 },
-  input: { backgroundColor:'#fff', borderRadius:12, borderWidth:1.5, borderColor: TherapistColors.border, padding:12, fontSize:14, color: TherapistColors.text },
+  sectionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: TherapistColors.border,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+
+  photoSection: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingBottom: 16,
+  },
+  photoWrap: { position: 'relative' },
+  photo: { width: 88, height: 88, borderRadius: 44 },
+  photoPlaceholder: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: TherapistColors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoPlaceholderText: { fontSize: 32, fontWeight: '800', color: '#fff' },
+  cameraOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: TherapistColors.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  photoHint: { fontSize: 12, color: TherapistColors.textLight, marginTop: 10 },
+
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: TherapistColors.textSecondary,
+    marginBottom: 6,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: TherapistColors.textLight,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  fieldHintStrong: { fontWeight: '700', color: TherapistColors.textSecondary },
+  inputReadonly: { backgroundColor: '#eef2f7', color: TherapistColors.textSecondary },
+  alertErr: {
+    backgroundColor: '#fee2e2',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    marginBottom: 8,
+  },
+  alertErrText: { fontSize: 13, color: '#b91c1c', lineHeight: 18 },
+  alertOk: {
+    backgroundColor: '#dcfce7',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#86efac',
+    marginBottom: 8,
+  },
+  alertOkText: { fontSize: 13, color: '#15803d', lineHeight: 18 },
+  input: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: TherapistColors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: TherapistColors.text,
+  },
 
   chip: { paddingHorizontal:13, paddingVertical:7, borderRadius:20, borderWidth:1.5, borderColor: TherapistColors.border, backgroundColor:'#f8fafc', marginRight:8 },
   chipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
@@ -404,8 +706,15 @@ const styles = StyleSheet.create({
   langChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
   langChipText: { fontSize:13, fontWeight:'600', color: TherapistColors.textSecondary },
 
-  saveBtn: { backgroundColor: TherapistColors.primary, borderRadius:12, paddingVertical:15, alignItems:'center' },
-  saveBtnText: { color:'#fff', fontSize:15, fontWeight:'700' },
+  saveBtn: {
+    backgroundColor: TherapistColors.primary,
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  saveBtnDisabled: { opacity: 0.7 },
+  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   locBtn: {
     marginTop: 8,
     alignSelf: 'flex-start',
@@ -426,8 +735,15 @@ const styles = StyleSheet.create({
   infoCardLabel: { fontSize:12, color: TherapistColors.textLight, marginBottom:2 },
   infoCardValue: { fontSize:14, fontWeight:'600', color: TherapistColors.text },
 
-  sectionCard: { backgroundColor:'#fff', borderRadius:14, padding:16, gap:12, shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.04, shadowRadius:4, elevation:1 },
-  sectionCardTitle: { fontSize:16, fontWeight:'700', color: TherapistColors.text },
+  subsection: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#eef2f7',
+  },
+  sectionCardTitle: { fontSize: 16, fontWeight: '700', color: TherapistColors.text, marginBottom: 4 },
   sectionTitle: { fontSize:16, fontWeight:'700', color: TherapistColors.text },
 
   dangerBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor:'#fff0f3', borderRadius:12, paddingVertical:14, borderWidth:1.5, borderColor:'#fecdd3' },

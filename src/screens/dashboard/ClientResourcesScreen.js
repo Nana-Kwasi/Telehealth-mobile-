@@ -13,8 +13,11 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../services/firebaseConfig';
+import { api } from '../../services/apiClient';
+import { getNoteTitle, getNotePreview } from '../../utils/noteDisplayUtils';
+import { hydrateResource } from '../../services/therapistResourcesService';
+import ResourceMedia from '../../components/common/ResourceMedia';
+import { downloadNotePdf, downloadResourcePdf } from '../../utils/brandedPdf';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
@@ -34,6 +37,8 @@ const ClientResourcesScreen = ({ navigation }) => {
   const [selectedWorksheet, setSelectedWorksheet] = useState(null);
   const [worksheetResponses, setWorksheetResponses] = useState({});
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showResourceModal, setShowResourceModal] = useState(false);
+  const [selectedResource, setSelectedResource] = useState(null);
   const [selectedNote, setSelectedNote] = useState(null);
   const [isSubmittingWorksheet, setIsSubmittingWorksheet] = useState(false);
 
@@ -66,162 +71,64 @@ const ClientResourcesScreen = ({ navigation }) => {
   const fetchAssignedResources = async () => {
     try {
       setIsLoading(true);
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
+      const assignedClientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+      if (!assignedClientId) return;
 
-      const allResources = [];
-      const assignedClientId = await AsyncStorage.getItem('th.clientId') || currentUser.uid;
-
-      // Fetch public resources
       try {
-        const publicResourcesQuery = query(
-          collection(db, 'resources'),
-          where('isPublic', '==', true)
+        // Two different stores feed this tab: the therapist's resource library
+        // (/resources — documents, images, audio, video, links) and therapy books.
+        // Only books were ever fetched, so nothing a therapist created on the
+        // Resources screen reached the client at all. Both are scoped by clientId,
+        // which returns shared-with-all plus assigned-to-me.
+        const [libraryData, bookData] = await Promise.all([
+          api(`/api/v1/resources?clientId=${assignedClientId}`).catch(() => []),
+          api(`/api/v1/therapy-books?clientId=${assignedClientId}`).catch(() => []),
+        ]);
+        const library = (Array.isArray(libraryData) ? libraryData : []).map(hydrateResource);
+        const books = (Array.isArray(bookData) ? bookData : []).map(b => ({ ...b, type: 'resource' }));
+        setResources([...library.map(r => ({ ...r, type: 'resource' })), ...books]);
+      } catch { console.log('Resources query failed'); }
+
+      try {
+        const wsData = await api(`/api/v1/therapy-engagement/worksheets?clientId=${assignedClientId}`);
+        // Worksheets are saved as 'assigned'; nothing ever writes 'active', so
+        // this filter hid every worksheet the therapist assigned. Exclude only
+        // what genuinely shouldn't reach a client.
+        const ws = (Array.isArray(wsData) ? wsData : []).filter(
+          w => !['template', 'archived', 'deleted'].includes(String(w.status || 'assigned').toLowerCase()),
         );
-        const publicSnapshot = await getDocs(publicResourcesQuery);
-        const publicResources = publicSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          type: 'public'
+        // The builder's fields/description/instructions round-trip through
+        // metadataJson (the table has no columns for them). Without unpacking it
+        // `worksheet.fields` was always undefined, so the response modal rendered
+        // nothing but a Submit button and the client had no way to answer.
+        setWorksheets(ws.map((w) => {
+          let meta = {};
+          try { meta = w.metadataJson ? JSON.parse(w.metadataJson) : {}; } catch { /* ignore */ }
+          return {
+            ...meta,
+            ...w,
+            type: 'worksheet',
+            goal: meta.goal || w.title || 'Worksheet',
+            description: meta.description || w.prompt || '',
+            instructions: meta.instructions || w.prompt || '',
+            fields: Array.isArray(meta.fields) ? meta.fields : [],
+            // Answers already submitted, and whether the sheet is closed.
+            savedResponses: (() => {
+              try { return w.latestResponse ? JSON.parse(w.latestResponse) : {}; } catch { return {}; }
+            })(),
+            // `submitted` and `completed` both mean the client has answered.
+            isCompleted: ['completed', 'submitted'].includes(String(w.status || '').toLowerCase()),
+          };
         }));
-        allResources.push(...publicResources);
-      } catch (error) {
-        console.log('Public resources query failed:', error);
-      }
+      } catch { console.log('Worksheets query failed'); }
 
-      // Fetch assigned resources
       try {
-        const assignedResourcesQuery = query(collection(db, 'therapistResources'));
-        const assignedSnapshot = await getDocs(assignedResourcesQuery);
-        
-        const assignedResources = assignedSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(resource => {
-            if (resource.assignedClients && resource.assignedClients.includes(assignedClientId)) {
-              return true;
-            }
-            if (resource.targetAudience === 'all') {
-              return true;
-            }
-            if (resource.targetAudience === 'specific' && resource.assignedClients?.includes(assignedClientId)) {
-              return true;
-            }
-            if (['individuals', 'teen', 'couples'].includes(resource.targetAudience)) {
-              return true;
-            }
-            return false;
-          })
-          .map(resource => ({
-            ...resource,
-            type: 'resource'
-          }));
-        
-        allResources.push(...assignedResources);
-      } catch (error) {
-        console.log('Assigned resources query failed:', error);
-      }
-
-      // Remove duplicates
-      const uniqueResources = allResources.filter((resource, index, self) => 
-        index === self.findIndex(r => r.id === resource.id)
-      );
-      
-      uniqueResources.sort((a, b) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
-        return dateB - dateA;
-      });
-
-      setResources(uniqueResources);
-
-      // Fetch worksheets
-      try {
-        const simpleWorksheetsQuery = query(
-          collection(db, 'worksheets'),
-          where('assignedTo', 'array-contains', assignedClientId)
-        );
-        const worksheetsSnapshot = await getDocs(simpleWorksheetsQuery);
-        
-        const assignedWorksheets = worksheetsSnapshot.docs
-          .filter(doc => doc.data().status === 'active')
-          .sort((a, b) => {
-            const dateA = a.data().dateCreated?.toDate ? a.data().dateCreated.toDate() : new Date(a.data().dateCreated);
-            const dateB = b.data().dateCreated?.toDate ? b.data().dateCreated.toDate() : new Date(b.data().dateCreated);
-            return dateB - dateA;
-          })
-          .map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            type: 'worksheet'
-          }));
-        
-        setWorksheets(assignedWorksheets);
-      } catch (error) {
-        console.log('Worksheets query failed:', error);
-        // Fallback: fetch all and filter client-side
-        try {
-          const allWorksheetsQuery = query(collection(db, 'worksheets'));
-          const allWorksheetsSnapshot = await getDocs(allWorksheetsQuery);
-          
-          const assignedWorksheets = allWorksheetsSnapshot.docs
-            .filter(doc => {
-              const data = doc.data();
-              return data.assignedTo && 
-                     data.assignedTo.includes(assignedClientId) && 
-                     data.status === 'active';
-            })
-            .sort((a, b) => {
-              const dateA = a.data().dateCreated?.toDate ? a.data().dateCreated.toDate() : new Date(a.data().dateCreated);
-              const dateB = b.data().dateCreated?.toDate ? b.data().dateCreated.toDate() : new Date(b.data().dateCreated);
-              return dateB - dateA;
-            })
-            .map(doc => ({
-              id: doc.id,
-              ...doc.data(),
-              type: 'worksheet'
-            }));
-          
-          setWorksheets(assignedWorksheets);
-        } catch (fallbackError) {
-          console.error('Fallback worksheets query failed:', fallbackError);
-        }
-      }
-
-      // Fetch notes
-      try {
-        const clinicalNotesQuery = query(collection(db, 'clinicalNotes'));
-        const clinicalNotesSnapshot = await getDocs(clinicalNotesQuery);
-        
-        const clinicalNotes = clinicalNotesSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(note => note.visibleToClient && note.clientId === assignedClientId)
-          .map(note => ({
-            ...note,
-            type: 'note',
-            noteType: 'clinical'
-          }));
-
-        const therapyBooksQuery = query(collection(db, 'therapyBooks'));
-        const therapyBooksSnapshot = await getDocs(therapyBooksQuery);
-        
-        const therapyBooks = therapyBooksSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(book => {
-            if (book.targetAudience === 'all') return true;
-            if (book.targetAudience === 'specific' && book.assignedClients?.includes(assignedClientId)) return true;
-            if (['individuals', 'teen', 'couples'].includes(book.targetAudience)) return true;
-            return false;
-          })
-          .map(book => ({
-            ...book,
-            type: 'note',
-            noteType: 'therapyBook'
-          }));
-
-        setNotes([...clinicalNotes, ...therapyBooks]);
-      } catch (error) {
-        console.log('Notes query failed:', error);
-      }
+        const notesData = await api(`/api/v1/clinical-notes?clientId=${assignedClientId}&visibleOnly=true`);
+        const booksData = await api(`/api/v1/therapy-books?clientId=${assignedClientId}`);
+        const notes = (Array.isArray(notesData) ? notesData : []).map(n => ({ ...n, type: 'note', noteType: 'clinical' }));
+        const books = (Array.isArray(booksData) ? booksData : []).map(b => ({ ...b, type: 'note', noteType: 'therapyBook' }));
+        setNotes([...notes, ...books]);
+      } catch { console.log('Notes query failed'); }
 
     } catch (error) {
       console.error('Error fetching resources:', error);
@@ -267,7 +174,7 @@ const ClientResourcesScreen = ({ navigation }) => {
   };
 
   const handleWorksheetView = (worksheet) => {
-    const clientId = getCachedClientData()?.id || auth.currentUser?.uid;
+    const clientId = getCachedClientData()?.id || '';
     const clientResponse = worksheet.clientResponses?.[clientId];
     
     if (clientResponse && clientResponse.responses) {
@@ -280,19 +187,35 @@ const ClientResourcesScreen = ({ navigation }) => {
     setShowWorksheetModal(true);
   };
 
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  // Export to a branded PDF and hand it to the system share sheet — that is what
+  // "download" means on iOS/Android.
+  const handleDownload = async (item) => {
+    setDownloadingId(item.id);
+    try {
+      if (item.type === 'note') await downloadNotePdf(item);
+      else await downloadResourcePdf(item);
+    } catch (e) {
+      Alert.alert('Download failed', e?.message || 'Could not create the PDF.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const handleNoteView = (note) => {
     setSelectedNote(note);
     setShowNoteModal(true);
   };
 
   const isWorksheetCompleted = (worksheet) => {
-    const clientId = getCachedClientData()?.id || auth.currentUser?.uid;
+    const clientId = getCachedClientData()?.id || '';
     const clientResponse = worksheet.clientResponses?.[clientId];
     return clientResponse?.status === 'completed' && !clientResponse?.needsToCompleteNewFields;
   };
 
   const hasNewFields = (worksheet) => {
-    const clientId = getCachedClientData()?.id || auth.currentUser?.uid;
+    const clientId = getCachedClientData()?.id || '';
     const clientResponse = worksheet.clientResponses?.[clientId];
     return clientResponse?.needsToCompleteNewFields === true;
   };
@@ -300,7 +223,7 @@ const ClientResourcesScreen = ({ navigation }) => {
   const handleSubmitWorksheet = async () => {
     try {
       setIsSubmittingWorksheet(true);
-      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser?.uid;
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
       const clientResponse = selectedWorksheet.clientResponses?.[clientId];
       const hasNewFieldsFlag = clientResponse?.needsToCompleteNewFields === true;
       
@@ -311,14 +234,9 @@ const ClientResourcesScreen = ({ navigation }) => {
         mergedResponses[index] !== undefined && mergedResponses[index] !== ''
       );
       
-      const worksheetRef = doc(db, 'worksheets', selectedWorksheet.id);
-      await updateDoc(worksheetRef, {
-        [`clientResponses.${clientId}`]: {
-          responses: mergedResponses,
-          submittedAt: serverTimestamp(),
-          status: allFieldsAnswered ? 'completed' : 'pending',
-          needsToCompleteNewFields: false
-        }
+      await api(`/api/v1/therapy-engagement/worksheets/${selectedWorksheet.id}/submissions`, {
+        method: 'POST',
+        body: { clientId, response: JSON.stringify(mergedResponses) },
       });
       
       Alert.alert(
@@ -394,7 +312,10 @@ const ClientResourcesScreen = ({ navigation }) => {
           } else if (item.type === 'note') {
             handleNoteView(item);
           } else {
-            Alert.alert(item.title || 'Resource', item.description || item.content || 'No description available');
+            // An Alert can't show an image, play audio or open a file — the whole
+            // point of a typed resource. Open the detail sheet instead.
+            setSelectedResource(item);
+            setShowResourceModal(true);
           }
         }}
       >
@@ -404,7 +325,11 @@ const ClientResourcesScreen = ({ navigation }) => {
         <View style={styles.itemContent}>
           <View style={styles.itemHeader}>
             <Text style={styles.itemTitle} numberOfLines={2}>
-              {item.title || item.goal || 'Untitled'}
+              {/* A clinical note has no `title` column — every one of them showed
+                  as "Untitled" until you opened it. Fall back to the note's own
+                  label (e.g. "SOAP note"). */}
+              {item.bookTitle || item.title || item.goal
+                || (item.type === 'note' ? getNoteTitle(item) : 'Untitled')}
             </Text>
             <TouchableOpacity
               onPress={(e) => {
@@ -419,11 +344,13 @@ const ClientResourcesScreen = ({ navigation }) => {
               />
             </TouchableOpacity>
           </View>
-          {item.description && (
+          {/* Same for the preview: notes keep their text in structuredData, so
+              `description` alone left the card blank. */}
+          {(item.description || (item.type === 'note' ? getNotePreview(item, 90) : '')) ? (
             <Text style={styles.itemDescription} numberOfLines={2}>
-              {item.description}
+              {item.description || getNotePreview(item, 90)}
             </Text>
-          )}
+          ) : null}
           <View style={styles.itemFooter}>
             <View style={[styles.typeBadge, { backgroundColor: `${color}20` }]}>
               <Text style={[styles.typeBadgeText, { color }]}>
@@ -434,6 +361,24 @@ const ClientResourcesScreen = ({ navigation }) => {
             </View>
             {item.createdAt && (
               <Text style={styles.itemDate}>{formatDate(item.createdAt)}</Text>
+            )}
+            {/* Worksheets are filled in inside the app, so only notes, books and
+                resources are downloadable. */}
+            {item.type !== 'worksheet' && (
+              <TouchableOpacity
+                style={styles.downloadBtn}
+                disabled={downloadingId === item.id}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleDownload(item);
+                }}
+              >
+                {downloadingId === item.id ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Ionicons name="download-outline" size={18} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
             )}
           </View>
           {isCompleted && (
@@ -573,34 +518,134 @@ const ClientResourcesScreen = ({ navigation }) => {
               )}
               {selectedWorksheet?.fields?.map((field, index) => (
                 <View key={index} style={styles.fieldContainer}>
-                  <Text style={styles.fieldLabel}>{field.label || field.question || `Question ${index + 1}`}</Text>
-                  <TextInput
-                    style={styles.fieldInput}
-                    placeholder="Your answer..."
-                    placeholderTextColor={Colors.textSecondary}
-                    value={worksheetResponses[index] || ''}
-                    onChangeText={(text) => {
-                      setWorksheetResponses(prev => ({
-                        ...prev,
-                        [index]: text
-                      }));
-                    }}
-                    multiline
-                    numberOfLines={4}
-                  />
+                  <Text style={styles.fieldLabel}>
+                    {/* The builder stores the label as `name`. */}
+                    {field.name || field.label || field.question || `Question ${index + 1}`}
+                    {field.required ? ' *' : ''}
+                  </Text>
+                  {/* Choice fields get tappable options; everything else a text box.
+                      Rendering a text box for a dropdown asked the client to guess
+                      the therapist's options. */}
+                  {['select', 'radio', 'multiple-choice'].includes(field.type)
+                    && Array.isArray(field.options) && field.options.length > 0 ? (
+                    <View style={styles.optionWrap}>
+                      {field.options.filter(Boolean).map((opt) => {
+                        const multi = field.type === 'multiple-choice';
+                        const current = worksheetResponses[index];
+                        const picked = multi
+                          ? String(current || '').split('|').filter(Boolean).includes(opt)
+                          : current === opt;
+                        return (
+                          <TouchableOpacity
+                            key={opt}
+                            style={[styles.optionChip, picked && styles.optionChipActive]}
+                            onPress={() => setWorksheetResponses((prev) => {
+                              if (!multi) return { ...prev, [index]: opt };
+                              const set = String(prev[index] || '').split('|').filter(Boolean);
+                              const next = set.includes(opt)
+                                ? set.filter((v) => v !== opt)
+                                : [...set, opt];
+                              return { ...prev, [index]: next.join('|') };
+                            })}
+                          >
+                            <Text style={[styles.optionChipText, picked && styles.optionChipTextActive]}>
+                              {opt}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={styles.fieldInput}
+                      placeholder={field.type === 'number' ? 'Enter a number…' : 'Your answer...'}
+                      placeholderTextColor={Colors.textSecondary}
+                      value={worksheetResponses[index] || ''}
+                      keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+                      onChangeText={(text) => {
+                        setWorksheetResponses(prev => ({ ...prev, [index]: text }));
+                      }}
+                      multiline={field.type === 'textarea'}
+                      numberOfLines={field.type === 'textarea' ? 4 : 1}
+                    />
+                  )}
                 </View>
               ))}
-              <TouchableOpacity
-                style={[styles.submitButton, isSubmittingWorksheet && styles.submitButtonDisabled]}
-                onPress={handleSubmitWorksheet}
-                disabled={isSubmittingWorksheet}
-              >
-                {isSubmittingWorksheet ? (
-                  <ActivityIndicator color={Colors.surface} />
-                ) : (
-                  <Text style={styles.submitButtonText}>Submit Worksheet</Text>
-                )}
+              {/* Once answered, the worksheet is read-only until the therapist
+                  updates it (which reopens it server-side). Without this the
+                  client could keep re-submitting the same sheet. */}
+              {selectedWorksheet?.isCompleted ? (
+                <View style={styles.completedNote}>
+                  <Ionicons name="checkmark-circle" size={18} color="#15803d" />
+                  <Text style={styles.completedNoteText}>
+                    You&apos;ve completed this worksheet. Your therapist will let you know
+                    if anything needs updating.
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.submitButton, isSubmittingWorksheet && styles.submitButtonDisabled]}
+                  onPress={handleSubmitWorksheet}
+                  disabled={isSubmittingWorksheet}
+                >
+                  {isSubmittingWorksheet ? (
+                    <ActivityIndicator color={Colors.surface} />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Submit Worksheet</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Resource Modal — shows the attachment itself: image, audio player,
+          video, downloadable file or link, depending on the type the therapist
+          chose. */}
+      <Modal
+        visible={showResourceModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowResourceModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle} numberOfLines={2}>
+                {selectedResource?.title || 'Resource'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowResourceModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalContent}>
+              {selectedResource?.description ? (
+                <Text style={styles.noteDescription}>{selectedResource.description}</Text>
+              ) : null}
+
+              <ResourceMedia resource={selectedResource} />
+
+              {selectedResource?.content ? (
+                <Text style={styles.noteContent}>{selectedResource.content}</Text>
+              ) : null}
+
+              {selectedResource ? (
+                <TouchableOpacity
+                  style={styles.resourceDownloadBtn}
+                  disabled={downloadingId === selectedResource.id}
+                  onPress={() => handleDownload(selectedResource)}
+                >
+                  {downloadingId === selectedResource.id ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="download-outline" size={18} color="#fff" />
+                      <Text style={styles.resourceDownloadText}>Download as PDF</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </ScrollView>
           </View>
         </View>
@@ -808,6 +853,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  resourceDownloadBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 20, paddingVertical: 13, borderRadius: 10, backgroundColor: Colors.primary,
+  },
+  resourceDownloadText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  downloadBtn: {
+    marginLeft: 10,
+    padding: 4,
+  },
   itemDate: {
     fontSize: 12,
     color: Colors.textSecondary,
@@ -870,6 +924,29 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 24,
   },
+  completedNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  completedNoteText: { flex: 1, fontSize: 13, color: '#15803d', fontWeight: '600', lineHeight: 18 },
+  optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  optionChip: {
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#fff',
+  },
+  optionChipActive: { borderColor: Colors.primary, backgroundColor: '#eef7f1' },
+  optionChipText: { fontSize: 14, color: '#334155', fontWeight: '600' },
+  optionChipTextActive: { color: Colors.primary },
   fieldContainer: {
     marginBottom: 20,
   },

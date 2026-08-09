@@ -10,7 +10,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
-import { auth } from '../services/firebaseConfig';
 import { performLogout } from '../services/authService';
 
 const CustomDrawerContent = ({ navigation, profile }) => {
@@ -20,7 +19,7 @@ const CustomDrawerContent = ({ navigation, profile }) => {
       const profileStr = await AsyncStorage.getItem('userProfile');
       const parsedProfile = profileStr ? JSON.parse(profileStr) : profile;
       await performLogout({
-        userId: auth.currentUser?.uid,
+        userId: await AsyncStorage.getItem('th.userId'),
         role,
         profile: parsedProfile,
         clearCoupleKeys: true,

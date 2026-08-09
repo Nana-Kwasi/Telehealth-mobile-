@@ -5,10 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, getDoc, doc, setDoc, serverTimestamp,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors as C } from '../../constants/colors';
 
 function initials(name) {
@@ -25,6 +22,15 @@ function fmt(ts) {
 /** Firestore stores `patientProfiles.vitals.latest`; tolerate legacy flat shapes */
 function pickLatestVitals(pd) {
   if (!pd || typeof pd !== 'object') return null;
+  // The API stores the latest reading in `vitalsLatestJson` (a JSON string on the
+  // patient row). Only `vitals.latest` / `latestVitals` were checked, so a patient
+  // with recorded vitals still rendered "No vitals recorded yet".
+  if (typeof pd.vitalsLatestJson === 'string' && pd.vitalsLatestJson.trim()) {
+    try {
+      const parsed = JSON.parse(pd.vitalsLatestJson);
+      if (parsed && typeof parsed === 'object') return parsed.latest || parsed;
+    } catch { /* fall through to the legacy shapes */ }
+  }
   const nested = pd.vitals?.latest;
   if (nested && typeof nested === 'object') return nested;
   const legacy = pd.latestVitals;
@@ -53,57 +59,36 @@ export default function DoctorPatientOverviewScreen({ route, navigation }) {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const uid = auth.currentUser?.uid;
-    if (!uid || !patientId) {
-      setLoading(false);
-      return;
-    }
+    const uid = await getStoredUserId();
+    if (!uid || !patientId) { setLoading(false); return; }
     try {
-      const [
-        authSnap, profSnap, apptSnap, rxSnap, notesSnap, ordSnap, tlSnap,
-      ] = await Promise.all([
-        getDoc(doc(db, 'auth', patientId)).catch(() => null),
-        getDoc(doc(db, 'patientProfiles', patientId)).catch(() => null),
-        getDocs(query(collection(db, 'doctorAppointments'), where('doctorId', '==', uid), where('clientId', '==', patientId))),
-        getDocs(query(collection(db, 'doctorPrescriptions'), where('doctorId', '==', uid), where('patientId', '==', patientId))),
-        getDocs(query(collection(db, 'doctorNotes'), where('doctorId', '==', uid), where('patientId', '==', patientId))),
-        getDocs(query(collection(db, 'diagnosticOrders'), where('patientId', '==', patientId))),
-        getDocs(query(collection(db, 'patientTimeline'), where('patientId', '==', patientId))),
+      const [patData, appts, rx, notes, orders, timeline] = await Promise.all([
+        api(`/api/v1/patients/${patientId}`).catch(() => null),
+        api(`/api/v1/medical/appointments/doctor/${uid}`).then(a => (a || []).filter(x => x.clientId === patientId)).catch(() => []),
+        api(`/api/v1/medical/prescriptions/patient/${patientId}`).catch(() => []),
+        api(`/api/v1/doctor-notes?doctorId=${uid}&patientId=${patientId}`).catch(() => []),
+        api(`/api/v1/diagnostics/operations/orders?doctorId=${uid}&patientId=${patientId}`).catch(() => []),
+        api(`/api/v1/patient-timeline?patientId=${patientId}&limit=40`).catch(() => []),
       ]);
 
-      const authData = authSnap?.exists() ? authSnap.data() : {};
-      const displayName = authData.name || authData.displayName || patientName || 'Patient';
-      const email = authData.email || '';
-      setPatient({ name: displayName, email });
-
-      if (profSnap?.exists()) {
-        const pd = profSnap.data();
-        setProfile(pd);
-        setStatus(pd.status || 'active');
-        setVitals(pickLatestVitals(pd));
+      // Patients with no profile row answer 400 here, which used to leave the header
+      // name/email blank. The appointment already carries clientName/clientEmail
+      // (resolved from the user record), so fall back to it.
+      const sortedAppts = (appts || []).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      setPatient({
+        name: patData?.name || patData?.displayName || sortedAppts[0]?.clientName || patientName || 'Patient',
+        email: patData?.email || sortedAppts[0]?.clientEmail || '',
+      });
+      if (patData) {
+        setProfile(patData);
+        setStatus(patData.status || 'active');
+        setVitals(pickLatestVitals(patData));
       }
-
-      const appts = apptSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-      setAppointments(appts);
-
-      const rx = rxSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setPrescriptions(rx);
-
-      const n = notesSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setNotes(n);
-
-      const o = ordSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(x => x.doctorId === uid)
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setOrders(o);
-
-      const tl = tlSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-        .slice(0, 40);
-      setTimeline(tl);
+      setAppointments(sortedAppts);
+      setPrescriptions((rx || []).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+      setNotes((notes || []).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+      setOrders(orders || []);
+      setTimeline(timeline || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -117,11 +102,7 @@ export default function DoctorPatientOverviewScreen({ route, navigation }) {
   const setPatientStatus = async (next) => {
     setBusy(true);
     try {
-      await setDoc(doc(db, 'patientProfiles', patientId), {
-        status: next,
-        updatedAt: serverTimestamp(),
-        updatedBy: auth.currentUser?.uid,
-      }, { merge: true });
+      await api(`/api/v1/patients/${patientId}`, { method: 'PATCH', body: { status: next } });
       setStatus(next);
     } catch {
       Alert.alert('Error', 'Could not update status.');
@@ -189,7 +170,7 @@ export default function DoctorPatientOverviewScreen({ route, navigation }) {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.linkCard} onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId, patientName: patient.name })}>
+        <TouchableOpacity style={styles.linkCard} onPress={() => navigation.getParent()?.navigate('DoctorPatientDetail', { patientId, patientName: patient.name, patientEmail: patient.email })}>
           <Ionicons name="reader-outline" size={22} color={C.primary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.linkTitle}>Full clinical record</Text>

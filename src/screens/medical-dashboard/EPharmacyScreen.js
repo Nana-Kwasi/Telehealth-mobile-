@@ -5,10 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, onSnapshot, doc, updateDoc, setDoc, serverTimestamp,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
 import { MedicalColors as C } from '../../constants/colors';
 
@@ -69,60 +66,53 @@ export default function EPharmacyScreen() {
   });
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      setLoadingMyPh(false);
-      return;
-    }
-    const unsubProf = onSnapshot(doc(db, 'patientProfiles', uid), (snap) => {
-      setMyPharmacies(snap.exists() ? (snap.data().pharmacies || []) : []);
-      setLoadingMyPh(false);
-    }, () => setLoadingMyPh(false));
-    return unsubProf;
+    let cancelled = false;
+    getStoredUserId().then(uid => {
+      if (!uid) { setLoadingMyPh(false); return; }
+      api(`/api/v1/patients/${uid}`).then(data => {
+        if (!cancelled) {
+          setMyPharmacies(data?.pharmacies || []);
+          setLoadingMyPh(false);
+        }
+      }).catch(() => setLoadingMyPh(false));
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) { setLoadingRx(false); return; }
-    const q = query(
-      collection(db, 'doctorPrescriptions'),
-      where('patientId', '==', uid)
-    );
-    const unsub = onSnapshot(q, async snap => {
-      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const expiries = [];
-      rows.forEach((rx) => {
-        const meds = Array.isArray(rx.medications) ? rx.medications : [];
-        if (meds.some(isTransferRequestExpired)) {
-          const nextMeds = meds.map(m => (isTransferRequestExpired(m) ? expirePendingTransferRequest(m) : m));
-          expiries.push(
-            updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-              medications: nextMeds,
-              pharmacyStatus: deriveRxStatusFromMeds(nextMeds),
-              updatedAt: serverTimestamp(),
-            }).catch(() => {})
-          );
+    let intervalId = null;
+    getStoredUserId().then(uid => {
+      if (!uid) { setLoadingRx(false); return; }
+      const loadRx = async () => {
+        try {
+          const rows = await api(`/api/v1/medical/prescriptions/patient/${uid}`).catch(() => []) || [];
+          const expiries = [];
+          rows.forEach((rx) => {
+            const meds = Array.isArray(rx.medications) ? rx.medications : [];
+            if (meds.some(isTransferRequestExpired)) {
+              const nextMeds = meds.map(m => (isTransferRequestExpired(m) ? expirePendingTransferRequest(m) : m));
+              expiries.push(api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: nextMeds, pharmacyStatus: deriveRxStatusFromMeds(nextMeds) } }).catch(() => {}));
+            }
+          });
+          if (expiries.length) { await Promise.all(expiries); return; }
+          const list = rows.filter(r => r.pharmacyId).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          setPrescriptions(list);
+        } catch {} finally {
+          setLoadingRx(false);
+          setRefreshing(false);
         }
-      });
-      if (expiries.length) {
-        await Promise.all(expiries);
-        return;
-      }
-      const list = rows
-        .filter(r => r.pharmacyId)
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setPrescriptions(list);
-      setLoadingRx(false);
-      setRefreshing(false);
-    }, () => setLoadingRx(false));
-    return unsub;
+      };
+      loadRx();
+      intervalId = setInterval(loadRx, 15000);
+    });
+    return () => { if (intervalId) clearInterval(intervalId); };
   }, []);
 
   useEffect(() => {
     if (tab !== 'pharmacies') return;
     setLoadingPh(true);
-    getDocs(query(collection(db, 'pharmacies'), where('status', '==', 'active')))
-      .then(snap => setSystemPharmacies(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+    api('/api/v1/pharmacies?status=active')
+      .then(data => setSystemPharmacies(data || []))
       .catch(console.error)
       .finally(() => setLoadingPh(false));
   }, [tab]);
@@ -143,13 +133,13 @@ export default function EPharmacyScreen() {
   };
 
   const removeSavedPharmacy = async (ph) => {
-    const uid = auth.currentUser?.uid;
+    const uid = await getStoredUserId();
     if (!uid) return;
     const rk = patientPharmacyKey(ph) || ph.id || ph.name || '';
     setRemovingPhKey(rk);
     try {
       const updated = removePatientPharmacyByKey(myPharmacies, ph);
-      await setDoc(doc(db, 'patientProfiles', uid), { pharmacies: updated }, { merge: true });
+      await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { pharmacies: updated } });
     } catch {
       Alert.alert('Error', 'Could not remove pharmacy.');
     } finally {
@@ -190,11 +180,7 @@ export default function EPharmacyScreen() {
           transferRequestBranchAddress: null,
         };
       });
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-        medications: nextMeds,
-        pharmacyStatus: deriveRxStatusFromMeds(nextMeds),
-        updatedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: nextMeds, pharmacyStatus: deriveRxStatusFromMeds(nextMeds) } });
     } catch {
       Alert.alert('Error', 'Failed to process transfer decision. Please try again.');
     } finally {

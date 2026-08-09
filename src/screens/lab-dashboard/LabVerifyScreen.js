@@ -4,10 +4,7 @@ import {
   ActivityIndicator, FlatList, Alert, Modal, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp,
-} from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { LabColors as C } from '../../constants/colors';
 
 function generateResultRef() {
@@ -36,58 +33,22 @@ export default function LabVerifyScreen({ profile }) {
     try {
       const pid = profile?.id;
       const isBranch = profile?.role === 'lab_branch';
-      const low = searchName.toLowerCase();
-      const q = isBranch
-        ? query(
-            collection(db, 'diagnosticOrders'),
-            where('branchId', '==', pid),
-            where('patientNameLower', '>=', low),
-            where('patientNameLower', '<=', `${low}\uf8ff`),
-          )
-        : query(
-            collection(db, 'diagnosticOrders'),
-            where('centerId', '==', pid),
-            where('centerType', '==', 'lab'),
-            where('patientNameLower', '>=', low),
-            where('patientNameLower', '<=', `${low}\uf8ff`),
-          );
-      const snap = await getDocs(q);
-      let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (isBranch) list = list.filter((o) => o.centerType === 'lab');
+      const rawOrders = isBranch
+        ? await api(`/api/v1/diagnostics/operations/orders?branchId=${pid}`).catch(() => [])
+        : await api(`/api/v1/diagnostics/operations/orders?centerId=${pid}&centerType=lab`).catch(() => []);
+      let list = (rawOrders || []);
+      if (isBranch) list = list.filter(o => o.centerType === 'lab');
+      list = list.filter(o => o.patientName?.toLowerCase().includes(searchName.toLowerCase()) || (o.patientNameLower || '').includes(searchName.toLowerCase()));
       setFoundOrders(list);
       setSearched(true);
-    } catch (e) {
-      try {
-        const pid = profile?.id;
-        const isBranch = profile?.role === 'lab_branch';
-        const snap = isBranch
-          ? await getDocs(query(collection(db, 'diagnosticOrders'), where('branchId', '==', pid)))
-          : await getDocs(
-              query(collection(db, 'diagnosticOrders'), where('centerId', '==', pid), where('centerType', '==', 'lab')),
-            );
-        let list = snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter((o) => o.patientName?.toLowerCase().includes(searchName.toLowerCase()));
-        if (isBranch) list = list.filter((o) => o.centerType === 'lab');
-        setFoundOrders(list);
-        setSearched(true);
-      } catch (e2) { console.error(e2); }
-    } finally { setSearching(false); }
+    } catch (e) { console.error(e); }
+    finally { setSearching(false); }
   };
 
   const handleMarkInProgress = async (order) => {
     try {
-      await updateDoc(doc(db, 'diagnosticOrders', order.id), { status: 'in_progress', updatedAt: serverTimestamp() });
-      await addDoc(collection(db, 'patientTimeline'), {
-        patientId: order.patientId,
-        type: 'LAB_ORDER',
-        title: `Lab test in progress: ${order.testType}`,
-        status: 'IN_PROGRESS',
-        relatedId: order.id,
-        actor: { role: 'LAB', name: profile?.labName || 'Lab Center' },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/diagnostics/operations/orders/${order.id}/status`, { method: 'PATCH', body: { status: 'in_progress' } });
+      api('/api/v1/patient-timeline', { method: 'POST', body: { patientId: order.patientId, type: 'LAB_ORDER', title: `Lab test in progress: ${order.testType}`, status: 'IN_PROGRESS', relatedId: order.id, actor: { role: 'LAB', name: profile?.labName || 'Lab Center' } } }).catch(() => {});
       setFoundOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'in_progress' } : o));
       Alert.alert('Updated', 'Order marked as In Progress');
     } catch (e) { Alert.alert('Error', 'Failed to update order'); }
@@ -105,51 +66,14 @@ export default function LabVerifyScreen({ profile }) {
     setSubmitting(true);
     try {
       const resultRef = generateResultRef();
-      await updateDoc(doc(db, 'diagnosticOrders', selectedOrder.id), {
-        status: 'completed',
-        updatedAt: serverTimestamp(),
+      await api(`/api/v1/diagnostics/operations/orders/${selectedOrder.id}/status`, { method: 'PATCH', body: { status: 'completed' } });
+      await api(`/api/v1/diagnostics/operations/orders/${selectedOrder.id}/results`, {
+        method: 'POST',
+        body: { orderId: selectedOrder.id, patientId: selectedOrder.patientId, doctorId: selectedOrder.doctorId, type: 'lab', testType: selectedOrder.testType, notes: resultNotes.trim(), fileName: fileName.trim() || null, resultRef, uploadedBy: profile?.id, uploaderName: profile?.labName || 'Lab Center' },
       });
-      await addDoc(collection(db, 'diagnosticResults'), {
-        orderId: selectedOrder.id,
-        patientId: selectedOrder.patientId,
-        doctorId: selectedOrder.doctorId,
-        type: 'lab',
-        testType: selectedOrder.testType,
-        notes: resultNotes.trim(),
-        fileName: fileName.trim() || null,
-        resultRef,
-        uploadedAt: serverTimestamp(),
-        uploadedBy: profile?.id,
-        uploaderName: profile?.labName || 'Lab Center',
-      });
-      await addDoc(collection(db, 'notifications'), {
-        targetId: selectedOrder.doctorId,
-        title: 'Lab Result Ready',
-        body: `Result for ${selectedOrder.patientName} (${selectedOrder.testType}) is ready.`,
-        type: 'LAB_RESULT',
-        relatedId: selectedOrder.id,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
-      await addDoc(collection(db, 'notifications'), {
-        targetId: selectedOrder.patientId,
-        title: 'Lab Result Ready',
-        body: `Your ${selectedOrder.testType} result is available.`,
-        type: 'LAB_RESULT',
-        relatedId: selectedOrder.id,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
-      await addDoc(collection(db, 'patientTimeline'), {
-        patientId: selectedOrder.patientId,
-        type: 'LAB_RESULT',
-        title: `Lab result ready: ${selectedOrder.testType}`,
-        status: 'COMPLETED',
-        relatedId: selectedOrder.id,
-        actor: { role: 'LAB', name: profile?.labName || 'Lab Center' },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      api('/api/v1/notifications/events', { method: 'POST', body: { targetUserId: selectedOrder.doctorId, type: 'LAB_RESULT', title: 'Lab Result Ready', body: `Result for ${selectedOrder.patientName} (${selectedOrder.testType}) is ready.` } }).catch(() => {});
+      api('/api/v1/notifications/events', { method: 'POST', body: { targetUserId: selectedOrder.patientId, type: 'LAB_RESULT', title: 'Lab Result Ready', body: `Your ${selectedOrder.testType} result is available.` } }).catch(() => {});
+      api('/api/v1/patient-timeline', { method: 'POST', body: { patientId: selectedOrder.patientId, type: 'LAB_RESULT', title: `Lab result ready: ${selectedOrder.testType}`, status: 'COMPLETED', relatedId: selectedOrder.id, actor: { role: 'LAB', name: profile?.labName || 'Lab Center' } } }).catch(() => {});
       setFoundOrders(prev => prev.map(o => o.id === selectedOrder.id ? { ...o, status: 'completed' } : o));
       setShowResultModal(false);
       Alert.alert('Done', 'Result submitted. Doctor and patient have been notified.');

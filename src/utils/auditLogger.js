@@ -1,5 +1,5 @@
-import { db, auth } from '../services/firebaseConfig';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../services/apiClient';
 
 export const A = {
   LOGIN_SUCCESS:           'LOGIN_SUCCESS',
@@ -29,17 +29,21 @@ export const A = {
 
 export async function logAction(action, details = {}, userTypeOverride = null) {
   try {
-    const user = auth.currentUser;
-    await addDoc(collection(db, 'auditLogs'), {
-      action,
-      details,
-      userId:    user?.uid           || details.userId    || 'system',
-      userName:  user?.displayName   || user?.email       || details.userName || 'Unknown',
-      userEmail: user?.email         || details.userEmail || '',
-      userType:  userTypeOverride    || details.userType  || 'user',
-      platform:  'mobile',
-      timestamp: serverTimestamp(),
-    });
+    const userId = await AsyncStorage.getItem('th.userId') || details.userId || 'system';
+    const userName = await AsyncStorage.getItem('userName') || details.userName || 'Unknown';
+    await api('/api/v1/audit-logs', {
+      method: 'POST',
+      body: {
+        action,
+        details,
+        userId,
+        userName,
+        userEmail: details.userEmail || '',
+        userType:  userTypeOverride || details.userType || 'user',
+        platform:  'mobile',
+        timestamp: new Date().toISOString(),
+      },
+    }).catch(() => {});
   } catch (_) {
     // Silent — audit failures must never crash the app
   }

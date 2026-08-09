@@ -13,11 +13,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, deleteUser } from 'firebase/auth';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, auth, storage } from '../../services/firebaseConfig';
+import { api, uploadFile } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { pickAndUploadAvatar } from '../../utils/profileImage';
 import { getCachedClientData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
@@ -63,15 +61,9 @@ const ClientSettingsScreen = ({ navigation }) => {
   const loadClientData = async () => {
     try {
       setIsLoading(true);
-      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser?.uid;
-      
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
       let client = getCachedClientData();
-      if (!client) {
-        const clientDoc = await getDoc(doc(db, 'clients', clientId));
-        if (clientDoc.exists()) {
-          client = { id: clientDoc.id, ...clientDoc.data() };
-        }
-      }
+      if (!client) client = await api(`/api/v1/patients/${clientId}`).catch(() => null);
       setClientData(client);
     } catch (error) {
       console.error('Error loading client data:', error);
@@ -81,48 +73,26 @@ const ClientSettingsScreen = ({ navigation }) => {
   };
 
   const handleSave = async () => {
-    if (!clientData || !auth.currentUser) return;
+    if (!clientData) return;
 
     try {
       setSaving(true);
       setSuccessMessage('');
       setPasswordError('');
 
-      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser.uid;
-      
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+
       const updateData = {
-        name: clientData.name,
-        email: clientData.email,
+        fullName: clientData.name,
         phone: clientData.phone || '',
         country: clientData.country || '',
         city: clientData.city || '',
-        area: clientData.area || '',
-        region: clientData.region || '',
-        street: clientData.street || '',
-        ghanaDigitalAddress: clientData.ghanaDigitalAddress || '',
         latitude: Number.isFinite(Number(clientData.latitude)) ? Number(clientData.latitude) : null,
         longitude: Number.isFinite(Number(clientData.longitude)) ? Number(clientData.longitude) : null,
-        locationMeta: {
-          country: clientData.country || '',
-          city: clientData.city || '',
-          area: clientData.area || '',
-          region: clientData.region || '',
-          street: clientData.street || '',
-          latitude: Number.isFinite(Number(clientData.latitude)) ? Number(clientData.latitude) : null,
-          longitude: Number.isFinite(Number(clientData.longitude)) ? Number(clientData.longitude) : null,
-        },
-        lastModified: new Date(),
-        modifiedBy: auth.currentUser.uid
+        gender: clientData.gender || null,
       };
 
-      if (clientData.gender && clientData.gender.trim() !== '') {
-        updateData.gender = clientData.gender;
-      }
-      if (clientData.age && clientData.age.trim() !== '') {
-        updateData.age = clientData.age;
-      }
-      
-      await updateDoc(doc(db, 'clients', clientId), updateData);
+      await api(`/api/v1/patients/${clientId}`, { method: 'PATCH', body: updateData });
       
       setSuccessMessage('Profile updated successfully!');
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -136,49 +106,22 @@ const ClientSettingsScreen = ({ navigation }) => {
   };
 
   const handlePasswordChange = async () => {
-    if (!auth.currentUser) return;
-    
     try {
       setPasswordError('');
       setSuccessMessage('');
-      
-      if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-        setPasswordError('New passwords do not match');
-        return;
-      }
-      
-      if (passwordForm.newPassword.length < 6) {
-        setPasswordError('Password must be at least 6 characters');
-        return;
-      }
-      
-      const credential = EmailAuthProvider.credential(
-        auth.currentUser.email,
-        passwordForm.currentPassword
-      );
-      
-      await reauthenticateWithCredential(auth.currentUser, credential);
-      await updatePassword(auth.currentUser, passwordForm.newPassword);
-      
-      setSuccessMessage('Password updated successfully!');
-      setPasswordForm({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) { setPasswordError('New passwords do not match'); return; }
+      if (passwordForm.newPassword.length < 8) { setPasswordError('Password must be at least 8 characters'); return; }
+      const userId = await AsyncStorage.getItem('th.userId');
+      await api('/api/v1/auth/password-change', {
+        method: 'POST',
+        body: { userId, currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword },
       });
+      setSuccessMessage('Password updated successfully!');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setShowPasswordForm(false);
-      
       setTimeout(() => setSuccessMessage(''), 3000);
-      
     } catch (error) {
-      console.error('Error updating password:', error);
-      if (error.code === 'auth/wrong-password') {
-        setPasswordError('Current password is incorrect');
-      } else if (error.code === 'auth/weak-password') {
-        setPasswordError('Password is too weak');
-      } else {
-        setPasswordError('Failed to update password: ' + error.message);
-      }
+      setPasswordError(error?.message || 'Failed to update password.');
     }
   };
 
@@ -194,30 +137,15 @@ const ClientSettingsScreen = ({ navigation }) => {
   };
 
   const handleProfilePhotoUpload = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-    if (result.canceled) return;
     setUploadingPhoto(true);
     try {
-      const uri = result.assets[0].uri;
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const uid = auth.currentUser?.uid;
-      const storageRef = ref(storage, `profile-images/${uid}`);
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
-      const clientId = await AsyncStorage.getItem('th.clientId') || uid;
-      await updateDoc(doc(db, 'clients', clientId), { photoURL: downloadURL });
-      setClientData(prev => ({ ...prev, photoURL: downloadURL }));
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+      // Saves onto the user record — the one place every avatar in the app reads.
+      // The old PATCH to /patients/{id} sent `photoURL`, which that endpoint does
+      // not bind, so the upload worked and the picture vanished on reload.
+      const downloadURL = await pickAndUploadAvatar(clientId);
+      if (!downloadURL) { setUploadingPhoto(false); return; }
+      setClientData(prev => ({ ...prev, photoURL: downloadURL, avatarUrl: downloadURL }));
       setSuccessMessage('Profile photo updated!');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
@@ -228,11 +156,10 @@ const ClientSettingsScreen = ({ navigation }) => {
   };
 
   const handleSavePreferences = async (updates) => {
-    if (!auth.currentUser) return;
     try {
       setSaving(true);
-      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser.uid;
-      await updateDoc(doc(db, 'clients', clientId), updates);
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+      await api(`/api/v1/patients/${clientId}`, { method: 'PATCH', body: updates });
       setClientData(prev => ({ ...prev, ...updates }));
       setSuccessMessage('Saved!');
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -244,18 +171,13 @@ const ClientSettingsScreen = ({ navigation }) => {
   };
 
   const handleDeleteAccount = async () => {
-    if (!auth.currentUser || !deletePassword) return;
+    if (!deletePassword) return;
     setDeletingAccount(true);
     try {
-      const credential = EmailAuthProvider.credential(auth.currentUser.email, deletePassword);
-      await reauthenticateWithCredential(auth.currentUser, credential);
-      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser.uid;
-      await deleteDoc(doc(db, 'clients', clientId));
-      await deleteDoc(doc(db, 'auth', auth.currentUser.uid));
-      await deleteUser(auth.currentUser);
+      await api('/api/v1/auth/account/delete', { method: 'POST', body: { password: deletePassword } });
       await AsyncStorage.clear();
     } catch (err) {
-      setPasswordError(err.code === 'auth/wrong-password' ? 'Incorrect password' : 'Failed to delete account.');
+      setPasswordError(err?.message || 'Failed to delete account.');
     } finally {
       setDeletingAccount(false);
     }

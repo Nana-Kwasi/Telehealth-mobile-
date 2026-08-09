@@ -4,14 +4,11 @@ import {
   ActivityIndicator, TextInput, Alert, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc,
-  onSnapshot, deleteDoc,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors as C } from '../../constants/colors';
 import { buildEnrichedPatientMap } from '../../utils/doctorUtils';
 import { getDoctorDisplayName } from '../../utils/doctorDisplayName';
+import { getCurrentLocationMobile } from '../../services/homeCareGeoService';
 
 const LAB_TESTS = ['Blood Test (CBC)', 'Urine Analysis', 'Blood Sugar (Fasting)', 'Blood Sugar (Random)', 'HbA1c', 'Liver Function Test', 'Kidney Function Test', 'Lipid Profile', 'Thyroid Function Test', 'HIV Test', 'Hepatitis B & C', 'Malaria Test', 'Stool Test', 'Widal Test', 'Pregnancy Test', 'Full Blood Panel'];
 const SCAN_TYPES = ['X-Ray', 'MRI', 'CT Scan', 'Ultrasound'];
@@ -40,7 +37,9 @@ function customEntryLabel(entry) {
 export default function DoctorDiagnosticScreen({ navigation }) {
   const [step, setStep] = useState(1);
   const [orderType, setOrderType] = useState(null); // 'lab' | 'scan'
-  const [testType, setTestType] = useState(null);
+  const [testTypes, setTestTypes] = useState([]); // one or more selected tests/scans
+  const toggleTest = (t) =>
+    setTestTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [branches, setBranches] = useState([]);
@@ -59,67 +58,54 @@ export default function DoctorDiagnosticScreen({ navigation }) {
   const [searchRingKm, setSearchRingKm] = useState(null);
   const [draftSaving, setDraftSaving] = useState(false);
 
-  const doctorId = auth.currentUser?.uid;
+  const [doctorId, setDoctorId] = useState(null);
+  useEffect(() => { getStoredUserId().then(setDoctorId); }, []);
 
   useEffect(() => {
-    if (!selectedPatient?.id) {
-      setPatientAnchor(null);
-      return;
-    }
+    if (!selectedPatient?.id) { setPatientAnchor(null); return; }
     let cancelled = false;
-    (async () => {
-      try {
-        let lat;
-        let lng;
-        const ppSnap = await getDoc(doc(db, 'patientProfiles', selectedPatient.id)).catch(() => null);
-        if (ppSnap?.exists()) {
-          const pd = ppSnap.data();
-          lat = pd.latitude ?? pd.lat ?? pd.location?.latitude ?? pd.location?.lat;
-          lng = pd.longitude ?? pd.lng ?? pd.location?.longitude ?? pd.location?.lng;
-        }
-        if ((lat == null || lng == null)) {
-          const authSnap = await getDoc(doc(db, 'auth', selectedPatient.id)).catch(() => null);
-          if (authSnap?.exists()) {
-            const ad = authSnap.data();
-            lat = ad.latitude ?? ad.lat;
-            lng = ad.longitude ?? ad.lng;
-          }
-        }
-        if (cancelled) return;
-        if (lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
-          setPatientAnchor({ lat: Number(lat), lng: Number(lng) });
-        } else {
-          setPatientAnchor(null);
-        }
-      } catch {
-        if (!cancelled) setPatientAnchor(null);
+    api(`/api/v1/patients/${selectedPatient.id}`).then(pd => {
+      if (cancelled) return;
+      const lat = pd?.latitude ?? pd?.location?.latitude;
+      const lng = pd?.longitude ?? pd?.location?.longitude;
+      if (lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
+        setPatientAnchor({ lat: Number(lat), lng: Number(lng) });
+      } else {
+        setPatientAnchor(null);
       }
-    })();
+    }).catch(() => { if (!cancelled) setPatientAnchor(null); });
     return () => { cancelled = true; };
   }, [selectedPatient?.id]);
 
   useEffect(() => {
     if (!doctorId) return;
-    const unsub = onSnapshot(collection(db, 'doctors', doctorId, 'diagnosticCustomEntries'), (snap) => {
-      setCustomEntries(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => {});
-    return unsub;
+    let cancelled = false;
+    api(`/api/v1/doctors/${doctorId}/diagnostic-custom-entries`).then(data => {
+      if (!cancelled) setCustomEntries(data || []);
+    }).catch(() => {});
+    return () => { cancelled = true; };
   }, [doctorId]);
 
   useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      pos => setDeviceLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { enableHighAccuracy: false, timeout: 5000 }
-    );
+    // `navigator` is a browser global — it doesn't exist in Expo, so this threw
+    // "Property 'navigator' doesn't exist" and took the screen down. Use the
+    // expo-location helper the rest of the app already uses.
+    getCurrentLocationMobile()
+      .then((loc) => {
+        if (loc) setDeviceLocation({ lat: loc.latitude, lng: loc.longitude });
+      })
+      .catch(() => {});
   }, []);
 
   const loadPatients = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'doctorAppointments'), where('doctorId', '==', doctorId)));
-      const enriched = await buildEnrichedPatientMap(snap.docs);
-      const list = Array.from(enriched.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const appts = await api(`/api/v1/medical/appointments/doctor/${doctorId}`).catch(() => []) || [];
+      const patMap = new Map();
+      appts.forEach(a => {
+        if (a.clientId && !patMap.has(a.clientId)) patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '', clientName: a.clientName || '' });
+      });
+      const list = Array.from(patMap.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       setPatients(list);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -131,9 +117,9 @@ export default function DoctorDiagnosticScreen({ navigation }) {
     setSearchRingKm(null);
     setSearchPhase({ message: 'Loading registered centers…', sub: null });
     try {
-      const collName = orderType === 'lab' ? 'labBranches' : 'scanBranches';
-      const snap = await getDocs(collection(db, collName));
-      let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const collName = orderType === 'lab' ? 'lab-branches' : 'scan-branches';
+      const snapData = await api(`/api/v1/${collName}`).catch(() => []);
+      let list = snapData || [];
       list = list.filter((b) => {
         const s = b.status;
         return s === undefined || s === null || String(s).toLowerCase() === 'active';
@@ -218,14 +204,15 @@ export default function DoctorDiagnosticScreen({ navigation }) {
     const label = customLabel.trim();
     if (!label || !orderType || !doctorId) return;
     try {
-      await addDoc(collection(db, 'doctors', doctorId, 'diagnosticCustomEntries'), {
-        category: orderType,
-        label,
-        createdAt: serverTimestamp(),
+      const created = await api(`/api/v1/doctors/${doctorId}/diagnostic-custom-entries`, {
+        method: 'POST',
+        body: { category: orderType, label },
       });
+      // Use the saved entry (real UUID id + entryType) so it can be deleted/filtered.
+      setCustomEntries(prev => [...prev, created?.id ? created : { id: Date.now().toString(), entryType: orderType, label }]);
       setCustomLabel('');
       setShowCustomModal(false);
-      setTestType(label);
+      setTestTypes(prev => prev.includes(label) ? prev : [...prev, label]);
     } catch {
       Alert.alert('Error', 'Could not save your custom test name.');
     }
@@ -240,8 +227,10 @@ export default function DoctorDiagnosticScreen({ navigation }) {
         style: 'destructive',
         onPress: async () => {
           try {
-            await deleteDoc(doc(db, 'doctors', doctorId, 'diagnosticCustomEntries', entry.id));
-            if (testType === customEntryLabel(entry)) setTestType(null);
+            await api(`/api/v1/doctors/${doctorId}/diagnostic-custom-entries/${entry.id}`, { method: 'DELETE' });
+            // Remove it from the list (the UI wasn't updating, so it looked broken).
+            setCustomEntries(prev => prev.filter(c => c.id !== entry.id));
+            setTestTypes(prev => prev.filter(t => t !== customEntryLabel(entry)));
           } catch {
             Alert.alert('Error', 'Could not delete.');
           }
@@ -251,33 +240,31 @@ export default function DoctorDiagnosticScreen({ navigation }) {
   };
 
   const handleSaveDraft = async () => {
-    if (!selectedPatient || !selectedBranch || !testType || !orderType) {
+    if (!selectedPatient || !selectedBranch || testTypes.length === 0 || !orderType) {
       Alert.alert('Incomplete', 'Complete patient, center, and test before saving a draft.');
       return;
     }
     setDraftSaving(true);
     try {
       const centerIdField = orderType === 'lab' ? 'labId' : 'scanId';
-      const centerDocRef = doc(db, orderType === 'lab' ? 'labs' : 'scanCenters', selectedBranch[centerIdField]);
-      const centerSnap = await getDoc(centerDocRef).catch(() => null);
-      const centerName =
-        centerSnap?.data()?.labName || centerSnap?.data()?.centerName || 'Center';
-
-      await addDoc(collection(db, 'doctors', doctorId, 'diagnosticDrafts'), {
-        orderType,
-        testType,
-        patientId: selectedPatient.id,
-        patientName: selectedPatient.name || selectedPatient.clientName || 'Patient',
-        patientNameLower: (selectedPatient.name || selectedPatient.clientName || 'patient').toLowerCase(),
-        branchId: selectedBranch.id,
-        branchName: selectedBranch.branchName,
-        branchAddress: selectedBranch.address || '',
-        centerId: selectedBranch[centerIdField],
-        centerName,
-        notes: notes.trim(),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      // Save one draft per selected test so each is tracked independently.
+      for (const testType of testTypes) {
+      await api(`/api/v1/doctors/${doctorId}/diagnostic-drafts`, {
+        method: 'POST',
+        body: {
+          orderType, testType,
+          patientId: selectedPatient.id,
+          patientName: selectedPatient.name || selectedPatient.clientName || 'Patient',
+          patientNameLower: (selectedPatient.name || selectedPatient.clientName || 'patient').toLowerCase(),
+          branchId: selectedBranch.id,
+          branchName: selectedBranch.branchName,
+          branchAddress: selectedBranch.address || '',
+          centerId: selectedBranch[centerIdField],
+          centerName: selectedBranch.centerName || 'Center',
+          notes: notes.trim(),
+        },
       });
+      }
       Alert.alert('Draft saved', 'Open Lab & Scan Results → Draft to submit or delete.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
@@ -290,64 +277,46 @@ export default function DoctorDiagnosticScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
-    if (!selectedPatient || !selectedBranch || !testType) {
+    if (!selectedPatient || !selectedBranch || testTypes.length === 0) {
       Alert.alert('Incomplete', 'Please complete all steps before submitting.');
       return;
     }
     setSubmitting(true);
     try {
-      const orderId = generateOrderId();
       const centerIdField = orderType === 'lab' ? 'labId' : 'scanId';
-      const centerDocRef = doc(db, orderType === 'lab' ? 'labs' : 'scanCenters', selectedBranch[centerIdField]);
-      const centerSnap = await getDoc(centerDocRef).catch(() => null);
-      const centerName = centerSnap?.data()?.labName || centerSnap?.data()?.centerName || 'Center';
+      const doctorName = await getDoctorDisplayName(null, doctorId, []);
+      // One order per selected test/scan, sharing patient / center / notes.
+      const orderIds = [];
+      for (const testType of testTypes) {
+        const orderId = generateOrderId();
+        const newOrder = await api('/api/v1/diagnostics/operations/orders', {
+          method: 'POST',
+          body: {
+            orderId, type: orderType, centerType: orderType, testType,
+            patientId: selectedPatient.id,
+            patientName: selectedPatient.name || selectedPatient.clientName || 'Patient',
+            doctorId, doctorName,
+            branchId: selectedBranch.id, branchName: selectedBranch.branchName,
+            centerId: selectedBranch[centerIdField],
+            centerName: selectedBranch.centerName || 'Center',
+            notes: notes.trim(), status: 'pending',
+          },
+        });
+        api('/api/v1/patient-timeline', {
+          method: 'POST',
+          body: { patientId: selectedPatient.id, type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER', title: `${orderType === 'lab' ? 'Lab test' : 'Scan'} ordered: ${testType}`, status: 'PENDING', relatedId: newOrder?.id || orderId, actor: { role: 'DOCTOR', name: doctorName } },
+        }).catch(() => {});
+        api('/api/v1/notifications/events', {
+          method: 'POST',
+          body: { targetUserId: selectedPatient.id, type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER', title: `${orderType === 'lab' ? 'Lab Test' : 'Scan'} Ordered`, body: `Your doctor has ordered a ${testType} at ${selectedBranch.branchName}.` },
+        }).catch(() => {});
+        orderIds.push(orderId);
+      }
 
-      const doctorName = await getDoctorDisplayName(db, doctorId, [auth.currentUser?.displayName]);
-
-      const orderData = {
-        orderId,
-        type: orderType,
-        centerType: orderType,
-        testType,
-        patientId: selectedPatient.id,
-        patientName: selectedPatient.name || selectedPatient.clientName || 'Patient',
-        patientNameLower: (selectedPatient.name || selectedPatient.clientName || 'patient').toLowerCase(),
-        doctorId,
-        doctorName,
-        branchId: selectedBranch.id,
-        branchName: selectedBranch.branchName,
-        centerId: selectedBranch[centerIdField],
-        centerName,
-        notes: notes.trim(),
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      await addDoc(collection(db, 'diagnosticOrders'), orderData);
-
-      await addDoc(collection(db, 'patientTimeline'), {
-        patientId: selectedPatient.id,
-        type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER',
-        title: `${orderType === 'lab' ? 'Lab test' : 'Scan'} ordered: ${testType}`,
-        status: 'PENDING',
-        relatedId: orderId,
-        actor: { role: 'DOCTOR', name: doctorName },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        targetId: selectedPatient.id,
-        title: `${orderType === 'lab' ? 'Lab Test' : 'Scan'} Ordered`,
-        body: `Your doctor has ordered a ${testType} at ${selectedBranch.branchName}. Please present your National ID when you visit.`,
-        type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER',
-        relatedId: orderId,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
-
-      Alert.alert('Order Created', `Order ID: ${orderId}\n\nPatient has been notified to visit ${selectedBranch.branchName} with their National ID.`, [
+      const refLines = orderIds.length > 1
+        ? `Order IDs:\n${orderIds.join('\n')}`
+        : `Order ID: ${orderIds[0]}`;
+      Alert.alert('Order Created', `${refLines}\n\nPatient has been notified to visit ${selectedBranch.branchName} with their National ID.`, [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (e) {
@@ -411,7 +380,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
             <TouchableOpacity
               style={[styles.nextBtn, !orderType && styles.nextBtnDisabled]}
               disabled={!orderType}
-              onPress={() => { setTestType(null); setStep(2); }}
+              onPress={() => { setTestTypes([]); setStep(2); }}
             >
               <Text style={styles.nextBtnText}>Next →</Text>
             </TouchableOpacity>
@@ -421,30 +390,35 @@ export default function DoctorDiagnosticScreen({ navigation }) {
         {/* Step 2: Select Test */}
         {step === 2 && (
           <View>
-            <Text style={styles.stepTitle}>Step 2: Select {orderType === 'lab' ? 'Lab Test' : 'Scan Type'}</Text>
+            <Text style={styles.stepTitle}>Step 2: Select {orderType === 'lab' ? 'Lab Test(s)' : 'Scan Type(s)'}</Text>
+            <Text style={styles.stepHint}>Choose one or more — {testTypes.length} selected.</Text>
             <TouchableOpacity style={styles.addCustomBtn} onPress={() => setShowCustomModal(true)} activeOpacity={0.85}>
               <Ionicons name="add-circle" size={22} color="#fff" />
               <Text style={styles.addCustomBtnText}>Add my own {orderType === 'lab' ? 'test' : 'scan type'}</Text>
             </TouchableOpacity>
             <View style={styles.testGrid}>
-              {(orderType === 'lab' ? LAB_TESTS : SCAN_TYPES).map(t => (
+              {(orderType === 'lab' ? LAB_TESTS : SCAN_TYPES).map(t => {
+                const on = testTypes.includes(t);
+                return (
                 <TouchableOpacity
                   key={t}
-                  style={[styles.testChip, testType === t && styles.testChipActive]}
-                  onPress={() => setTestType(t)}
+                  style={[styles.testChip, on && styles.testChipActive]}
+                  onPress={() => toggleTest(t)}
                 >
-                  <Text style={[styles.testChipText, testType === t && styles.testChipTextActive]}>{t}</Text>
+                  {on && <Ionicons name="checkmark-circle" size={15} color="#fff" style={{ marginRight: 5 }} />}
+                  <Text style={[styles.testChipText, on && styles.testChipTextActive]}>{t}</Text>
                 </TouchableOpacity>
-              ))}
-              {customEntries.filter(c => c.category === orderType).map((c) => {
+                );
+              })}
+              {customEntries.filter(c => (c.category || c.entryType) === orderType).map((c) => {
                 const label = customEntryLabel(c);
                 const display = label || 'Unnamed — tap delete to remove';
-                const selected = Boolean(label) && testType === label;
+                const selected = Boolean(label) && testTypes.includes(label);
                 return (
                   <View key={c.id} style={[styles.customChipWrap, selected && styles.testChipActive]}>
                     <TouchableOpacity
                       style={styles.customChipLabelHit}
-                      onPress={() => label && setTestType(label)}
+                      onPress={() => label && toggleTest(label)}
                       activeOpacity={0.85}
                       disabled={!label}
                     >
@@ -467,8 +441,8 @@ export default function DoctorDiagnosticScreen({ navigation }) {
                 <Text style={styles.backBtnText}>← Back</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.nextBtn, !testType && styles.nextBtnDisabled, { flex: 1 }]}
-                disabled={!testType}
+                style={[styles.nextBtn, testTypes.length === 0 && styles.nextBtnDisabled, { flex: 1 }]}
+                disabled={testTypes.length === 0}
                 onPress={() => { loadPatients(); setStep(3); }}
               >
                 <Text style={styles.nextBtnText}>Next →</Text>
@@ -588,7 +562,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
             <View style={styles.summaryCard}>
               <Text style={styles.summaryTitle}>Order Summary</Text>
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Type</Text><Text style={styles.summaryValue}>{orderType?.toUpperCase()}</Text></View>
-              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Test</Text><Text style={styles.summaryValue}>{testType}</Text></View>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>{testTypes.length > 1 ? 'Tests' : 'Test'}</Text><Text style={styles.summaryValue}>{testTypes.join(', ')}</Text></View>
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Patient</Text><Text style={styles.summaryValue}>{selectedPatient?.name || selectedPatient?.clientName}</Text></View>
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Center</Text><Text style={styles.summaryValue}>{selectedBranch?.branchName}</Text></View>
               {selectedBranch?.address && (
@@ -696,6 +670,7 @@ const styles = StyleSheet.create({
   stepNum: { fontSize: 13, fontWeight: '700', color: '#94a3b8' },
   stepNumActive: { color: '#fff' },
   stepTitle: { fontSize: 18, fontWeight: '800', color: C.text, marginBottom: 16 },
+  stepHint: { fontSize: 13, color: C.textSecondary, marginTop: -8, marginBottom: 14 },
   typeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0fdf4', borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 2, borderColor: '#065f46' },
   typeCardActive: { backgroundColor: '#065f46' },
   typeCardScan: { backgroundColor: '#f5f3ff', borderColor: '#4c1d95' },
@@ -703,7 +678,7 @@ const styles = StyleSheet.create({
   typeName: { fontSize: 16, fontWeight: '800', color: C.text },
   typeSub: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
   testGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  testChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e2e8f0' },
+  testChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e2e8f0' },
   testChipActive: { backgroundColor: C.primary, borderColor: C.primary },
   testChipText: { fontSize: 13, color: C.textSecondary, fontWeight: '600' },
   testChipTextActive: { color: '#fff' },

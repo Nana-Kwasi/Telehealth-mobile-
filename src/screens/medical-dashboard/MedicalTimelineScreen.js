@@ -1,12 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback,useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, SectionList,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { MedicalColors as C } from '../../constants/colors';
 
 const EVENT_CONFIG = {
@@ -28,8 +27,12 @@ const STATUS_CONFIG = {
 function groupByDate(items) {
   const groups = {};
   items.forEach(item => {
-    const dateKey = item.createdAt
-      ? new Date(item.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    // Accept both an ISO string (what the API sends) and a Firestore-style
+    // {seconds} value — `.seconds` alone produced an Invalid Date heading.
+    const raw = item.createdAt;
+    const d = raw ? (raw?.seconds ? new Date(raw.seconds * 1000) : new Date(raw)) : null;
+    const dateKey = d && !Number.isNaN(d.getTime())
+      ? d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
       : 'Unknown Date';
     if (!groups[dateKey]) groups[dateKey] = [];
     groups[dateKey].push(item);
@@ -43,23 +46,41 @@ export default function MedicalTimelineScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('All');
 
-  const patientId = auth.currentUser?.uid;
+  const [patientId, setPatientId] = useState(null);
+  useEffect(() => { getStoredUserId().then(setPatientId); }, []);
 
-  useFocusEffect(useCallback(() => { loadTimeline(); }, []));
+  useFocusEffect(useCallback(() => { if (patientId) loadTimeline(); }, [patientId]));
+
+  /**
+   * The API returns `eventType` / `summary` / `metadataJson` / ISO `createdAt`,
+   * but this screen was written against `type` / `title` / `status` / a Firestore
+   * `{seconds}` timestamp. Nothing matched: every filter tab tested `item.type`
+   * and so rendered empty, titles were blank, and the time line read "".
+   */
+  const normalizeEvent = (raw) => {
+    let meta = {};
+    try { meta = raw.metadataJson ? JSON.parse(raw.metadataJson) : {}; } catch { /* ignore */ }
+    return {
+      ...meta,
+      ...raw,
+      type: raw.eventType || raw.type || 'APPOINTMENT',
+      title: raw.summary || raw.title || meta.title || '',
+      status: (raw.status || meta.status || 'PENDING').toUpperCase(),
+      relatedId: raw.relatedId || meta.relatedId || null,
+      actor: meta.actor || (raw.actorId ? { id: raw.actorId, name: meta.actorName } : null),
+    };
+  };
 
   const loadTimeline = async () => {
     try {
-      const snap = await getDocs(
-        query(collection(db, 'patientTimeline'), where('patientId', '==', patientId))
-      );
-      let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const raw = await api(`/api/v1/patient-timeline?patientId=${patientId}&limit=200`).catch(() => []) || [];
+      const items = (Array.isArray(raw) ? raw : []).map(normalizeEvent);
       const rxItems = items.filter(i => i.type === 'PRESCRIPTION' && i.relatedId);
       if (rxItems.length > 0) {
         await Promise.all(rxItems.map(async (evt) => {
           try {
-            const rxSnap = await getDoc(doc(db, 'doctorPrescriptions', evt.relatedId));
-            if (!rxSnap.exists()) return;
-            const rx = rxSnap.data();
+            const rx = await api(`/api/v1/medical/prescriptions/${evt.relatedId}`).catch(() => null);
+            if (!rx) return;
             const pharmacyDone = rx.pharmacyStatus === 'delivered';
             const patientDone = rx.status === 'completed';
             evt.status = patientDone ? 'COMPLETED' : (pharmacyDone ? 'IN_PROGRESS' : 'PENDING');
@@ -67,7 +88,7 @@ export default function MedicalTimelineScreen({ navigation }) {
           } catch {}
         }));
       }
-      items.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setSections(groupByDate(items));
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -108,7 +129,16 @@ export default function MedicalTimelineScreen({ navigation }) {
             <Text style={styles.actorText}>by {item.actor.name}</Text>
           )}
           <Text style={styles.timeText}>
-            {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+            {(() => {
+              // createdAt is an ISO string from the API; `.seconds` was undefined
+              // and produced an Invalid Date, so the time never rendered.
+              const raw = item.createdAt;
+              if (!raw) return '';
+              const d = raw?.seconds ? new Date(raw.seconds * 1000) : new Date(raw);
+              return Number.isNaN(d.getTime())
+                ? ''
+                : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            })()}
           </Text>
         </View>
       </TouchableOpacity>

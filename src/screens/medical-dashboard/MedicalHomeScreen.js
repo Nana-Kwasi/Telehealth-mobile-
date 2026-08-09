@@ -7,8 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../../services/firebaseConfig';
-import { doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { fetchClientAppointments, fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
@@ -22,6 +21,26 @@ function getInitials(name) {
   if (!name) return 'D';
   const p = name.trim().split(' ').filter(Boolean);
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
+}
+
+/** Local YYYY-MM-DD. Using toISOString() here would shift the day across UTC. */
+function ymdLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** The 6x7 grid for a month, padded with the surrounding days. */
+function getCalendarDays(monthDate) {
+  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
 }
 
 // Build last-6-months appointment frequency data for LineChart
@@ -50,6 +69,24 @@ function buildStatusData(appointments) {
 
 const MedicalHomeScreen = ({ navigation }) => {
   const [appointments, setAppointments] = useState([]);
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  // Days that have an appointment. `date` is already a local YYYY-MM-DD string,
+  // so it is compared as-is — no timezone conversion to drift the day.
+  const appointmentDates = React.useMemo(() => {
+    const set = new Set();
+    (appointments || []).forEach((a) => {
+      if (String(a.status || '').toLowerCase() === 'cancelled') return;
+      const raw = a.date || a.scheduledAt || a.appointmentDate;
+      if (!raw) return;
+      if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        set.add(raw.slice(0, 10));
+        return;
+      }
+      const d = new Date(raw);
+      if (!Number.isNaN(d.getTime())) set.add(ymdLocal(d));
+    });
+    return set;
+  }, [appointments]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [userName, setUserName] = useState('');
   const [userPhotoURL, setUserPhotoURL] = useState(null);
@@ -91,26 +128,16 @@ const MedicalHomeScreen = ({ navigation }) => {
       const name = await AsyncStorage.getItem('userName');
       setUserName(name || 'Patient');
 
-      const currentUser = auth.currentUser;
-      // Load patient profile photo: Firebase Auth photoURL or Firestore auth doc
-      if (currentUser) {
-        const photoFromAuth = currentUser.photoURL;
-        if (photoFromAuth) {
-          setUserPhotoURL(photoFromAuth);
-        } else {
-          try {
-            const authSnap = await getDoc(doc(db, 'auth', currentUser.uid));
-            if (authSnap.exists()) {
-              const authData = authSnap.data() || {};
-              const pd = authData.photoURL || null;
-              if (pd) setUserPhotoURL(pd);
-              setLocationProfile((prev) => mergeLocationProfile(prev, authData));
-            }
-          } catch (_) {}
+      const clientId = await getStoredUserId();
+      if (clientId) {
+        const patData = await api(`/api/v1/patients/${clientId}`).catch(() => null);
+        if (patData) {
+          if (patData.photoURL) setUserPhotoURL(patData.photoURL);
+          setLocationProfile((prev) => mergeLocationProfile(prev, patData));
+          setPatientStatus(patData.status || 'active');
+          setHasLoggedVitals(!!patData.vitals?.latest);
         }
-      }
-      if (currentUser) {
-        const clientId = currentUser.uid;
+
         const [appts, rxs] = await Promise.all([
           fetchClientAppointments(clientId),
           fetchClientPrescriptions(clientId),
@@ -118,45 +145,29 @@ const MedicalHomeScreen = ({ navigation }) => {
         setAppointments(appts);
         setPrescriptions(rxs);
 
-        // Fetch patient status + check if vitals already logged
-        try {
-          const profSnap = await getDoc(doc(db, 'patientProfiles', clientId));
-          if (profSnap.exists()) {
-            const pd = profSnap.data();
-            setLocationProfile((prev) => mergeLocationProfile(prev, pd));
-            setPatientStatus(pd.status || 'active');
-            setHasLoggedVitals(!!pd.vitals?.latest);
-          }
-        } catch (_) {}
+        const feelings = await api(`/api/v1/patients/${clientId}/daily-feelings`).catch(() => []) || [];
+        if (feelings.length > 0) {
+          setLatestFeeling(feelings.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0]);
+        }
 
-        // Load latest daily feeling for pre-fill
-        try {
-          const feelSnap = await getDocs(query(
-            collection(db, 'patientDailyFeelings'),
-            where('patientId', '==', clientId)
-          ));
-          if (!feelSnap.empty) {
-            const sorted = feelSnap.docs.map(d => d.data())
-              .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            setLatestFeeling(sorted[0]);
+        // A patient is "assigned" to a doctor through an appointment OR a
+        // prescription. Prefer the most recent appointment's doctor; otherwise fall
+        // back to whoever prescribed for them, so a patient who already has a doctor
+        // isn't pushed to "Find a Doctor" when booking.
+        const withDoc = appts.filter(a => a.doctorId && a.status !== 'cancelled').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const rxWithDoc = (rxs || []).find(r => r.doctorId);
+        const assigned = withDoc[0] || rxWithDoc || null;
+        if (assigned) {
+          const pd = { id: assigned.doctorId, name: assigned.doctorName || 'Doctor', spec: assigned.doctorSpecialization || 'Medical Doctor', photoURL: null };
+          // The appointment row often lacks the doctor's name (falls back to
+          // "Doctor" → renders as "Dr. Doctor"). Use the canonical doctor record
+          // — same source the detail screen reads — for the real name and spec.
+          const drData = await api(`/api/v1/doctors/${pd.id}`).catch(() => null);
+          if (drData) {
+            pd.name = drData.name || drData.fullName || drData.displayName || pd.name;
+            pd.spec = drData.specialization || drData.specialty || pd.spec;
+            pd.photoURL = drData.photoURL || null;
           }
-        } catch (_) {}
-
-        // Derive primary doctor from most recent non-cancelled appointment
-        const withDoc = appts
-          .filter(a => a.doctorId && a.status !== 'cancelled')
-          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        if (withDoc.length > 0) {
-          const pd = {
-            id: withDoc[0].doctorId,
-            name: withDoc[0].doctorName || 'Doctor',
-            spec: withDoc[0].doctorSpecialization || 'Medical Doctor',
-            photoURL: null,
-          };
-          try {
-            const drSnap = await getDoc(doc(db, 'doctors', pd.id));
-            if (drSnap.exists()) pd.photoURL = drSnap.data().photoURL || null;
-          } catch (_) {}
           setPrimaryDoctor(pd);
           await AsyncStorage.removeItem('th.newBookingDoctor');
           setNewBookingDoctor(null);
@@ -164,14 +175,10 @@ const MedicalHomeScreen = ({ navigation }) => {
           const cached = await AsyncStorage.getItem('th.newBookingDoctor');
           if (cached) setNewBookingDoctor(JSON.parse(cached));
         }
-      }
-      // Check if intake button should show
-      if (currentUser) {
-        try {
-          const intakeSnap = await getDoc(doc(db, 'patientIntake', currentUser.uid));
-          const intakeDone = await AsyncStorage.getItem('intakeSubmitted');
-          setShowIntakeBtn(!intakeSnap.exists() && !intakeDone);
-        } catch (_) {}
+
+        const intakeData = await api(`/api/v1/patients/${clientId}/medical-intake`).catch(() => null);
+        const intakeDone = await AsyncStorage.getItem('intakeSubmitted');
+        setShowIntakeBtn(!intakeData && !intakeDone);
       }
 
       // Check daily feeling (show if > 24 hours since last submission)
@@ -193,12 +200,8 @@ const MedicalHomeScreen = ({ navigation }) => {
     if (!intakeForm.complaint.trim()) { Alert.alert('Required', 'Please describe your main complaint.'); return; }
     setSubmittingIntake(true);
     try {
-      const uid = auth.currentUser?.uid;
-      await setDoc(doc(db, 'patientIntake', uid), {
-        ...intakeForm,
-        patientId: uid,
-        submittedAt: serverTimestamp(),
-      });
+      const uid = await getStoredUserId();
+      await api(`/api/v1/patients/${uid}/medical-intake`, { method: 'PUT', body: { ...intakeForm, patientId: uid } });
       await AsyncStorage.setItem('intakeSubmitted', '1');
       setShowIntakeBtn(false);
       setShowIntakeModal(false);
@@ -211,15 +214,10 @@ const MedicalHomeScreen = ({ navigation }) => {
     if (!feelingForm.mood) { Alert.alert('Required', 'Please select how you are feeling.'); return; }
     setSubmittingFeeling(true);
     try {
-      const uid = auth.currentUser?.uid;
-      await addDoc(collection(db, 'patientDailyFeelings'), {
-        patientId: uid,
-        mood: feelingForm.mood,
-        painLevel: parseInt(feelingForm.painLevel) || 0,
-        symptoms: feelingForm.symptoms.split(',').map(s => s.trim()).filter(Boolean),
-        medications: feelingForm.medications,
-        notes: feelingForm.notes,
-        createdAt: serverTimestamp(),
+      const uid = await getStoredUserId();
+      await api(`/api/v1/patients/${uid}/daily-feelings`, {
+        method: 'POST',
+        body: { patientId: uid, mood: feelingForm.mood, painLevel: parseInt(feelingForm.painLevel) || 0, symptoms: feelingForm.symptoms.split(',').map(s => s.trim()).filter(Boolean), medications: feelingForm.medications, notes: feelingForm.notes },
       });
       await AsyncStorage.setItem('lastDailyFeeling', String(Date.now()));
       // Update latestFeeling so next open is pre-filled with what was just submitted
@@ -242,22 +240,9 @@ const MedicalHomeScreen = ({ navigation }) => {
     if (!hasData) { Alert.alert('Required', 'Please enter at least one vital sign.'); return; }
     setSubmittingVitals(true);
     try {
-      const uid = auth.currentUser?.uid;
-      const payload = {
-        bpSystolic: vitalsForm.bpSystolic.trim(),
-        bpDiastolic: vitalsForm.bpDiastolic.trim(),
-        heartRate: vitalsForm.heartRate.trim(),
-        respiratoryRate: vitalsForm.respiratoryRate.trim(),
-        spo2: vitalsForm.spo2.trim(),
-        temperature: vitalsForm.temperature.trim(),
-        tempUnit: vitalsForm.tempUnit,
-        recordedAt: serverTimestamp(),
-      };
-      await setDoc(
-        doc(db, 'patientProfiles', uid),
-        { vitals: { latest: payload }, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
+      const uid = await getStoredUserId();
+      const payload = { bpSystolic: vitalsForm.bpSystolic.trim(), bpDiastolic: vitalsForm.bpDiastolic.trim(), heartRate: vitalsForm.heartRate.trim(), respiratoryRate: vitalsForm.respiratoryRate.trim(), spo2: vitalsForm.spo2.trim(), temperature: vitalsForm.temperature.trim(), tempUnit: vitalsForm.tempUnit };
+      await api(`/api/v1/patients/${uid}/vitals`, { method: 'POST', body: payload });
       setHasLoggedVitals(true);
       setShowVitalsModal(false);
       setVitalsForm({ ...EMPTY_VITALS });
@@ -602,6 +587,71 @@ const MedicalHomeScreen = ({ navigation }) => {
           <Text style={styles.statNumber}>{prescriptions.length}</Text>
           <Text style={styles.statLabel}>Prescriptions</Text>
         </View>
+      </View>
+
+      {/* Appointments calendar — the home screen had no calendar at all, so a
+          patient could not see their scheduled dates without opening another
+          screen. Marks any day that has an appointment, same as the therapy
+          client home. */}
+      <Text style={styles.sectionTitle}>My appointments calendar</Text>
+      <View style={styles.calCard}>
+        <View style={styles.calNav}>
+          <TouchableOpacity
+            onPress={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1))}
+            hitSlop={8}
+          >
+            <Ionicons name="chevron-back" size={22} color={MedicalColors.text} />
+          </TouchableOpacity>
+          <Text style={styles.calMonthTitle}>
+            {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </Text>
+          <TouchableOpacity
+            onPress={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1))}
+            hitSlop={8}
+          >
+            <Ionicons name="chevron-forward" size={22} color={MedicalColors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.calWeekRow}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+            <Text key={d} style={styles.calWeekLabel}>{d}</Text>
+          ))}
+        </View>
+
+        <View style={styles.calGrid}>
+          {getCalendarDays(calendarMonth).map((day, i) => {
+            const key = ymdLocal(day);
+            const booked = appointmentDates.has(key);
+            const inMonth = day.getMonth() === calendarMonth.getMonth();
+            const today = ymdLocal(new Date()) === key;
+            return (
+              <View
+                key={i}
+                style={[
+                  styles.calDay,
+                  today && styles.calDayToday,
+                  booked && styles.calDayBooked,
+                ]}
+              >
+                <Text style={[
+                  styles.calDayNum,
+                  !inMonth && styles.calDayNumOther,
+                  booked && styles.calDayNumBooked,
+                ]}>
+                  {day.getDate()}
+                </Text>
+                {booked ? <View style={styles.calDot} /> : null}
+              </View>
+            );
+          })}
+        </View>
+
+        <Text style={styles.calLegend}>
+          {appointmentDates.size > 0
+            ? 'Highlighted days have a scheduled appointment.'
+            : 'No appointments scheduled yet.'}
+        </Text>
       </View>
 
       {/* Quick Actions — horizontal scrollable row */}
@@ -1234,6 +1284,30 @@ const styles = StyleSheet.create({
   },
 
   /* Section title */
+  calCard: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 14,
+    marginHorizontal: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  calNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  calMonthTitle: { fontSize: 15, fontWeight: '700', color: MedicalColors.text },
+  calWeekRow: { flexDirection: 'row' },
+  calWeekLabel: {
+    width: `${100 / 7}%`, textAlign: 'center',
+    fontSize: 11, fontWeight: '600', color: '#94a3b8', marginBottom: 4,
+  },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calDay: {
+    width: `${100 / 7}%`, aspectRatio: 1,
+    alignItems: 'center', justifyContent: 'center', borderRadius: 8,
+  },
+  calDayToday: { borderWidth: 1, borderColor: MedicalColors.primary },
+  calDayBooked: { backgroundColor: MedicalColors.primary },
+  calDayNum: { fontSize: 13, color: MedicalColors.text },
+  calDayNumOther: { color: '#cbd5e1' },
+  calDayNumBooked: { color: '#fff', fontWeight: '700' },
+  calDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#fff', marginTop: 2 },
+  calLegend: { fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 10 },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '700',

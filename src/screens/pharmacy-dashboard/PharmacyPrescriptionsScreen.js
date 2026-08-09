@@ -3,12 +3,12 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Modal, TextInput, Alert, RefreshControl, ScrollView,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, doc, updateDoc, serverTimestamp,
-} from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
+import { rxHasPendingDoctorNote, isRxDelivered, awaitingDoctorDecision } from '../../utils/pharmacyRxNotes';
+import RxFullDetailsMobile from '../../components/RxFullDetailsMobile';
 
 const DRUG_STATUS = {
   pending:               { icon: '⏳', label: 'Pending',       color: '#d97706' },
@@ -27,6 +27,7 @@ const RX_STATUS = {
 };
 
 export default function PharmacyPrescriptionsScreen({ profile }) {
+  const navigation = useNavigation();
   const [prescriptions, setPrescriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,15 +40,11 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
 
   const loadData = async () => {
     try {
-      const snap = await getDocs(query(
-        collection(db, 'doctorPrescriptions'),
-        where('pharmacyId', '==', profile.id)
-      ));
-      const list = snap.docs.map(d => {
-        const data = d.data();
-        const medications = (data.medications || []).map(m => ({ ...m, drugStatus: m.drugStatus || 'pending' }));
-        return { id: d.id, ...data, medications };
-      }).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      const rawList = await api(`/api/v1/medical/prescriptions/pharmacy/${profile?.id}`).catch(() => []) || [];
+      const list = rawList.map(data => ({
+        ...data,
+        medications: (data.medications || []).map(m => ({ ...m, drugStatus: m.drugStatus || 'pending' })),
+      })).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setPrescriptions(list);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -62,9 +59,7 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
       if (statuses.every(s => s === 'available' || s === 'approved_replacement')) rxStatus = 'ready';
       else if (statuses.some(s => s === 'not_available' || s === 'alternative_suggested')) rxStatus = 'partially_fulfilled';
 
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-        medications: updatedMeds, pharmacyStatus: rxStatus, updatedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: updatedMeds, pharmacyStatus: rxStatus } });
       const updated = { ...rx, medications: updatedMeds, pharmacyStatus: rxStatus };
       setPrescriptions(prev => prev.map(r => r.id === rx.id ? updated : r));
       if (selected?.id === rx.id) setSelected(updated);
@@ -82,9 +77,7 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
       const updatedMeds = rx.medications.map((m, i) =>
         i === medIndex ? { ...m, drugStatus: 'alternative_suggested', alternativeSuggested: altText.trim() } : m
       );
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-        medications: updatedMeds, pharmacyStatus: 'partially_fulfilled', updatedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: updatedMeds, pharmacyStatus: 'partially_fulfilled' } });
       const updated = { ...rx, medications: updatedMeds, pharmacyStatus: 'partially_fulfilled' };
       setPrescriptions(prev => prev.map(r => r.id === rx.id ? updated : r));
       if (selected?.id === rx.id) setSelected(updated);
@@ -94,11 +87,17 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
   };
 
   const markDelivered = async (rx) => {
+    // A clinical-impact note must be signed off by the prescribing doctor first.
+    if (rxHasPendingDoctorNote(rx)) {
+      Alert.alert(
+        'Waiting for doctor approval',
+        'A clinical note on this prescription is still awaiting the prescribing doctor\'s approval. It cannot be delivered yet.'
+      );
+      return;
+    }
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'doctorPrescriptions', rx.id), {
-        pharmacyStatus: 'delivered', deliveredAt: serverTimestamp(), updatedAt: serverTimestamp(),
-      });
+      await api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { pharmacyStatus: 'delivered' } });
       const updated = { ...rx, pharmacyStatus: 'delivered' };
       setPrescriptions(prev => prev.map(r => r.id === rx.id ? updated : r));
       setSelected(updated);
@@ -109,7 +108,7 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
   const renderCard = ({ item: rx }) => {
     const pm = RX_STATUS[rx.pharmacyStatus] || RX_STATUS.sent;
     return (
-      <TouchableOpacity style={styles.card} onPress={() => setSelected(rx)}>
+      <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('PharmacyRxOps', { rxId: rx.id })}>
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>
             <Text style={styles.cardPatient}>{rx.patientName || 'Patient'}</Text>
@@ -173,9 +172,13 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
+              <RxFullDetailsMobile rx={selected} />
               <Text style={styles.sectionTitle}>Medications — mark availability</Text>
               {(selected?.medications || []).map((med, i) => {
                 const ds = DRUG_STATUS[med.drugStatus] || DRUG_STATUS.pending;
+                // Frozen once delivered, or while the doctor still has to rule on
+                // a suggested alternative / clinical-impact note for this line.
+                const rowLocked = isRxDelivered(selected) || awaitingDoctorDecision(med);
                 return (
                   <View key={i} style={styles.medRow}>
                     <View style={styles.medInfo}>
@@ -187,16 +190,16 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
                       <Text style={[styles.drugStatusBadge, { color: ds.color }]}>{ds.icon} {ds.label}</Text>
                     </View>
                     <View style={styles.medActions}>
-                      <TouchableOpacity disabled={saving || med.drugStatus === 'available'} onPress={() => updateDrugStatus(selected, i, 'available')}
-                        style={[styles.actionBtn, styles.availBtn, (saving || med.drugStatus === 'available') && { opacity: 0.4 }]}>
+                      <TouchableOpacity disabled={saving || rowLocked || med.drugStatus === 'available'} onPress={() => updateDrugStatus(selected, i, 'available')}
+                        style={[styles.actionBtn, styles.availBtn, (saving || rowLocked || med.drugStatus === 'available') && { opacity: 0.4 }]}>
                         <Text style={styles.availBtnText}>✅ Available</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity disabled={saving || med.drugStatus === 'not_available'} onPress={() => updateDrugStatus(selected, i, 'not_available')}
-                        style={[styles.actionBtn, styles.unavailBtn, (saving || med.drugStatus === 'not_available') && { opacity: 0.4 }]}>
+                      <TouchableOpacity disabled={saving || rowLocked || med.drugStatus === 'not_available'} onPress={() => updateDrugStatus(selected, i, 'not_available')}
+                        style={[styles.actionBtn, styles.unavailBtn, (saving || rowLocked || med.drugStatus === 'not_available') && { opacity: 0.4 }]}>
                         <Text style={styles.unavailBtnText}>❌ N/A</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity disabled={saving} onPress={() => { setAltModal({ rxId: selected.id, medIndex: i }); setAltText(''); }}
-                        style={[styles.actionBtn, styles.altBtn]}>
+                      <TouchableOpacity disabled={saving || rowLocked} onPress={() => { setAltModal({ rxId: selected.id, medIndex: i }); setAltText(''); }}
+                        style={[styles.actionBtn, styles.altBtn, (saving || rowLocked) && { opacity: 0.4 }]}>
                         <Text style={styles.altBtnText}>🔁 Alt</Text>
                       </TouchableOpacity>
                     </View>
@@ -205,9 +208,17 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
               })}
 
               {selected?.pharmacyStatus === 'ready' && (
-                <TouchableOpacity style={styles.deliverBtn} onPress={() => markDelivered(selected)} disabled={saving}>
-                  <Text style={styles.deliverBtnText}>{saving ? 'Saving…' : '📦 Mark as Delivered'}</Text>
-                </TouchableOpacity>
+                rxHasPendingDoctorNote(selected) ? (
+                  <View style={styles.noteBlockBanner}>
+                    <Text style={styles.noteBlockText}>
+                      ⏳ Waiting for doctor approval — a clinical note on this prescription must be approved by the prescribing doctor before it can be delivered.
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.deliverBtn} onPress={() => markDelivered(selected)} disabled={saving}>
+                    <Text style={styles.deliverBtnText}>{saving ? 'Saving…' : '📦 Mark as Delivered'}</Text>
+                  </TouchableOpacity>
+                )
               )}
               {selected?.pharmacyStatus === 'delivered' && (
                 <View style={styles.deliveredBanner}>
@@ -288,6 +299,8 @@ const styles = StyleSheet.create({
   deliverBtn: { backgroundColor: C.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 16 },
   deliverBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   deliveredBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 16, borderWidth: 1.5, borderColor: '#bbf7d0' },
+  noteBlockBanner: { backgroundColor: '#fffbeb', borderRadius: 12, padding: 14, marginTop: 16, borderWidth: 1.5, borderColor: '#fde68a' },
+  noteBlockText: { color: '#b45309', fontWeight: '700', fontSize: 13, lineHeight: 19 },
   deliveredText: { color: '#15803d', fontWeight: '800', fontSize: 16 },
   // Alt modal
   altCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, margin: 24 },

@@ -11,8 +11,7 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
 
 const RELATIONSHIPS = ['Spouse', 'Parent', 'Child', 'Sibling', 'Friend', 'Guardian', 'Other'];
@@ -34,12 +33,10 @@ const EmergencyContactScreen = () => {
 
   const loadContacts = async () => {
     try {
-      const uid = auth.currentUser?.uid;
+      const uid = await getStoredUserId();
       if (!uid) return;
-      const snap = await getDoc(doc(db, 'patientProfiles', uid));
-      if (snap.exists() && snap.data().emergencyContacts) {
-        setContacts(snap.data().emergencyContacts);
-      }
+      const data = await api(`/api/v1/patients/${uid}`).catch(() => null);
+      if (data?.emergencyContacts) setContacts(data.emergencyContacts);
     } catch (err) {
       console.error('Error loading contacts:', err);
     } finally {
@@ -48,12 +45,8 @@ const EmergencyContactScreen = () => {
   };
 
   const persistContacts = async (updated) => {
-    const uid = auth.currentUser?.uid;
-    await setDoc(
-      doc(db, 'patientProfiles', uid),
-      { emergencyContacts: updated, updatedAt: serverTimestamp() },
-      { merge: true }
-    );
+    const uid = await getStoredUserId();
+    await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { emergencyContacts: updated } });
   };
 
   const openAdd = () => {

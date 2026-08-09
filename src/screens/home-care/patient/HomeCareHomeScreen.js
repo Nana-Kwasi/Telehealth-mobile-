@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../../../services/firebaseConfig';
+import { getStoredUserId } from '../../../services/apiClient';
 import { requireHomeCarePatient } from '../../../utils/homeCarePatientAuth';
 import { fetchApprovedNurses, fetchRecentlyHiredNurses, getCurrentLocationMobile } from '../../../services/homeCareService';
 import { HOME_CARE_SPECIALTIES } from '../../../constants/homeCareConstants';
@@ -18,6 +18,7 @@ export default function HomeCareHomeScreen({ navigation }) {
   const [search, setSearch] = useState('');
   const [nurses, setNurses] = useState([]);
   const [recentNurses, setRecentNurses] = useState([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const load = async () => {
     try {
@@ -27,7 +28,8 @@ export default function HomeCareHomeScreen({ navigation }) {
         longitude: loc?.longitude,
       });
       setNurses(list);
-      const uid = auth.currentUser?.uid;
+      const uid = await getStoredUserId();
+      setIsLoggedIn(!!uid);
       if (uid) setRecentNurses(await fetchRecentlyHiredNurses(uid));
     } catch (e) {
       console.warn(e);
@@ -129,7 +131,7 @@ export default function HomeCareHomeScreen({ navigation }) {
           ))}
         </View>
 
-        {auth.currentUser ? (
+        {isLoggedIn ? (
           <>
             <TouchableOpacity style={[hc.btnOutline, { marginTop: 16 }]} onPress={() => navigation.navigate('HomeCareOngoingCare')}>
               <Text style={hc.btnOutlineText}>Ongoing care packages</Text>

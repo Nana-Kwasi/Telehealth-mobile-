@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../services/firebaseConfig';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
+import { api } from '../../services/apiClient';
 
 export default function EntityLocationSettingsScreen({ profile, collectionName = 'auth', title = 'Location Settings' }) {
   const [saving, setSaving] = useState(false);
@@ -60,9 +59,8 @@ export default function EntityLocationSettingsScreen({ profile, collectionName =
           latitude,
           longitude,
         },
-        updatedAt: serverTimestamp(),
       };
-      await setDoc(doc(db, collectionName, profile.id), payload, { merge: true });
+      await api(`/api/v1/entity-operations/${collectionName}/${profile.id}/location`, { method: 'PATCH', body: payload });
       Alert.alert('Saved', 'Location updated successfully.');
     } catch {
       Alert.alert('Error', 'Could not save location. Please try again.');

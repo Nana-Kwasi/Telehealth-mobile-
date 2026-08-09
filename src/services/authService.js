@@ -1,293 +1,194 @@
-import { auth, db } from './firebaseConfig';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, storeSession, clearSession, STORAGE_KEYS, getStoredToken, getStoredUserId } from './apiClient';
 
-export async function signInWithEmailOrUsername(identifier, password) {
+// ─── Role mapping: backend enum → mobile string ───────────────────────────────
+function mapRole(backendRole) {
+  const map = {
+    ADMIN: 'admin',
+    DOCTOR: 'doctor',
+    PATIENT: 'patient',
+    PHARMACY: 'pharmacy',
+    LAB: 'lab',
+    SCAN_CENTER: 'scan',
+    THERAPIST: 'therapist',
+    CLIENT: 'client',
+    HOME_CARE_NURSE: 'homecare_nurse',
+  };
+  return map[String(backendRole).toUpperCase()] || 'client';
+}
+
+// Strip a leading title ("Dr", "Prof", "Mr"…) so screens that render "Dr. {name}"
+// don't produce "Dr. Dr Zack". Leaves names like "Drew" intact.
+function stripHonorific(name) {
+  if (!name) return name;
+  return String(name).replace(/^\s*(dr|prof|professor|mr|mrs|ms|miss|mister)\.?\s+/i, '').trim();
+}
+
+// ─── Fetch role-appropriate profile after login ───────────────────────────────
+async function fetchProfileForRole(userId, mobileRole) {
   try {
-    const looksLikeEmail = /@/.test(identifier);
-    if (looksLikeEmail) {
-      try {
-        const res = await signInWithEmailAndPassword(auth, identifier, password);
-        const roleResult = await resolveRole(res.user.uid);
-        return roleResult;
-      } catch (e) {
-        throw e;
+    if (mobileRole === 'therapist' || mobileRole === 'admin') {
+      return await api(`/api/v1/therapists/${userId}`);
+    }
+    if (mobileRole === 'doctor') {
+      return await api(`/api/v1/doctors/${userId}`);
+    }
+    if (mobileRole === 'patient' || mobileRole === 'client') {
+      return await api(`/api/v1/patients/${userId}`);
+    }
+    if (mobileRole === 'homecare_nurse') {
+      const nurses = await api(`/api/v1/homecare/nurses?userId=${userId}`);
+      const nurse = Array.isArray(nurses) ? nurses[0] : nurses;
+      if (nurse?.id) {
+        await AsyncStorage.setItem(STORAGE_KEYS.nurseId, String(nurse.id));
       }
+      return nurse || null;
     }
-    
-    const userDoc = await findUserByUsernameOrEmail(identifier);
-    if (!userDoc) {
-      throw new Error('User not found');
-    }
-    
-    const { email } = userDoc;
-    const res = await signInWithEmailAndPassword(auth, email, password);
-    const roleResult = await resolveRole(res.user.uid);
-    
-    return roleResult;
-  } catch (error) {
-    throw error;
+    return null;
+  } catch {
+    return null;
   }
 }
 
+// ─── Core login ───────────────────────────────────────────────────────────────
+export async function signInWithEmailOrUsername(identifier, password) {
+  const email = identifier.trim().toLowerCase();
+  const data = await api('/api/v1/auth/login', {
+    method: 'POST',
+    authenticated: false,
+    body: { email, password },
+  });
+
+  const mobileRole = mapRole(data.role);
+
+  await storeSession({
+    token: data.token,
+    refreshToken: data.refreshToken,
+    userId: data.userId,
+    role: mobileRole,
+  });
+
+  const profile = await fetchProfileForRole(data.userId, mobileRole);
+
+  const resolvedProfile = {
+    id: data.userId,
+    uid: data.userId,
+    email: data.email,
+    role: mobileRole,
+    fullName: profile?.fullName || profile?.name || '',
+    name: profile?.fullName || profile?.name || '',
+    status: 'active',
+    ...(profile || {}),
+  };
+
+  // Doctors/therapists render as "Dr. {name}" — strip any stored title so it
+  // doesn't double up ("Dr. Dr Zack").
+  if (mobileRole === 'doctor' || mobileRole === 'therapist') {
+    const stripped = stripHonorific(resolvedProfile.name || resolvedProfile.fullName);
+    resolvedProfile.name = stripped;
+    resolvedProfile.fullName = stripped;
+  }
+
+  // The forced password-change flag lives on the canonical `users` row, not the
+  // role-specific profile (e.g. /api/v1/patients/{id} never returns it). Pull it
+  // from resolve-role so the ForcedPasswordChangeGate can fire on first login.
+  //
+  // resolve-role is also the only source of truth for organisation accounts:
+  // `users.role` is just PHARMACY / LAB / SCAN_CENTER for a parent *and* for each
+  // of its branch logins, so /auth/login alone cannot tell them apart. resolve-role
+  // detects a branch (uid == organization_branches.id) and returns the branch role
+  // plus the org/branch names and ids the dashboards read.
+  let effectiveRole = mobileRole;
+  try {
+    const rr = await api(`/api/v1/auth/mobile/resolve-role/${data.userId}`);
+    if (rr?.profile?.mustChangePassword !== undefined) {
+      resolvedProfile.mustChangePassword = rr.profile.mustChangePassword;
+    }
+    if (rr?.profile) {
+      // Merge the organisation fields (organizationId, pharmacyName / labName /
+      // centerName, branchId, branchName…). `id` and `role` are pinned below so a
+      // stale value in the payload cannot break routing.
+      Object.assign(resolvedProfile, rr.profile, {
+        id: data.userId,
+        uid: data.userId,
+        email: resolvedProfile.email,
+      });
+      if (rr.profile.fullName || rr.profile.name || rr.profile.displayName) {
+        resolvedProfile.name = rr.profile.name || rr.profile.displayName || rr.profile.fullName;
+        resolvedProfile.fullName = resolvedProfile.name;
+      }
+    }
+    // Only adopt the branch roles. Every other role already resolves correctly from
+    // /auth/login, and narrowing this keeps working dashboards untouched.
+    const BRANCH_ROLES = ['branch_user', 'lab_branch', 'scan_branch'];
+    if (BRANCH_ROLES.includes(rr?.role)) {
+      effectiveRole = rr.role;
+      await AsyncStorage.setItem(STORAGE_KEYS.role, effectiveRole);
+    }
+    resolvedProfile.role = effectiveRole;
+  } catch (_) {
+    /* non-fatal — gate simply won't show if this lookup fails */
+  }
+
+  // persist for quick re-access
+  await AsyncStorage.setItem('userProfile', JSON.stringify(resolvedProfile));
+  await AsyncStorage.setItem('th.userId', data.userId);
+
+  // Detect & publish current location right after login (best-effort).
+  import('./liveLocation').then((m) => m.refreshCurrentLocation({ force: true })).catch(() => {});
+
+  return { role: effectiveRole, profile: resolvedProfile };
+}
+
+// ─── Resolve role from stored session (no Firestore lookup needed) ─────────────
 export async function resolveRole(uid) {
-  // Check labs collection
-  const labRef = doc(db, 'labs', uid);
-  const labSnap = await getDoc(labRef);
-  if (labSnap.exists()) {
-    const data = labSnap.data();
-    return { role: 'lab', profile: { id: labSnap.id, ...data, role: 'lab' } };
-  }
-
-  // Check lab branches
-  const labBranchRef = doc(db, 'labBranches', uid);
-  const labBranchSnap = await getDoc(labBranchRef);
-  if (labBranchSnap.exists()) {
-    const data = labBranchSnap.data();
-    return { role: 'lab_branch', profile: { id: labBranchSnap.id, ...data, role: 'lab_branch' } };
-  }
-
-  // Check scan centers collection
-  const scanRef = doc(db, 'scanCenters', uid);
-  const scanSnap = await getDoc(scanRef);
-  if (scanSnap.exists()) {
-    const data = scanSnap.data();
-    return { role: 'scan', profile: { id: scanSnap.id, ...data, role: 'scan' } };
-  }
-
-  // Check scan branches
-  const scanBranchRef = doc(db, 'scanBranches', uid);
-  const scanBranchSnap = await getDoc(scanBranchRef);
-  if (scanBranchSnap.exists()) {
-    const data = scanBranchSnap.data();
-    return { role: 'scan_branch', profile: { id: scanBranchSnap.id, ...data, role: 'scan_branch' } };
-  }
-
-  // Check pharmacies collection
-  const pharmacyRef = doc(db, 'pharmacies', uid);
-  const pharmacySnap = await getDoc(pharmacyRef);
-  if (pharmacySnap.exists()) {
-    const data = pharmacySnap.data();
-    return { role: 'pharmacy', profile: { id: pharmacySnap.id, ...data, role: 'pharmacy' } };
-  }
-
-  // Check pharmacy branches
-  const branchRef = doc(db, 'pharmacyBranches', uid);
-  const branchSnap = await getDoc(branchRef);
-  if (branchSnap.exists()) {
-    const data = branchSnap.data();
-    return { role: 'branch_user', profile: { id: branchSnap.id, ...data, role: 'branch_user' } };
-  }
-
-  // Home-care nurses
-  const nurseRef = doc(db, 'homeCareNurses', uid);
-  const nurseSnap = await getDoc(nurseRef);
-  if (nurseSnap.exists()) {
-    const data = nurseSnap.data();
-    return {
-      role: 'homecare_nurse',
-      profile: { id: nurseSnap.id, ...data, role: 'homecare_nurse' },
-    };
-  }
-
-  // Check doctors collection
-  const doctorRef = doc(db, 'doctors', uid);
-  const doctorSnap = await getDoc(doctorRef);
-
-  if (doctorSnap.exists()) {
-    return {
-      role: 'doctor',
-      profile: {
-        id: doctorSnap.id,
-        ...doctorSnap.data(),
-        role: 'doctor'
-      }
-    };
-  }
-
-  // Check therapists collection
-  const therapistRef = doc(db, 'therapists', uid);
-  const therapistSnap = await getDoc(therapistRef);
-
-  if (therapistSnap.exists()) {
-    const therapistData = therapistSnap.data();
-    const isAdminTherapist =
-      therapistData.role === 'admin' || therapistData.type === 'Administrator';
-    return {
-      role: 'therapist',
-      profile: {
-        id: therapistSnap.id,
-        ...therapistData,
-        role: isAdminTherapist ? 'admin' : therapistData.role || 'user',
-        isAdminTherapist,
-      },
-    };
-  }
-
-  // Check auth collection for clients
-  const authRef = doc(db, 'auth', uid);
-  const authSnap = await getDoc(authRef);
-
-  if (authSnap.exists()) {
-    const authData = authSnap.data();
-    let clientStatus = authData.status || 'active';
-
-    let clientData = null;
-    const clientDocId = authData.clientId || uid;
+  const storedRole = await AsyncStorage.getItem(STORAGE_KEYS.role);
+  const storedUserId = await AsyncStorage.getItem(STORAGE_KEYS.userId);
+  if (storedRole && storedUserId) {
+    let profile = null;
     try {
-      const clientSnap = await getDoc(doc(db, 'clients', clientDocId));
-      if (clientSnap.exists()) {
-        clientData = clientSnap.data();
-        clientStatus = clientData.status || clientStatus;
-      } else if (clientDocId !== uid) {
-        const altSnap = await getDoc(doc(db, 'clients', uid));
-        if (altSnap.exists()) {
-          clientData = altSnap.data();
-          clientStatus = clientData.status || clientStatus;
-        }
-      }
-    } catch (error) {
-      console.log('Error checking clients collection:', error);
-    }
-
-    const blocked = ['inactive', 'discharged', 'on_hold', 'suspended', 'disabled'];
-    if (blocked.includes(String(clientStatus).toLowerCase())) {
-      throw new Error('Your account is not active. Please contact support for assistance.');
-    }
-
-    return {
-      role: 'client',
-      profile: {
-        id: authSnap.id,
-        ...authData,
-        ...(clientData || {}),
-        status: clientStatus,
-        userIntent: authData.userIntent || clientData?.userIntent,
-        name: authData.name || clientData?.clientName || clientData?.displayName,
-      },
-    };
+      const raw = await AsyncStorage.getItem('userProfile');
+      if (raw) profile = JSON.parse(raw);
+    } catch {}
+    return { role: storedRole, profile: profile || { id: storedUserId, uid: storedUserId, role: storedRole } };
   }
-
   return { role: 'guest', profile: null };
 }
 
+// ─── Username/email lookup (username not supported by backend — treat as email) ─
 export async function findUserByUsernameOrEmail(identifier) {
-  // Check auth collection for clients
-  const cQ = query(collection(db, 'auth'), where('username', '==', identifier));
-  const cR = await getDocs(cQ);
-  if (!cR.empty) return { id: cR.docs[0].id, ...cR.docs[0].data() };
-
-  const cQE = query(collection(db, 'auth'), where('email', '==', identifier));
-  const cRE = await getDocs(cQE);
-  if (!cRE.empty) return { id: cRE.docs[0].id, ...cRE.docs[0].data() };
-
-  // Check doctors collection
-  const dQ = query(collection(db, 'doctors'), where('username', '==', identifier));
-  const dR = await getDocs(dQ);
-  if (!dR.empty) return { id: dR.docs[0].id, ...dR.docs[0].data() };
-
-  const dQE = query(collection(db, 'doctors'), where('email', '==', identifier));
-  const dRE = await getDocs(dQE);
-  if (!dRE.empty) return { id: dRE.docs[0].id, ...dRE.docs[0].data() };
-
-  // Check pharmacies
-  const phQ = query(collection(db, 'pharmacies'), where('username', '==', identifier));
-  const phR = await getDocs(phQ);
-  if (!phR.empty) return { id: phR.docs[0].id, ...phR.docs[0].data() };
-
-  const phQE = query(collection(db, 'pharmacies'), where('email', '==', identifier));
-  const phRE = await getDocs(phQE);
-  if (!phRE.empty) return { id: phRE.docs[0].id, ...phRE.docs[0].data() };
-
-  // Check pharmacy branches
-  const brQ = query(collection(db, 'pharmacyBranches'), where('username', '==', identifier));
-  const brR = await getDocs(brQ);
-  if (!brR.empty) return { id: brR.docs[0].id, ...brR.docs[0].data() };
-
-  const brQE = query(collection(db, 'pharmacyBranches'), where('email', '==', identifier));
-  const brRE = await getDocs(brQE);
-  if (!brRE.empty) return { id: brRE.docs[0].id, ...brRE.docs[0].data() };
-
-  // Check labs
-  const lbQ = query(collection(db, 'labs'), where('username', '==', identifier));
-  const lbR = await getDocs(lbQ);
-  if (!lbR.empty) return { id: lbR.docs[0].id, ...lbR.docs[0].data() };
-
-  const lbQE = query(collection(db, 'labs'), where('email', '==', identifier));
-  const lbRE = await getDocs(lbQE);
-  if (!lbRE.empty) return { id: lbRE.docs[0].id, ...lbRE.docs[0].data() };
-
-  // Check lab branches
-  const lbrQ = query(collection(db, 'labBranches'), where('username', '==', identifier));
-  const lbrR = await getDocs(lbrQ);
-  if (!lbrR.empty) return { id: lbrR.docs[0].id, ...lbrR.docs[0].data() };
-
-  const lbrQE = query(collection(db, 'labBranches'), where('email', '==', identifier));
-  const lbrRE = await getDocs(lbrQE);
-  if (!lbrRE.empty) return { id: lbrRE.docs[0].id, ...lbrRE.docs[0].data() };
-
-  // Check scan centers
-  const scQ = query(collection(db, 'scanCenters'), where('username', '==', identifier));
-  const scR = await getDocs(scQ);
-  if (!scR.empty) return { id: scR.docs[0].id, ...scR.docs[0].data() };
-
-  const scQE = query(collection(db, 'scanCenters'), where('email', '==', identifier));
-  const scRE = await getDocs(scQE);
-  if (!scRE.empty) return { id: scRE.docs[0].id, ...scRE.docs[0].data() };
-
-  // Check scan branches
-  const sbrQ = query(collection(db, 'scanBranches'), where('username', '==', identifier));
-  const sbrR = await getDocs(sbrQ);
-  if (!sbrR.empty) return { id: sbrR.docs[0].id, ...sbrR.docs[0].data() };
-
-  const sbrQE = query(collection(db, 'scanBranches'), where('email', '==', identifier));
-  const sbrRE = await getDocs(sbrQE);
-  if (!sbrRE.empty) return { id: sbrRE.docs[0].id, ...sbrRE.docs[0].data() };
-
-  const hnQ = query(collection(db, 'homeCareNurses'), where('username', '==', identifier));
-  const hnR = await getDocs(hnQ);
-  if (!hnR.empty) return { id: hnR.docs[0].id, ...hnR.docs[0].data() };
-
-  const hnQE = query(collection(db, 'homeCareNurses'), where('email', '==', identifier));
-  const hnRE = await getDocs(hnQE);
-  if (!hnRE.empty) return { id: hnRE.docs[0].id, ...hnRE.docs[0].data() };
-
-  return null;
+  return null; // backend resolves by email only in login endpoint
 }
 
+// ─── Logout ────────────────────────────────────────────────────────────────────
 export async function logUserLogout(userId, userRole, profile) {
   try {
-    if (!auth.currentUser) return;
-
-    const logoutLog = {
-      userId,
-      userRole,
-      profile: profile || {},
-      logoutTime: new Date().toISOString(),
-      timestamp: serverTimestamp(),
-      logoutSource: 'mobile_app',
-      deviceInfo: {
-        platform: 'mobile',
-        userAgent: 'React Native'
-      }
-    };
-
-    await addDoc(collection(db, 'userLogoutLogs'), logoutLog);
-  } catch (error) {
-    console.error('Error logging user logout:', error);
-  }
+    const token = await getStoredToken();
+    if (!token) return;
+    await api('/api/v1/auth/logout', {
+      method: 'POST',
+      body: { refreshToken: await AsyncStorage.getItem(STORAGE_KEYS.refreshToken) },
+    }).catch(() => {}); // best-effort
+  } catch {}
 }
 
 export async function performLogout({ userId, role, profile, clearCoupleKeys = false } = {}) {
-  const uid = userId || auth.currentUser?.uid;
-  if (uid && auth.currentUser) {
-    await logUserLogout(uid, role, profile);
-  }
+  try {
+    await logUserLogout(userId, role, profile);
+  } catch {}
+
   if (clearCoupleKeys) {
-    const { clearCoupleLocalSession } = await import('./coupleTherapyService');
-    await clearCoupleLocalSession();
+    try {
+      const { clearCoupleLocalSession } = await import('./coupleTherapyService');
+      await clearCoupleLocalSession();
+    } catch {}
   }
-  await signOut(auth);
+
+  await clearSession();
+  await AsyncStorage.multiRemove(['userProfile', 'clientData', 'therapistData', 'th.clientId', 'userName']);
 }
 
-export { signOut };
+// ─── Stub kept for compatibility ───────────────────────────────────────────────
+export function signOut() {
+  return performLogout();
+}

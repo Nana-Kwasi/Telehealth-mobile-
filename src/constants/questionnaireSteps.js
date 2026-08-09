@@ -113,11 +113,6 @@ export const steps = [
         name: 'therapyTypes',
         label: 'What type of therapy are you looking for?',
         options: [
-          'Individual therapy',
-          'Couples therapy',
-          'Family therapy',
-          'Group therapy',
-          'Teen therapy',
           'LGBTQ+ therapy',
           'Trauma therapy',
           'Anxiety therapy',

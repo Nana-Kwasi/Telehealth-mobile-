@@ -4,11 +4,7 @@ import {
   ActivityIndicator, RefreshControl, TextInput, Alert, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, updateDoc, addDoc,
-  doc, serverTimestamp,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 
@@ -35,13 +31,10 @@ export default function DoctorVideoScreen() {
 
   const loadVideoAppts = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
-      const snap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
-      const rawAll = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const rawAll = await api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []) || [];
       // Enrich patient names
       const patMap = new Map();
       rawAll.forEach(a => { if (a.clientId) patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '' }); });
@@ -74,28 +67,24 @@ export default function DoctorVideoScreen() {
   const startCall = async (appt) => {
     setStarting(appt.id);
     try {
-      const cu = auth.currentUser;
+      const uid = await getStoredUserId();
       const roomName = `dr-${appt.id}`;
 
-      // Update appointment with call status
-      await updateDoc(doc(db, 'doctorAppointments', appt.id), {
-        callStatus: 'in_progress',
-        callRoomName: roomName,
-        callStartedAt: serverTimestamp(),
+      await api(`/api/v1/medical/appointments/${appt.id}`, {
+        method: 'PATCH',
+        body: { callStatus: 'in_progress', callRoomName: roomName },
       });
 
-      // Notify patient
-      await addDoc(collection(db, 'callNotifications'), {
-        doctorId: cu.uid,
-        doctorName: appt.doctorName || 'Doctor',
-        targetId: appt.clientId,
-        targetName: appt.clientName || 'Patient',
-        appointmentId: appt.id,
-        roomName,
-        status: 'ringing',
-        type: 'video',
-        createdAt: serverTimestamp(),
-      });
+      await api('/api/v1/notifications/events', {
+        method: 'POST',
+        body: {
+          targetUserId: appt.clientId,
+          type: 'VIDEO_CALL_STARTED',
+          title: 'Video Call',
+          body: `Dr. ${appt.doctorName || 'Doctor'} is calling you`,
+          data: { appointmentId: appt.id, roomName, doctorId: uid },
+        },
+      }).catch(() => {});
 
       setAppointments(prev =>
         prev.map(a => a.id === appt.id ? { ...a, callStatus: 'in_progress', callRoomName: roomName } : a)
@@ -115,10 +104,9 @@ export default function DoctorVideoScreen() {
 
   const endCall = async (appt) => {
     try {
-      await updateDoc(doc(db, 'doctorAppointments', appt.id), {
-        callStatus: 'completed',
-        callEndedAt: serverTimestamp(),
-        status: 'completed',
+      await api(`/api/v1/medical/appointments/${appt.id}`, {
+        method: 'PATCH',
+        body: { callStatus: 'completed', status: 'completed' },
       });
       setAppointments(prev =>
         prev.map(a => a.id === appt.id ? { ...a, callStatus: 'completed', status: 'completed' } : a)

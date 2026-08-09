@@ -8,11 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, addDoc, query, orderBy, onSnapshot,
-  serverTimestamp, getDoc, doc,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
 import {
   setPresenceOnline, setPresenceOffline, markMessagesAsSeen,
@@ -29,23 +25,13 @@ const C = MedicalColors;
 // ── Tick icon ─────────────────────────────────────────────────────────────────
 function TickIcon({ status, isMine }) {
   if (!isMine) return null;
-  if (status === 'seen') {
-    return (
-      <View style={{ flexDirection: 'row', marginLeft: 3 }}>
-        <Ionicons name="checkmark" size={12} color="#fff" style={{ marginRight: -5 }} />
-        <Ionicons name="checkmark" size={12} color="#fff" />
-      </View>
-    );
+  if (status === 'read' || status === 'seen') {
+    return <Ionicons name="checkmark-done" size={14} color="#34B7F1" style={{ marginLeft: 3 }} />;
   }
   if (status === 'delivered') {
-    return (
-      <View style={{ flexDirection: 'row', marginLeft: 3 }}>
-        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" style={{ marginRight: -5 }} />
-        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" />
-      </View>
-    );
+    return <Ionicons name="checkmark-done" size={14} color="rgba(255,255,255,0.6)" style={{ marginLeft: 3 }} />;
   }
-  return <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" style={{ marginLeft: 3 }} />;
+  return <Ionicons name="checkmark" size={13} color="rgba(255,255,255,0.6)" style={{ marginLeft: 3 }} />;
 }
 
 // ── Date separator ────────────────────────────────────────────────────────────
@@ -228,54 +214,51 @@ const MedicalMessagesScreen = () => {
   const listRef = useRef(null);
   const unsubMsgRef = useRef(null);
   const unsubPresRef = useRef(null);
-  const cu = auth.currentUser;
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   useEffect(() => {
-    loadActiveDoctor();
-    if (cu) setPresenceOnline(cu.uid);
+    getStoredUserId().then(uid => {
+      setCurrentUserId(uid);
+      loadActiveDoctor(uid);
+      if (uid) setPresenceOnline(uid);
+    });
     return () => {
-      if (cu) setPresenceOffline(cu.uid);
-      if (unsubMsgRef.current) unsubMsgRef.current();
-      if (unsubPresRef.current) unsubPresRef.current();
+      getStoredUserId().then(uid => { if (uid) setPresenceOffline(uid); });
+      if (unsubMsgRef.current) clearInterval(unsubMsgRef.current);
+      if (unsubPresRef.current) clearInterval(unsubPresRef.current);
       clearInterval(recordTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
     setGrouped(groupWithDateSeparators(messages));
-    if (activeDoctorId && cu && messages.length > 0) {
-      const chatId = [cu.uid, activeDoctorId].sort().join('_');
-      markMessagesAsSeen(chatId, messages, cu.uid);
+    if (activeDoctorId && currentUserId && messages.length > 0) {
+      const chatId = [currentUserId, activeDoctorId].sort().join('_');
+      markMessagesAsSeen(chatId, messages, currentUserId);
     }
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
   }, [messages]);
 
-  const loadActiveDoctor = async () => {
+  const loadActiveDoctor = async (uid) => {
+    const myUid = uid || currentUserId;
     try {
-      if (!cu) { setIsLoading(false); return; }
+      if (!myUid) { setIsLoading(false); return; }
       const name = await AsyncStorage.getItem('userName');
       setUserName(name || 'Patient');
 
-      const appointments = await fetchClientAppointments(cu.uid);
+      const appointments = await fetchClientAppointments(myUid);
       if (appointments.length > 0) {
-        // pick most recent confirmed/completed appointment
         const sorted = [...appointments]
           .filter(a => a.doctorId && a.status !== 'cancelled')
           .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         const recent = sorted[0] || appointments[appointments.length - 1];
         const docId = recent.doctorId;
         const docName = recent.doctorName || 'Doctor';
-
         setActiveDoctorId(docId);
         setActiveDoctorName(docName);
-
-        // Load doctor photo
-        try {
-          const dSnap = await getDoc(doc(db, 'doctors', docId));
-          if (dSnap.exists()) setDoctorPhotoURL(dSnap.data().photoURL || null);
-        } catch (_) {}
-
-        subscribeMessages(docId);
+        const drData = await api(`/api/v1/doctors/${docId}`).catch(() => null);
+        if (drData) setDoctorPhotoURL(drData.photoURL || null);
+        subscribeMessages(docId, myUid);
         subscribePresence(docId);
       }
       setIsLoading(false);
@@ -285,50 +268,46 @@ const MedicalMessagesScreen = () => {
     }
   };
 
-  const subscribeMessages = (docId) => {
-    if (unsubMsgRef.current) unsubMsgRef.current();
-    if (!cu) return;
-    const chatId = [cu.uid, docId].sort().join('_');
-    const q = query(collection(db, 'doctor_chats', chatId, 'messages'), orderBy('timestamp', 'asc'));
-    unsubMsgRef.current = onSnapshot(q, snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+  const subscribeMessages = (docId, uid) => {
+    if (unsubMsgRef.current) clearInterval(unsubMsgRef.current);
+    const myUid = uid || currentUserId;
+    if (!myUid) return;
+    const chatId = [myUid, docId].sort().join('_');
+    const fetchMsgs = () => {
+      api(`/api/v1/doctor-chats/${chatId}/messages`).then(msgs => setMessages(msgs || [])).catch(() => {});
+    };
+    fetchMsgs();
+    unsubMsgRef.current = setInterval(fetchMsgs, 3000);
   };
 
   const subscribePresence = (docId) => {
-    if (unsubPresRef.current) unsubPresRef.current();
-    unsubPresRef.current = onSnapshot(doc(db, 'presence', docId), snap => {
-      if (snap.exists()) setDoctorPresence(snap.data());
-      else setDoctorPresence({ online: false, lastSeen: null });
-    });
+    if (unsubPresRef.current) clearInterval(unsubPresRef.current);
+    const fetchPres = () => {
+      api(`/api/v1/realtime/presence/${docId}`).then(data => setDoctorPresence(data || { online: false, lastSeen: null })).catch(() => {});
+    };
+    fetchPres();
+    unsubPresRef.current = setInterval(fetchPres, 10000);
   };
 
   const getInitialStatus = async (recipientId) => {
     try {
-      const snap = await getDoc(doc(db, 'presence', recipientId));
-      return snap.exists() && snap.data().online ? 'delivered' : 'sent';
+      const data = await api(`/api/v1/realtime/presence/${recipientId}`);
+      return data?.online ? 'delivered' : 'sent';
     } catch (_) { return 'sent'; }
   };
 
   const sendMessage = async (overrides = {}) => {
-    if (!activeDoctorId || !cu) return;
+    if (!activeDoctorId || !currentUserId) return;
     const text = (overrides.text ?? newMessage).trim();
     if (!overrides.type && !text) return;
     setSending(true);
     if (!overrides.type) setNewMessage('');
     try {
-      const chatId = [cu.uid, activeDoctorId].sort().join('_');
+      const chatId = [currentUserId, activeDoctorId].sort().join('_');
       const status = await getInitialStatus(activeDoctorId);
-      await addDoc(collection(db, 'doctor_chats', chatId, 'messages'), {
-        text: text || '',
-        from: cu.uid,
-        fromName: userName,
-        to: activeDoctorId,
-        toName: `Dr. ${activeDoctorName}`,
-        timestamp: serverTimestamp(),
-        type: 'text',
-        status,
-        ...overrides,
+      await api(`/api/v1/doctor-chats/${chatId}/messages`, {
+        method: 'POST',
+        body: { text: text || '', from: currentUserId, fromName: userName, to: activeDoctorId, toName: `Dr. ${activeDoctorName}`, type: 'text', status, ...overrides },
       });
     } catch (error) { console.error('Send error:', error); }
     finally { setSending(false); }
@@ -345,7 +324,7 @@ const MedicalMessagesScreen = () => {
     try {
       const asset = result.assets[0];
       const ext = asset.uri.split('.').pop();
-      const url = await uploadMedia(asset.uri, `chat-media/${cu.uid}/${Date.now()}.${ext}`);
+      const url = await uploadMedia(asset.uri, `chat-media/${currentUserId}/${Date.now()}.${ext}`);
       await sendMessage({ type: 'image', mediaUrl: url, text: '' });
     } catch { Alert.alert('Error', 'Could not send image.'); }
     finally { setUploading(false); }
@@ -357,7 +336,7 @@ const MedicalMessagesScreen = () => {
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
       setUploading(true);
-      const url = await uploadMedia(asset.uri, `chat-files/${cu.uid}/${Date.now()}_${asset.name}`);
+      const url = await uploadMedia(asset.uri, `chat-files/${currentUserId}/${Date.now()}_${asset.name}`);
       await sendMessage({
         type: 'file', mediaUrl: url, fileName: asset.name,
         fileSize: asset.size || 0, mimeType: asset.mimeType || '', text: '',
@@ -392,7 +371,7 @@ const MedicalMessagesScreen = () => {
       const uri = recordingRef.current.getURI();
       recordingRef.current = null;
       setUploading(true);
-      const url = await uploadMedia(uri, `chat-audio/${cu.uid}/${Date.now()}.m4a`);
+      const url = await uploadMedia(uri, `chat-audio/${currentUserId}/${Date.now()}.m4a`);
       await sendMessage({ type: 'audio', mediaUrl: url, duration, text: '' });
     } catch { Alert.alert('Error', 'Could not send voice message.'); }
     finally { setUploading(false); }
@@ -412,7 +391,7 @@ const MedicalMessagesScreen = () => {
 
   const renderItem = useCallback(({ item }) => {
     if (item.isSeparator) return <DateSeparator label={item.label} />;
-    const isMine = item.from === cu?.uid;
+    const isMine = item.from === currentUserId;
     return (
       <View style={[styles.msgRow, isMine && styles.msgRowMine]}>
         {!isMine && (
@@ -448,7 +427,7 @@ const MedicalMessagesScreen = () => {
         </View>
       </View>
     );
-  }, [cu, activeDoctorName, doctorPhotoURL]);
+  }, [currentUserId, activeDoctorName, doctorPhotoURL]);
 
   if (isLoading) {
     return (

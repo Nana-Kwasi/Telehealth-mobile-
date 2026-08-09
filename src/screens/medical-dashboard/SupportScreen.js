@@ -4,9 +4,7 @@ import {
   TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, getStoredUserId, getStoredRole } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
 
 const ISSUE_TYPES = [
@@ -30,17 +28,19 @@ const SupportScreen = () => {
     if (!description.trim()) { Alert.alert('Required', 'Please describe your issue.'); return; }
     setSubmitting(true);
     try {
-      const uid = auth.currentUser?.uid || '';
-      const userName = await AsyncStorage.getItem('userName') || '';
-      await addDoc(collection(db, 'supportTickets'), {
-        userId: uid,
-        userName,
-        issueType: selectedType,
-        subject: subject.trim() || ISSUE_TYPES.find(t => t.key === selectedType)?.label,
-        description: description.trim(),
-        status: 'open',
-        platform: 'mobile',
-        createdAt: serverTimestamp(),
+      const uid = await getStoredUserId() || '';
+      const role = (await getStoredRole()) || 'PATIENT';
+      await api('/api/v1/care/support/tickets', {
+        method: 'POST',
+        // Backend requires reporterId + role + category + subject + description.
+        body: {
+          reporterId: uid,
+          role,
+          category: selectedType,
+          subject: subject.trim() || ISSUE_TYPES.find(t => t.key === selectedType)?.label,
+          description: description.trim(),
+          priority: 'normal',
+        },
       });
       setSubmitted(true);
     } catch (err) {

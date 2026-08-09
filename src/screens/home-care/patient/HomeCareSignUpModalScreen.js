@@ -3,10 +3,9 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
   KeyboardAvoidingView, Platform, ScrollView, Alert,
 } from 'react-native';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../../../services/firebaseConfig';
+import { api, storeSession } from '../../../services/apiClient';
 import { HomeCareColors as C } from '../../../constants/homeCareColors';
 import { buildLegalPrivacyFields, syncPrivacyConsentToUser } from '../../../services/privacyConsentService';
 import { isValidEmergencyPhone } from '../../../utils/homeCareUtils';
@@ -38,46 +37,29 @@ export default function HomeCareSignUpModalScreen({ navigation, route }) {
     }
     setLoading(true);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const uid = cred.user.uid;
-      const clientId = (await AsyncStorage.getItem('th.clientId')) || uid;
+      // Declared before the register call that uses it — a `const` read above its
+      // declaration is a TDZ crash, not a hoist.
       const phoneTrim = phone.trim();
-      const profile = {
-        uid,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phoneTrim,
-        phoneNumber: phoneTrim,
-        role: 'client',
-        userIntent: 'homecare',
-        clientId: uid,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        ...buildLegalPrivacyFields(),
+      const regData = await api('/api/v1/auth/register', {
+        method: 'POST', authenticated: false,
+        body: { email: email.trim().toLowerCase(), password, fullName: name.trim(), role: 'CLIENT', phone: phoneTrim },
+      });
+      const uid = regData.userId;
+      await storeSession({ token: regData.token, refreshToken: regData.refreshToken, userId: uid, role: 'client' });
+      const userProfile = {
+        id: uid, uid, name: name.trim(), email: email.trim().toLowerCase(),
+        phone: phoneTrim, phoneNumber: phoneTrim, role: 'client', userIntent: 'homecare',
+        clientId: uid, status: 'pending',
       };
-      await setDoc(doc(db, 'auth', uid), profile);
-      await setDoc(doc(db, 'clients', uid), {
-        authUid: uid,
-        displayName: name.trim(),
-        clientName: name.trim(),
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phoneTrim,
-        phoneNumber: phoneTrim,
-        role: 'client',
-        userIntent: 'homecare',
-        status: 'pending',
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-      await syncPrivacyConsentToUser({ userId: uid, role: 'client', profileId: uid }).catch(() => {});
+      await AsyncStorage.setItem('userProfile', JSON.stringify(userProfile));
       await AsyncStorage.setItem('userIntent', 'homecare');
       await AsyncStorage.setItem('userRole', 'client');
       await AsyncStorage.setItem('isAuthenticated', 'true');
       await AsyncStorage.removeItem('hc.returnAfterAuth');
-      if (typeof auth.authStateReady === 'function') await auth.authStateReady();
+      await syncPrivacyConsentToUser({ userId: uid, role: 'client', profileId: uid }).catch(() => {});
       navigation.replace(returnScreen, returnParams);
     } catch (e) {
-      if (e.code === 'auth/email-already-in-use') {
+      if (/email.*already|already.*registered/i.test(e.message)) {
         setError('Email already registered. Sign in instead.');
       } else {
         setError(e.message || 'Sign up failed.');

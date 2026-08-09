@@ -13,9 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../../services/firebaseConfig';
+import { api, storeSession } from '../../services/apiClient';
 import { Colors } from '../../constants/colors';
 import { RELATIONSHIP_TYPES, COUPLE_STORAGE_KEYS } from '../../constants/coupleTherapyConfig';
 import {
@@ -87,31 +85,13 @@ export default function CoupleInitiationScreen({ navigation }) {
 
       const coupleId = result.coupleId;
       const email = partnerAEmail.trim().toLowerCase();
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = cred.user.uid;
-      const clientId = await createPartnerClientRecord(
-        coupleId,
-        'partnerA',
-        email,
-        partnerAName.trim(),
-        uid,
-      );
-
-      await setDoc(doc(db, 'auth', uid), {
-        uid,
-        name: partnerAName.trim(),
-        email,
-        role: 'client',
-        clientId,
-        userIntent: 'therapy',
-        therapyType: 'couples',
-        coupleId,
-        couplePartnerRole: 'partnerA',
-        therapyType: 'couples',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        ...buildLegalPrivacyFields(),
+      const regData = await api('/api/v1/auth/register', {
+        method: 'POST', authenticated: false,
+        body: { email, password, fullName: partnerAName.trim(), role: 'CLIENT' },
       });
+      const uid = regData.userId;
+      await storeSession({ token: regData.token, refreshToken: regData.refreshToken, userId: uid, role: 'client' });
+      const clientId = await createPartnerClientRecord(coupleId, 'partnerA', email, partnerAName.trim(), uid);
 
       await linkCouplePartnerAuth(coupleId, 'partnerA', {
         authUid: uid,
@@ -132,7 +112,7 @@ export default function CoupleInitiationScreen({ navigation }) {
       navigation.replace('CoupleIntake', { coupleId, partnerRole: 'partnerA' });
     } catch (e) {
       console.error(e);
-      if (e.code === 'auth/email-already-in-use') {
+      if (/email.*already|already.*registered/i.test(e.message)) {
         navigation.replace('Login', { coupleResume: true });
         return;
       }

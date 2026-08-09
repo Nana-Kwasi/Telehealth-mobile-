@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { performLogout } from '../services/authService';
+import { api } from '../services/apiClient';
 import { ScanColors as C } from '../constants/colors';
 
 const SCAN_NAV = [
@@ -11,6 +11,9 @@ const SCAN_NAV = [
   { name: 'ScanOrders',  label: 'Orders',        icon: 'scan-outline' },
   { name: 'ScanVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'ScanResults', label: 'Reports',       icon: 'document-text-outline' },
+  { name: 'ScanBranches',    label: 'Branches',      icon: 'business-outline' },
+  { name: 'ScanReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
+  { name: 'ScanPreferences', label: 'Settings',      icon: 'settings-outline' },
 ];
 
 const SCAN_BRANCH_NAV = [
@@ -18,6 +21,8 @@ const SCAN_BRANCH_NAV = [
   { name: 'ScanBranchOrders',  label: 'Orders',        icon: 'scan-outline' },
   { name: 'ScanBranchVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'ScanBranchResults', label: 'Reports',       icon: 'document-text-outline' },
+  { name: 'ScanBranchReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
+  { name: 'ScanBranchPreferences', label: 'Settings',      icon: 'settings-outline' },
 ];
 
 export default function ScanDrawerContent({ navigation, state, profile, isBranch = false }) {
@@ -27,17 +32,25 @@ export default function ScanDrawerContent({ navigation, state, profile, isBranch
 
   useEffect(() => {
     if (!isBranch || !profile?.scanId) return;
-    getDoc(doc(db, 'scanCenters', profile.scanId))
-      .then((snap) => {
-        if (snap.exists()) setParentScanName(snap.data()?.centerName || '');
-      })
-      .catch(() => {});
+    api(`/api/v1/admin/users/${profile.scanId}`).then((data) => {
+      if (data?.centerName || data?.name) setParentScanName(data.centerName || data.name || '');
+    }).catch(() => {});
   }, [isBranch, profile?.scanId]);
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => { try { await signOut(auth); } catch (_) {} } },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          // Clearing the session is not enough: without resetting navigation the
+          // dashboard stays mounted and the user appears to still be logged in.
+          try { await performLogout(); } catch (_) {}
+          try { await AsyncStorage.clear(); } catch (_) {}
+          navigation.getParent()?.replace('Intent');
+        },
+      },
     ]);
   };
 

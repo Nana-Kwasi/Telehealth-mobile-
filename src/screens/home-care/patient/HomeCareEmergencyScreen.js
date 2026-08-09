@@ -2,8 +2,6 @@ import React, { useCallback, useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../services/firebaseConfig';
 import {
   createEmergencyBooking,
   getCurrentLocationMobile,
@@ -15,6 +13,7 @@ import { HomeCareColors as C } from '../../../constants/homeCareColors';
 import { hc } from '../../../components/home-care/homeCareStyles';
 import { requireHomeCarePatient } from '../../../utils/homeCarePatientAuth';
 import { isValidEmergencyPhone } from '../../../utils/homeCareUtils';
+import { api, getStoredUserId } from '../../../services/apiClient';
 
 export default function HomeCareEmergencyScreen({ navigation }) {
   const [careType, setCareType] = useState('general');
@@ -57,20 +56,13 @@ export default function HomeCareEmergencyScreen({ navigation }) {
   }, [detectLocation]);
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, 'auth', uid));
-        if (snap.exists()) {
-          const d = snap.data();
-          const p = d.phone || d.phoneNumber || '';
-          if (p) setPhone(String(p));
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
+    getStoredUserId().then(uid => {
+      if (!uid) return;
+      api(`/api/v1/patients/${uid}`).then(d => {
+        const p = d?.phone || d?.phoneNumber || '';
+        if (p) setPhone(String(p));
+      }).catch(() => {});
+    });
   }, []);
 
   const submit = async () => {

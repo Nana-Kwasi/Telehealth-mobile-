@@ -12,7 +12,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../../constants/coupleTherapyConfig';
-import { auth } from '../../services/firebaseConfig';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 import {
   fetchCoupleDashboard,
@@ -37,7 +36,7 @@ export default function CoupleDashboardScreen({ navigation, route }) {
     try {
       const profileStr = await AsyncStorage.getItem('userProfile');
       const profile = profileStr ? JSON.parse(profileStr) : null;
-      const authLoc = auth.currentUser?.uid ? await fetchAuthLocationProfile(auth.currentUser.uid) : null;
+      const authLoc = await AsyncStorage.getItem('th.userId') ? await fetchAuthLocationProfile(await AsyncStorage.getItem('th.userId')) : null;
       setLocationProfile(mergeLocationProfile(profile, authLoc));
 
       const dash = await fetchCoupleDashboard(id);

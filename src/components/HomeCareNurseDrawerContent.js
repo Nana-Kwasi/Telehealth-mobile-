@@ -2,8 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { signOut } from 'firebase/auth';
-import { auth } from '../services/firebaseConfig';
+import { performLogout } from '../services/authService';
+
 import { HomeCareColors as C } from '../constants/homeCareColors';
 import { NURSE_PRESENCE } from '../constants/homeCareConstants';
 import { useHomeCareNurse } from '../contexts/HomeCareNurseContext';
@@ -24,7 +24,7 @@ export default function HomeCareNurseDrawerContent({ navigation, profile, state 
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await performLogout();
       await AsyncStorage.clear();
       navigation.getParent()?.replace('Intent');
     } catch (e) {

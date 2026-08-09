@@ -1,214 +1,265 @@
-import { db } from './firebaseConfig';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
-  onSnapshot,
-} from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from './apiClient';
 
-// ── Fetch all verified doctors ──
+// ── Fetch all doctors ──────────────────────────────────────────────────────────
 export async function fetchDoctors(filters = {}) {
   try {
-    let q = query(collection(db, 'doctors'), where('verified', '==', true));
+    const params = new URLSearchParams();
+    if (filters.specialization) params.set('specialization', filters.specialization);
+    if (filters.location) params.set('location', filters.location);
+    const qs = params.toString();
+    const doctors = await api(`/api/v1/care/doctors/search${qs ? `?${qs}` : ''}`) || [];
 
-    const snapshot = await getDocs(q);
-    let doctors = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const raw = Array.isArray(doctors) ? doctors : (doctors.doctors || []);
 
-    // Client-side filtering (Firestore limits compound queries)
-    if (filters.specialization) {
-      doctors = doctors.filter(
-        (d) =>
-          d.specialization &&
-          d.specialization.toLowerCase().includes(filters.specialization.toLowerCase())
-      );
-    }
-    if (filters.location) {
-      doctors = doctors.filter(
-        (d) =>
-          d.location &&
-          d.location.toLowerCase().includes(filters.location.toLowerCase())
-      );
-    }
+    // The search endpoint returns { userId, fullName, ... } with the rich fields
+    // (experience, fee, rating, languages, photo) packed in metadataJson. Normalise
+    // to the flat shape the cards read: `id`, `name` (without the "Dr" honorific so
+    // the UI's "Dr. {name}" doesn't double up), plus the metadata fields.
+    let list = raw.map((d) => {
+      let meta = {};
+      try { meta = d.metadataJson ? JSON.parse(d.metadataJson) : {}; } catch { /* ignore */ }
+      const rawName = d.fullName || d.name || meta.name || '';
+      const name = rawName.replace(/^\s*[Dd][Rr]\.?\s+/, '').trim();
+      return {
+        ...meta,
+        ...d,
+        id: d.id || d.userId,
+        name,
+        fullName: rawName,
+        specialization: d.specialization || meta.specialization || '',
+        location: d.location || meta.location || '',
+        phone: d.phone || meta.phone || '',
+        experience: d.experience ?? meta.experience ?? meta.yearsExperience ?? null,
+        consultationFee: d.consultationFee ?? meta.consultationFee ?? null,
+        averageRating: d.averageRating ?? d.ratingAvg ?? meta.averageRating ?? 0,
+        totalReviews: d.totalReviews ?? meta.totalReviews ?? 0,
+        languages: Array.isArray(d.languages) ? d.languages : (Array.isArray(meta.languages) ? meta.languages : []),
+        gender: d.gender || meta.gender || null,
+        photoURL: d.photoURL || meta.photoURL || null,
+        verified: d.verified ?? meta.verified ?? false,
+      };
+    }).filter((d) => d.id);
+
     if (filters.minRating) {
-      doctors = doctors.filter(
-        (d) => (d.averageRating || 0) >= filters.minRating
-      );
+      list = list.filter((d) => (d.averageRating || d.ratingAvg || 0) >= filters.minRating);
     }
     if (filters.maxFee) {
-      doctors = doctors.filter(
-        (d) => (d.consultationFee || 0) <= filters.maxFee
-      );
+      list = list.filter((d) => (d.consultationFee || 0) <= filters.maxFee);
     }
     if (filters.gender) {
-      doctors = doctors.filter(
-        (d) => d.gender && d.gender.toLowerCase() === filters.gender.toLowerCase()
-      );
+      list = list.filter((d) => d.gender && d.gender.toLowerCase() === filters.gender.toLowerCase());
     }
-
-    return doctors;
+    return list;
   } catch (error) {
     console.error('Error fetching doctors:', error);
     return [];
   }
 }
 
-// ── Fetch a single doctor profile ──
+// ── Fetch a single doctor ──────────────────────────────────────────────────────
 export async function fetchDoctorProfile(doctorId) {
   try {
-    const docRef = doc(db, 'doctors', doctorId);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() };
-    }
-    return null;
+    return await api(`/api/v1/doctors/${doctorId}`);
   } catch (error) {
     console.error('Error fetching doctor profile:', error);
     return null;
   }
 }
 
-// ── Fetch doctor availability slots ──
+// ── Doctor availability ────────────────────────────────────────────────────────
 export async function fetchDoctorAvailability(doctorId, startDate = null) {
   try {
-    const today = startDate || new Date().toISOString().split('T')[0];
-    const q = query(
-      collection(db, 'doctorAvailability'),
-      where('doctorId', '==', doctorId),
-      where('date', '>=', today),
-      orderBy('date', 'asc')
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const qs = startDate ? `?from=${startDate}` : '';
+    const data = await api(`/api/v1/care/doctors/${doctorId}/availability${qs}`);
+    return Array.isArray(data) ? data : (data?.slots || []);
   } catch (error) {
     console.error('Error fetching doctor availability:', error);
     return [];
   }
 }
 
-// ── Fetch reviews for a doctor ──
+// ── Appointments ───────────────────────────────────────────────────────────────
+export async function fetchDoctorAppointments(doctorId) {
+  try {
+    const data = await api(`/api/v1/medical/appointments/doctor/${doctorId}`);
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error('Error fetching doctor appointments:', error);
+    return [];
+  }
+}
+
+export async function fetchPatientAppointments(patientId) {
+  try {
+    const data = await api(`/api/v1/medical/appointments/patient/${patientId}`);
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error('Error fetching patient appointments:', error);
+    return [];
+  }
+}
+
+export async function bookAppointment(payload) {
+  return api('/api/v1/medical/appointments', { method: 'POST', body: payload });
+}
+
+/**
+ * Book from the Firestore-shaped payload the booking screens build
+ * ({ doctorId, clientId, date, time, consultationType, consultationFee, vitals … }).
+ * The endpoint takes { doctorId, patientId, scheduledAt, notes, status }, so the
+ * shape has to be mapped — BookAppointmentScreen imported this name and it did not
+ * exist at all, so the screen crashed the moment you tried to confirm a booking.
+ */
+export async function createAppointment(data = {}) {
+  const patientId = data.patientId || data.clientId;
+  if (!data.doctorId || !patientId) throw new Error('Missing doctor or patient');
+
+  const scheduledAt = data.scheduledAt
+    || (data.date ? new Date(`${data.date}T${data.time || '09:00'}:00`).toISOString() : new Date().toISOString());
+
+  // Consultation type rides as a "[type] reason" prefix in notes (the backend
+  // parses it back out into `type`).
+  const type = data.consultationType || data.type;
+  const notes = [type ? `[${type}]` : '', data.reason || data.notes || '']
+    .filter(Boolean).join(' ').trim();
+
+  const appt = await api('/api/v1/medical/appointments', {
+    method: 'POST',
+    body: {
+      doctorId: data.doctorId,
+      patientId,
+      scheduledAt,
+      notes,
+      status: data.status || 'pending',
+    },
+  });
+
+  // Pre-visit vitals captured during booking belong on the patient record, where
+  // the doctor's patient screens read them from `vitalsLatestJson`.
+  if (data.vitals && typeof data.vitals === 'object') {
+    await api(`/api/v1/patients/${patientId}`, {
+      method: 'PATCH',
+      body: { vitalsLatestJson: JSON.stringify(data.vitals) },
+    }).catch(() => {});
+  }
+  return appt;
+}
+
+// ── Prescriptions ──────────────────────────────────────────────────────────────
+export async function fetchPatientPrescriptions(patientId) {
+  try {
+    const data = await api(`/api/v1/medical/prescriptions/patient/${patientId}`);
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error('Error fetching prescriptions:', error);
+    return [];
+  }
+}
+
+export async function fetchDoctorPrescriptions(doctorId) {
+  try {
+    const data = await api(`/api/v1/medical/prescriptions/doctor/${doctorId}`);
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error('Error fetching doctor prescriptions:', error);
+    return [];
+  }
+}
+
+// ── Doctor reviews ─────────────────────────────────────────────────────────────
 export async function fetchDoctorReviews(doctorId) {
   try {
-    const q = query(
-      collection(db, 'doctorReviews'),
-      where('doctorId', '==', doctorId),
-      orderBy('date', 'desc')
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return await api(`/api/v1/doctors/${doctorId}/reviews`);
   } catch (error) {
     console.error('Error fetching doctor reviews:', error);
-    return [];
+    return { reviews: [], totalCount: 0, averageRating: 0 };
   }
 }
 
-// ── Create a new appointment ──
-export async function createAppointment(appointmentData) {
-  try {
-    const docRef = await addDoc(collection(db, 'doctorAppointments'), {
-      ...appointmentData,
-      status: 'pending',
-      createdAt: serverTimestamp(),
-    });
-    return { id: docRef.id, ...appointmentData, status: 'pending' };
-  } catch (error) {
-    console.error('Error creating appointment:', error);
-    throw error;
-  }
-}
-
-// ── Fetch appointments for a client ──
-// NOTE: No orderBy to avoid composite index requirements — sort in JS instead
-export async function fetchClientAppointments(clientId) {
-  if (!clientId) return [];
-  try {
-    const q = query(
-      collection(db, 'doctorAppointments'),
-      where('clientId', '==', clientId)
-    );
-    const snapshot = await getDocs(q);
-    const results = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-    return results.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  } catch (error) {
-    console.error('Error fetching client appointments:', error);
-    return [];
-  }
-}
-
-// ── Submit a review ──
-export async function submitDoctorReview(reviewData) {
-  try {
-    const docRef = await addDoc(collection(db, 'doctorReviews'), {
-      ...reviewData,
-      date: new Date().toISOString(),
-      timestamp: serverTimestamp(),
-    });
-    return { id: docRef.id, ...reviewData };
-  } catch (error) {
-    console.error('Error submitting review:', error);
-    throw error;
-  }
-}
-
-// ── Fetch prescriptions for a client ──
-// NOTE: No orderBy to avoid composite index requirements — sort in JS instead
-export async function fetchClientPrescriptions(clientId) {
-  if (!clientId) return [];
-  try {
-    // Simple equality query — never needs a composite index
-    const q = query(
-      collection(db, 'doctorPrescriptions'),
-      where('patientId', '==', clientId)
-    );
-    const snapshot = await getDocs(q);
-    const results = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-    // Sort newest-first in JS
-    return results.sort((a, b) => (b.date || b.createdAt?.seconds?.toString() || '').localeCompare(a.date || a.createdAt?.seconds?.toString() || ''));
-  } catch (error) {
-    console.error('Error fetching client prescriptions:', error);
-    return [];
-  }
-}
-
-// ── Listen to appointments in real-time ──
-export function listenToAppointments(clientId, callback) {
-  const q = query(
-    collection(db, 'doctorAppointments'),
-    where('clientId', '==', clientId)
-  );
-  return onSnapshot(q, (snapshot) => {
-    const appointments = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-    appointments.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-    callback(appointments);
+export async function submitDoctorReview(doctorId, { patientId, rating, comment }) {
+  return api(`/api/v1/doctors/${doctorId}/reviews`, {
+    method: 'POST',
+    body: { patientId, rating, comment },
   });
 }
 
-// ── Get specialization options ──
+// ── Doctor notes ───────────────────────────────────────────────────────────────
+export async function fetchDoctorNotes(doctorId, patientId = null) {
+  try {
+    const qs = patientId ? `?patientId=${patientId}` : '';
+    const data = await api(`/api/v1/doctor-notes${qs}`);
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error('Error fetching doctor notes:', error);
+    return [];
+  }
+}
+
+export async function createDoctorNote(payload) {
+  return api('/api/v1/doctor-notes', { method: 'POST', body: payload });
+}
+
+export async function updateDoctorNote(noteId, payload) {
+  return api(`/api/v1/doctor-notes/${noteId}`, { method: 'PATCH', body: payload });
+}
+
+// ── Patient diagnostics ────────────────────────────────────────────────────────
+export async function fetchDiagnosticOrders(patientId) {
+  try {
+    const data = await api(`/api/v1/diagnostics/operations/orders?patientId=${patientId}`);
+    return Array.isArray(data) ? data : (data?.orders || []);
+  } catch (error) {
+    console.error('Error fetching diagnostics:', error);
+    return [];
+  }
+}
+
+// ── Specializations (matches web OnboardDoctor list) ──────────────────────────
 export function getSpecializations() {
   return [
-    'General Practitioner',
-    'Cardiologist',
-    'Dermatologist',
-    'Endocrinologist',
-    'Gastroenterologist',
-    'Neurologist',
-    'Obstetrician/Gynecologist',
-    'Ophthalmologist',
-    'Orthopedic Surgeon',
-    'Pediatrician',
-    'Psychiatrist',
-    'Pulmonologist',
-    'Urologist',
-    'ENT Specialist',
-    'Allergist',
-    'Oncologist',
-    'Rheumatologist',
+    'General Practice',
+    'Cardiology',
+    'Dermatology',
+    'Endocrinology',
+    'Gastroenterology',
+    'Neurology',
+    'Oncology',
+    'Orthopedics',
+    'Pediatrics',
+    'Psychiatry',
+    'Pulmonology',
+    'Radiology',
+    'Surgery',
+    'Urology',
+    'Other',
   ];
+}
+
+// ── Subscribe pattern (polling) ────────────────────────────────────────────────
+export function subscribeDoctorAppointments(doctorId, onData) {
+  if (!doctorId) return () => {};
+  let cancelled = false;
+  const poll = async () => {
+    if (cancelled) return;
+    try { onData(await fetchDoctorAppointments(doctorId)); } catch { onData([]); }
+  };
+  poll();
+  const id = setInterval(poll, 30_000);
+  return () => { cancelled = true; clearInterval(id); };
+}
+
+export const fetchClientAppointments = fetchPatientAppointments;
+export const fetchClientPrescriptions = fetchPatientPrescriptions;
+
+export function listenToAppointments(patientId, onData) {
+  if (!patientId) return () => {};
+  let cancelled = false;
+  const poll = async () => {
+    if (cancelled) return;
+    try { onData(await fetchPatientAppointments(patientId)); } catch { onData([]); }
+  };
+  poll();
+  const id = setInterval(poll, 30_000);
+  return () => { cancelled = true; clearInterval(id); };
 }

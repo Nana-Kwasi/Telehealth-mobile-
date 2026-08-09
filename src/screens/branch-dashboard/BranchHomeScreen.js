@@ -4,8 +4,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 
@@ -18,11 +17,7 @@ export default function BranchHomeScreen({ profile, navigation }) {
 
   const loadStats = async () => {
     try {
-      const snap = await getDocs(query(
-        collection(db, 'doctorPrescriptions'),
-        where('branchId', '==', profile.id)
-      ));
-      const list = snap.docs.map(d => d.data());
+      const list = await api(`/api/v1/medical/prescriptions/branch/${profile?.id}`).catch(() => []) || [];
       setStats({
         incoming:  list.filter(r => r.pharmacyStatus === 'sent').length,
         active:    list.filter(r => ['accepted', 'partially_fulfilled'].includes(r.pharmacyStatus)).length,

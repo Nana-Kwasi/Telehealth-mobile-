@@ -6,10 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../../services/firebaseConfig';
+import { getStoredUserId } from '../../services/apiClient';
 import { fetchClientAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 
@@ -23,9 +24,8 @@ const MedicalVideoScreen = ({ navigation }) => {
 
   const loadVideoAppointments = async () => {
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
-      const clientId = currentUser.uid;
+      const clientId = await getStoredUserId();
+      if (!clientId) return;
       const appts = await fetchClientAppointments(clientId);
       setVideoAppointments(
         appts.filter(
@@ -36,6 +36,17 @@ const MedicalVideoScreen = ({ navigation }) => {
       console.error('Error loading video appointments:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // The patient can join once the doctor has started the call (shared call room).
+  const joinCall = (appt) => {
+    if (appt.callStatus === 'in_progress' && appt.callRoomName) {
+      Alert.alert('Joining call', `Connecting to Dr. ${appt.doctorName || 'your doctor'} — room ${appt.callRoomName}.`);
+      // The live Twilio session opens here once video credentials + the medical
+      // call screen are configured.
+    } else {
+      Alert.alert('Call not started', 'Your doctor has not started the video call yet. You can join as soon as they begin.');
     }
   };
 
@@ -80,9 +91,11 @@ const MedicalVideoScreen = ({ navigation }) => {
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity style={styles.joinButton}>
+              <TouchableOpacity style={styles.joinButton} onPress={() => joinCall(appt)}>
                 <Ionicons name="videocam" size={20} color="#FFFFFF" />
-                <Text style={styles.joinButtonText}>Join Video Call</Text>
+                <Text style={styles.joinButtonText}>
+                  {appt.callStatus === 'in_progress' && appt.callRoomName ? 'Join Video Call' : 'Waiting for doctor'}
+                </Text>
               </TouchableOpacity>
             </View>
           ))}

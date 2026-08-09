@@ -8,11 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, addDoc, onSnapshot,
-  orderBy, serverTimestamp, getDoc, doc, updateDoc,
-} from 'firebase/firestore';
+import { api, getStoredUserId, uploadFile } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import {
@@ -34,24 +30,18 @@ function getInitials(name) {
 // ── Tick icon for message status ──────────────────────────────────────────────
 function TickIcon({ status, isMine }) {
   if (!isMine) return null;
-  if (status === 'seen') {
+  if (status === 'read' || status === 'seen') {
     return (
       <View style={{ flexDirection: 'row', marginLeft: 3 }}>
-        <Ionicons name="checkmark" size={12} color="#fff" style={{ marginRight: -5 }} />
-        <Ionicons name="checkmark" size={12} color="#fff" />
+        <Ionicons name="checkmark-done" size={14} color="#34B7F1" />
       </View>
     );
   }
   if (status === 'delivered') {
-    return (
-      <View style={{ flexDirection: 'row', marginLeft: 3 }}>
-        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" style={{ marginRight: -5 }} />
-        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" />
-      </View>
-    );
+    return <Ionicons name="checkmark-done" size={14} color="rgba(255,255,255,0.6)" style={{ marginLeft: 3 }} />;
   }
   // sent
-  return <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.5)" style={{ marginLeft: 3 }} />;
+  return <Ionicons name="checkmark" size={13} color="rgba(255,255,255,0.6)" style={{ marginLeft: 3 }} />;
 }
 
 // ── Date separator ────────────────────────────────────────────────────────────
@@ -135,15 +125,18 @@ export default function DoctorMessagesScreen({ route }) {
   const unsubRef = useRef(null);
   const presenceUnsubRef = useRef(null);
 
-  const cu = auth.currentUser;
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   useEffect(() => {
-    loadPatients();
-    if (cu) setPresenceOnline(cu.uid);
+    getStoredUserId().then(uid => {
+      setCurrentUserId(uid);
+      loadPatients(uid);
+      if (uid) setPresenceOnline(uid);
+    });
     return () => {
-      if (cu) setPresenceOffline(cu.uid);
-      if (unsubRef.current) unsubRef.current();
-      if (presenceUnsubRef.current) presenceUnsubRef.current();
+      getStoredUserId().then(uid => { if (uid) setPresenceOffline(uid); });
+      if (unsubRef.current) clearInterval(unsubRef.current);
+      if (presenceUnsubRef.current) clearInterval(presenceUnsubRef.current);
     };
   }, []);
 
@@ -164,31 +157,27 @@ export default function DoctorMessagesScreen({ route }) {
 
   useEffect(() => {
     setGrouped(groupWithDateSeparators(messages));
-    // Mark messages as seen
-    if (activePatient && cu && messages.length > 0) {
-      const chatId = [cu.uid, activePatient.id].sort().join('_');
-      markMessagesAsSeen(chatId, messages, cu.uid);
+    if (activePatient && currentUserId && messages.length > 0) {
+      const chatId = [currentUserId, activePatient.id].sort().join('_');
+      markMessagesAsSeen(chatId, messages, currentUserId);
     }
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
   }, [messages]);
 
-  const loadPatients = async () => {
+  const loadPatients = async (uid) => {
+    const doctorId = uid || currentUserId;
     try {
-      if (!cu) return;
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      const profile = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
-      setDoctorProfile(profile);
+      if (!doctorId) return;
+      const profile = await api(`/api/v1/doctors/${doctorId}`).catch(() => null);
+      setDoctorProfile(profile ? { id: doctorId, ...profile } : { id: doctorId, name: 'Doctor' });
 
-      const apptSnap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
+      const appts = await api(`/api/v1/medical/appointments/doctor/${doctorId}`).catch(() => []) || [];
       const patMap = new Map();
-      apptSnap.docs.forEach(d => {
-        const data = d.data();
-        if (!data.clientId) return;
-        const existing = patMap.get(data.clientId);
-        if (!existing || (data.date || '') > (existing.lastVisit || '')) {
-          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || '', lastVisit: data.date || '' });
+      appts.forEach(a => {
+        if (!a.clientId) return;
+        const existing = patMap.get(a.clientId);
+        if (!existing || (a.date || '') > (existing.lastVisit || '')) {
+          patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '', lastVisit: a.date || '' });
         }
       });
       const enriched = await enrichPatientNames(patMap);
@@ -198,49 +187,57 @@ export default function DoctorMessagesScreen({ route }) {
   };
 
   const subscribeMessages = (patientId) => {
-    if (unsubRef.current) unsubRef.current();
-    if (!cu) return;
-    const chatId = [cu.uid, patientId].sort().join('_');
-    const q = query(collection(db, 'doctor_chats', chatId, 'messages'), orderBy('timestamp', 'asc'));
-    unsubRef.current = onSnapshot(q, snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => console.error('Messages error:', err));
+    if (unsubRef.current) clearInterval(unsubRef.current);
+    if (!currentUserId) return;
+    const chatId = [currentUserId, patientId].sort().join('_');
+    const fetchMessages = () => {
+      api(`/api/v1/doctor-chats/${chatId}/messages`).then(msgs => {
+        setMessages(msgs || []);
+      }).catch(() => {});
+    };
+    fetchMessages();
+    unsubRef.current = setInterval(fetchMessages, 3000);
   };
 
   const subscribePresence = (userId) => {
-    if (presenceUnsubRef.current) presenceUnsubRef.current();
-    presenceUnsubRef.current = onSnapshot(doc(db, 'presence', userId), snap => {
-      if (snap.exists()) setOtherPresence(snap.data());
-      else setOtherPresence({ online: false, lastSeen: null });
-    });
+    if (presenceUnsubRef.current) clearInterval(presenceUnsubRef.current);
+    const fetchPresence = () => {
+      api(`/api/v1/realtime/presence/${userId}`).then(data => {
+        setOtherPresence(data || { online: false, lastSeen: null });
+      }).catch(() => setOtherPresence({ online: false, lastSeen: null }));
+    };
+    fetchPresence();
+    presenceUnsubRef.current = setInterval(fetchPresence, 10000);
   };
 
   const getInitialStatus = async (recipientId) => {
     try {
-      const snap = await getDoc(doc(db, 'presence', recipientId));
-      return snap.exists() && snap.data().online ? 'delivered' : 'sent';
+      const data = await api(`/api/v1/realtime/presence/${recipientId}`);
+      return data?.online ? 'delivered' : 'sent';
     } catch (_) { return 'sent'; }
   };
 
   const sendMessage = async (overrides = {}) => {
-    if (!activePatient || !cu) return;
+    if (!activePatient || !currentUserId) return;
     const text = (overrides.text ?? msgText).trim();
     if (!overrides.type && !text) return;
     setSending(true);
     if (!overrides.type) setMsgText('');
     try {
-      const chatId = [cu.uid, activePatient.id].sort().join('_');
+      const chatId = [currentUserId, activePatient.id].sort().join('_');
       const status = await getInitialStatus(activePatient.id);
-      await addDoc(collection(db, 'doctor_chats', chatId, 'messages'), {
-        text: text || '',
-        from: cu.uid,
-        fromName: `Dr. ${doctorProfile?.name || 'Doctor'}`,
-        to: activePatient.id,
-        toName: activePatient.name,
-        timestamp: serverTimestamp(),
-        type: 'text',
-        status,
-        ...overrides,
+      await api(`/api/v1/doctor-chats/${chatId}/messages`, {
+        method: 'POST',
+        body: {
+          text: text || '',
+          from: currentUserId,
+          fromName: `Dr. ${doctorProfile?.name || 'Doctor'}`,
+          to: activePatient.id,
+          toName: activePatient.name,
+          type: 'text',
+          status,
+          ...overrides,
+        },
       });
     } catch (err) { console.error('Send error:', err); }
     finally { setSending(false); }
@@ -259,7 +256,7 @@ export default function DoctorMessagesScreen({ route }) {
     try {
       const asset = result.assets[0];
       const ext = asset.uri.split('.').pop();
-      const url = await uploadMedia(asset.uri, `chat-media/${cu.uid}/${Date.now()}.${ext}`);
+      const url = await uploadMedia(asset.uri, `chat-media/${currentUserId}/${Date.now()}.${ext}`);
       await sendMessage({ type: 'image', mediaUrl: url, text: '' });
     } catch { Alert.alert('Error', 'Could not send image.'); }
     finally { setUploading(false); }
@@ -272,7 +269,7 @@ export default function DoctorMessagesScreen({ route }) {
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
       setUploading(true);
-      const url = await uploadMedia(asset.uri, `chat-files/${cu.uid}/${Date.now()}_${asset.name}`);
+      const url = await uploadMedia(asset.uri, `chat-files/${currentUserId}/${Date.now()}_${asset.name}`);
       await sendMessage({
         type: 'file', mediaUrl: url, fileName: asset.name,
         fileSize: asset.size || 0, mimeType: asset.mimeType || '', text: '',
@@ -308,7 +305,7 @@ export default function DoctorMessagesScreen({ route }) {
       const uri = recordingRef.current.getURI();
       recordingRef.current = null;
       setUploading(true);
-      const url = await uploadMedia(uri, `chat-audio/${cu.uid}/${Date.now()}.m4a`);
+      const url = await uploadMedia(uri, `chat-audio/${currentUserId}/${Date.now()}.m4a`);
       await sendMessage({ type: 'audio', mediaUrl: url, duration, text: '' });
     } catch { Alert.alert('Error', 'Could not send voice message.'); }
     finally { setUploading(false); }
@@ -330,7 +327,7 @@ export default function DoctorMessagesScreen({ route }) {
   const renderItem = useCallback(({ item }) => {
     if (item.isSeparator) return <DateSeparator label={item.label} />;
 
-    const isMine = item.from === cu?.uid;
+    const isMine = item.from === currentUserId;
     return (
       <View style={[styles.msgRow, isMine && styles.msgRowMine]}>
         {!isMine && (
@@ -359,7 +356,7 @@ export default function DoctorMessagesScreen({ route }) {
         </View>
       </View>
     );
-  }, [cu, activePatient]);
+  }, [currentUserId, activePatient]);
 
   const filteredPatients = patients.filter(p =>
     !search.trim() || (p.name || '').toLowerCase().includes(search.toLowerCase())

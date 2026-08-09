@@ -5,11 +5,7 @@ import {
   RefreshControl, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, addDoc, updateDoc,
-  deleteDoc, doc, serverTimestamp, getDoc,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 
@@ -90,34 +86,24 @@ export default function DoctorNotesScreen() {
 
   const loadAll = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
-      // Load doctor profile
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      const profile = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
-      setDoctorProfile(profile);
+      const profile = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      setDoctorProfile(profile ? { id: uid, ...profile } : { id: uid, name: 'Doctor' });
 
-      // Load patients from appointments
-      const apptSnap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
+      const appts = await api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []) || [];
       const patMap = new Map();
-      apptSnap.docs.forEach(d => {
-        const data = d.data();
-        if (data.clientId && !patMap.has(data.clientId)) {
-          patMap.set(data.clientId, { id: data.clientId, name: data.clientName || '' });
+      appts.forEach(a => {
+        if (a.clientId && !patMap.has(a.clientId)) {
+          patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '' });
         }
       });
       const enriched = await enrichPatientNames(patMap);
       setPatients(Array.from(enriched.values()));
 
-      // Load notes — sort in JS to avoid composite index requirement
-      const notesSnap = await getDocs(
-        query(collection(db, 'doctorNotes'), where('doctorId', '==', cu.uid))
-      );
-      const notesList = notesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      notesList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      const notesList = await api(`/api/v1/doctor-notes?doctorId=${uid}`).catch(() => []) || [];
+      notesList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setNotes(notesList);
     } catch (err) {
       console.error('DoctorNotes load error:', err);
@@ -157,25 +143,24 @@ export default function DoctorNotesScreen() {
     if (!form.content.trim()) { Alert.alert('Validation', 'Content is required.'); return; }
     setSaving(true);
     try {
-      const cu = auth.currentUser;
+      const uid = await getStoredUserId();
       if (editing) {
-        await updateDoc(doc(db, 'doctorNotes', editing.id), {
-          title: form.title.trim(),
-          content: form.content.trim(),
-          type: form.type,
-          updatedAt: serverTimestamp(),
+        await api(`/api/v1/doctor-notes/${editing.id}`, {
+          method: 'PATCH',
+          body: { title: form.title.trim(), content: form.content.trim(), type: form.type },
         });
       } else {
-        await addDoc(collection(db, 'doctorNotes'), {
-          doctorId: cu.uid,
-          doctorName: doctorProfile?.name || '',
-          patientId: form.patientId || '',
-          patientName: form.patientId ? form.patientName : 'General',
-          title: form.title.trim(),
-          content: form.content.trim(),
-          type: form.type,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+        await api('/api/v1/doctor-notes', {
+          method: 'POST',
+          body: {
+            doctorId: uid,
+            doctorName: doctorProfile?.name || '',
+            patientId: form.patientId || '',
+            patientName: form.patientId ? form.patientName : 'General',
+            title: form.title.trim(),
+            content: form.content.trim(),
+            type: form.type,
+          },
         });
       }
       setShowModal(false);
@@ -192,7 +177,7 @@ export default function DoctorNotesScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await deleteDoc(doc(db, 'doctorNotes', noteId));
+          await api(`/api/v1/doctor-notes/${noteId}`, { method: 'DELETE' });
           setNotes(prev => prev.filter(n => n.id !== noteId));
         } catch (err) {
           Alert.alert('Error', 'Could not delete note.');

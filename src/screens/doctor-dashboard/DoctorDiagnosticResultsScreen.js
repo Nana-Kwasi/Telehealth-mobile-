@@ -1,15 +1,13 @@
-import React, { useState, useCallback, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useCallback, useLayoutEffect, useMemo,useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Modal, ScrollView, TextInput, Alert, RefreshControl, Linking,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, serverTimestamp, doc, updateDoc,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors as C } from '../../constants/colors';
+import { formatDate, formatDateTime, dateMillis } from '../../utils/dateDisplay';
 
 const TYPE_ICONS = { lab: 'flask-outline', scan: 'scan-outline' };
 const TYPE_COLORS = { lab: '#065f46', scan: '#4c1d95' };
@@ -24,6 +22,14 @@ function normStatus(s) {
   return String(s || 'pending').toLowerCase();
 }
 
+// The REST entity spells these differently from the Firestore documents these
+// screens were written against. Reading the old names gave blank Refs, missing
+// download links, "Unknown" upload times and a literal "Center" for the centre.
+const rowDate   = (r) => r.uploadedAt || r.createdAt || r.updatedAt;
+const rowRef    = (r) => r.resultRef || r.orderCode || r.orderId || '';
+const rowFile   = (r) => r.fileUrl || r.resultFileUrl || r.reportUrl || '';
+const rowCenter = (r) => r.centerName || r.branchName || r.uploaderName || '';
+
 export default function DoctorDiagnosticResultsScreen() {
   const navigation = useNavigation();
   const [orders, setOrders] = useState([]);
@@ -36,7 +42,8 @@ export default function DoctorDiagnosticResultsScreen() {
   const [savingNote, setSavingNote] = useState(false);
   const [filter, setFilter] = useState('All');
 
-  const doctorId = auth.currentUser?.uid;
+  const [doctorId, setDoctorId] = useState(null);
+  useEffect(() => { getStoredUserId().then(setDoctorId); }, []);
 
   const goOrderLabScan = useCallback(() => {
     navigation.getParent()?.navigate('DoctorDiagnosticOrder');
@@ -55,22 +62,14 @@ export default function DoctorDiagnosticResultsScreen() {
   const loadAll = async () => {
     if (!doctorId) return;
     try {
-      const [ordSnap, resSnap, draftSnap] = await Promise.all([
-        getDocs(query(collection(db, 'diagnosticOrders'), where('doctorId', '==', doctorId))),
-        getDocs(query(collection(db, 'diagnosticResults'), where('doctorId', '==', doctorId))),
-        getDocs(collection(db, 'doctors', doctorId, 'diagnosticDrafts')),
+      const [ordList, resList, draftList] = await Promise.all([
+        api(`/api/v1/diagnostics/operations/orders?doctorId=${doctorId}`).catch(() => []),
+        api(`/api/v1/diagnostics/operations/results-query?doctorId=${doctorId}`).catch(() => []),
+        api(`/api/v1/doctors/${doctorId}/diagnostic-drafts`).catch(() => []),
       ]);
-      const ordList = ordSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      ordList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setOrders(ordList);
-
-      const resList = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      resList.sort((a, b) => (b.uploadedAt?.seconds || 0) - (a.uploadedAt?.seconds || 0));
-      setResults(resList);
-
-      const dlist = draftSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      dlist.sort((a, b) => (b.updatedAt?.seconds || b.createdAt?.seconds || 0) - (a.updatedAt?.seconds || a.createdAt?.seconds || 0));
-      setDrafts(dlist);
+      setOrders((ordList || []).sort((a, b) => dateMillis(rowDate(b)) - dateMillis(rowDate(a))));
+      setResults((resList || []).sort((a, b) => dateMillis(rowDate(b)) - dateMillis(rowDate(a))));
+      setDrafts((draftList || []).sort((a, b) => dateMillis(b.updatedAt || b.createdAt) - dateMillis(a.updatedAt || a.createdAt)));
     } catch (e) {
       console.error(e);
     } finally {
@@ -90,21 +89,25 @@ export default function DoctorDiagnosticResultsScreen() {
       .filter(o => !resultOrderIds.has(o.id))
       .map(o => ({
         kind: 'order',
-        sortAt: o.createdAt?.seconds || 0,
+        sortAt: dateMillis(rowDate(o)),
         rowKey: `o-${o.id}`,
         ...o,
       }));
     const resultRows = results.map(r => ({
       kind: 'result',
-      sortAt: r.uploadedAt?.seconds || 0,
+      sortAt: dateMillis(rowDate(r)),
       rowKey: `r-${r.id}`,
       ...r,
     }));
     let merged = [...orderRows, ...resultRows].sort((a, b) => b.sortAt - a.sortAt);
-    if (filter === 'Lab') {
-      merged = merged.filter(r => (r.type || r.centerType || '') === 'lab');
+    const rowKind = (r) => String(r.type || r.centerType || r.diagnosticType || '').toLowerCase();
+    if (filter === 'Ready') {
+      // Only diagnostics whose centre has uploaded findings.
+      merged = merged.filter(r => r.kind === 'result');
+    } else if (filter === 'Lab') {
+      merged = merged.filter(r => rowKind(r) === 'lab');
     } else if (filter === 'Scan') {
-      merged = merged.filter(r => (r.type || r.centerType || '') === 'scan');
+      merged = merged.filter(r => rowKind(r) === 'scan');
     }
     return merged;
   }, [orders, results, filter]);
@@ -118,9 +121,9 @@ export default function DoctorDiagnosticResultsScreen() {
     if (!doctorNote.trim() || selected?.kind !== 'result') return;
     setSavingNote(true);
     try {
-      await updateDoc(doc(db, 'diagnosticResults', selected.id), {
-        doctorNote: doctorNote.trim(),
-        doctorNoteAt: serverTimestamp(),
+      await api(`/api/v1/diagnostics/operations/results/${selected.id}`, {
+        method: 'PATCH',
+        body: { doctorNote: doctorNote.trim() },
       });
       setSelected(prev => (prev ? { ...prev, doctorNote: doctorNote.trim() } : null));
       Alert.alert('Saved', 'Your note has been added to the result.');
@@ -178,9 +181,7 @@ export default function DoctorDiagnosticResultsScreen() {
           </View>
           <Text style={styles.testType}>{item.testType}</Text>
           <Text style={styles.ref}>{item.patientName} · {item.branchName || item.centerName}</Text>
-          <Text style={styles.date}>
-            {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleDateString() : ''}
-          </Text>
+          <Text style={styles.date}>{formatDate(rowDate(item), '')}</Text>
         </TouchableOpacity>
       );
     }
@@ -199,11 +200,11 @@ export default function DoctorDiagnosticResultsScreen() {
           </View>
         </View>
         <Text style={styles.testType}>{item.testType}</Text>
-        <Text style={styles.ref}>{item.resultRef}</Text>
-        {(item.fileUrl || item.resultFileUrl) ? (
+        <Text style={styles.ref}>{[item.patientName, rowCenter(item)].filter(Boolean).join(' · ')}</Text>
+        {rowFile(item) ? (
           <TouchableOpacity
             style={styles.downloadRow}
-            onPress={() => Linking.openURL(item.fileUrl || item.resultFileUrl)}
+            onPress={() => Linking.openURL(rowFile(item))}
           >
             <Ionicons name="download-outline" size={16} color="#1d4ed8" />
             <Text style={styles.downloadText}>{item.fileName || 'Download attachment'}</Text>
@@ -214,9 +215,7 @@ export default function DoctorDiagnosticResultsScreen() {
             <Text style={styles.fileName}>{item.fileName}</Text>
           </View>
         ) : null}
-        <Text style={styles.date}>
-          {item.uploadedAt ? new Date(item.uploadedAt.seconds * 1000).toLocaleDateString() : 'Recently'}
-        </Text>
+        <Text style={styles.date}>{formatDate(rowDate(item), 'Recently')}</Text>
       </TouchableOpacity>
     );
   };
@@ -224,7 +223,9 @@ export default function DoctorDiagnosticResultsScreen() {
   const emptyCopy =
     filter === 'Draft'
       ? { title: 'No drafts', sub: 'Save an order as draft from Order Lab / Scan when reviewing the summary.' }
-      : { title: 'No orders or results yet', sub: 'Submitted orders appear here immediately. Result files appear after the center uploads findings.' };
+      : filter === 'Ready'
+        ? { title: 'No results ready yet', sub: 'A diagnostic moves here as soon as the lab or scan centre uploads its findings.' }
+        : { title: 'No orders or results yet', sub: 'Submitted orders appear here immediately. Result files appear after the center uploads findings.' };
 
   return (
     <View style={styles.container}>
@@ -236,7 +237,7 @@ export default function DoctorDiagnosticResultsScreen() {
         </TouchableOpacity>
       </View>
       <View style={styles.filterRow}>
-        {['All', 'Lab', 'Scan', 'Draft'].map(f => (
+        {['All', 'Ready', 'Lab', 'Scan', 'Draft'].map(f => (
           <TouchableOpacity key={f} style={[styles.filterBtn, filter === f && styles.filterBtnActive]} onPress={() => setFilter(f)}>
             <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
           </TouchableOpacity>
@@ -298,14 +299,14 @@ export default function DoctorDiagnosticResultsScreen() {
                 <>
                   <View style={styles.detailRow}><Text style={styles.detailLabel}>Type</Text><Text style={styles.detailValue}>{selected?.type?.toUpperCase()}</Text></View>
                   <View style={styles.detailRow}><Text style={styles.detailLabel}>Test</Text><Text style={styles.detailValue}>{selected?.testType}</Text></View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Ref</Text><Text style={styles.detailValue}>{selected?.resultRef}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Ref</Text><Text style={styles.detailValue}>{rowRef(selected || {}) || '—'}</Text></View>
                   {selected?.fileName && (
                     <View style={styles.detailRow}><Text style={styles.detailLabel}>File</Text><Text style={styles.detailValue}>{selected?.fileName}</Text></View>
                   )}
-                  {(selected?.fileUrl || selected?.resultFileUrl) && (
+                  {!!rowFile(selected || {}) && (
                     <TouchableOpacity
                       style={styles.modalDownloadBtn}
-                      onPress={() => Linking.openURL(selected.fileUrl || selected.resultFileUrl)}
+                      onPress={() => Linking.openURL(rowFile(selected))}
                     >
                       <Ionicons name="download-outline" size={18} color="#fff" />
                       <Text style={styles.modalDownloadBtnText}>Download attachment</Text>
@@ -320,10 +321,10 @@ export default function DoctorDiagnosticResultsScreen() {
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Uploaded</Text>
                     <Text style={styles.detailValue}>
-                      {selected?.uploadedAt ? new Date(selected.uploadedAt.seconds * 1000).toLocaleString() : 'Unknown'}
+                      {formatDateTime(rowDate(selected || {}), 'Unknown')}
                     </Text>
                   </View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Center</Text><Text style={styles.detailValue}>{selected?.uploaderName || 'Center'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Center</Text><Text style={styles.detailValue}>{rowCenter(selected || {}) || '—'}</Text></View>
 
                   <View style={styles.doctorNoteSection}>
                     <Text style={styles.doctorNoteLabel}>Your Notes</Text>
@@ -387,7 +388,7 @@ const styles = StyleSheet.create({
   },
   orderBannerBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   filterRow: { flexDirection: 'row', padding: 16, paddingBottom: 8, gap: 8, flexWrap: 'wrap' },
-  filterBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
+  filterBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
   filterBtnActive: { backgroundColor: C.primary, borderColor: C.primary },
   filterText: { fontSize: 13, color: C.textSecondary, fontWeight: '600' },
   filterTextActive: { color: '#fff' },

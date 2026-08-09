@@ -11,11 +11,11 @@ import {
   ScrollView,
   Alert,
   Modal,
+  DeviceEventEmitter,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '../services/firebaseConfig';
 import { signInWithEmailOrUsername } from '../services/authService';
+import { api } from '../services/apiClient';
 import { fetchClientData } from '../services/clientDataService';
 import { Colors } from '../constants/colors';
 import { logAction, A } from '../utils/auditLogger';
@@ -61,7 +61,7 @@ const LoginScreen = ({ navigation, route }) => {
       const { role, profile } = await signInWithEmailOrUsername(identifier, password);
 
       const allowedRoles = [
-        'client', 'therapist', 'admin', 'doctor',
+        'client', 'patient', 'therapist', 'admin', 'doctor',
         'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch', 'homecare_nurse',
       ];
       if (!allowedRoles.includes(role)) {
@@ -73,9 +73,9 @@ const LoginScreen = ({ navigation, route }) => {
       const privacyAccepted = await AsyncStorage.getItem(PRIVACY_STORAGE_KEY);
       if (privacyAccepted === 'true') {
         syncPrivacyConsentToUser({
-          userId: auth.currentUser?.uid,
+          userId: profile?.id,
           role,
-          profileId: profile?.id || auth.currentUser?.uid,
+          profileId: profile?.id,
         }).catch(() => {});
       }
 
@@ -84,6 +84,12 @@ const LoginScreen = ({ navigation, route }) => {
       await AsyncStorage.setItem('userId', profile?.id || '');
       await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
       await AsyncStorage.setItem('isAuthenticated', 'true');
+
+      // AppNavigator resolves `profile` once, in its start-up session check — which
+      // runs before this login, so its state is still null. Dashboards that take
+      // `profile` as a prop (pharmacy/branch/lab/scan) would render with null and
+      // load nothing. Tell the navigator to re-read the profile we just stored.
+      DeviceEventEmitter.emit('refreshProfile');
 
       // Therapists and admins go to therapist dashboard
       if (role === 'therapist' || role === 'admin') {
@@ -132,6 +138,17 @@ const LoginScreen = ({ navigation, route }) => {
       if (role === 'homecare_nurse') {
         await AsyncStorage.setItem('userIntent', 'homecare_nurse');
         navigation.replace('HomeCareNurseMain');
+        return;
+      }
+
+      // Medical patients (role PATIENT) go straight to the medical dashboard.
+      // Routing here avoids the therapy-only fetchClientData() call below, which
+      // 403s for a patient, and guarantees the correct intent independent of
+      // any locally-cached userIntent.
+      if (role === 'patient') {
+        await AsyncStorage.setItem('userIntent', 'medical');
+        if (profile?.id) await AsyncStorage.setItem('th.clientId', profile.id);
+        navigation.replace('MedicalMain');
         return;
       }
 
@@ -193,12 +210,10 @@ const LoginScreen = ({ navigation, route }) => {
     }
     setResetSending(true);
     try {
-      await sendPasswordResetEmail(auth, resetEmail.trim());
+      await api('/api/v1/auth/password-reset', { method: 'POST', authenticated: false, body: { email: resetEmail.trim() } });
       setResetSent(true);
     } catch (err) {
-      let msg = 'Failed to send reset email. Please try again.';
-      if (err.code === 'auth/user-not-found') msg = 'No account found with this email address.';
-      else if (err.code === 'auth/invalid-email') msg = 'Please enter a valid email address.';
+      const msg = err?.message || 'Failed to send reset email. Please try again.';
       Alert.alert('Error', msg);
     } finally {
       setResetSending(false);

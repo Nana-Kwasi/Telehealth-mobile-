@@ -4,10 +4,7 @@ import {
   ActivityIndicator, TextInput, RefreshControl, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, doc, getDoc,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 
@@ -57,48 +54,47 @@ export default function DoctorPatientPanelScreen({ navigation }) {
 
   const loadPatients = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
-      const apptSnap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
-
-      const patMap = new Map();
-      apptSnap.docs.forEach(d => {
-        const data = d.data();
-        if (!data.clientId) return;
-        const prev = patMap.get(data.clientId);
-        if (!prev) {
-          patMap.set(data.clientId, {
-            id: data.clientId,
-            name: data.clientName || '',
-            email: data.clientEmail || '',
-            lastVisit: data.date || '',
-            visitCount: 1,
-            completedCount: data.status === 'completed' ? 1 : 0,
-          });
-        } else {
-          prev.visitCount += 1;
-          if (data.status === 'completed') prev.completedCount += 1;
-          if ((data.date || '') > prev.lastVisit) prev.lastVisit = data.date;
-          if (!prev.name && data.clientName) prev.name = data.clientName;
-        }
-      });
-
-      const enriched = await enrichPatientNames(patMap);
-      const list = Array.from(enriched.values());
-      for (const p of list) {
-        try {
-          const ppSnap = await getDoc(doc(db, 'patientProfiles', p.id));
-          if (ppSnap.exists()) p.status = ppSnap.data().status || 'active';
-          else p.status = 'active';
-        } catch { p.status = 'active'; }
+      const summary = await api(`/api/v1/care/doctors/${uid}/patients/summary`).catch(() => null);
+      if (Array.isArray(summary) && summary.length > 0) {
+        // The endpoint returns { patientId, patientName, appointmentCount, ... } —
+        // map to the { id, name, ... } shape the cards/keyExtractor read.
+        const mapped = summary.map(s => ({
+          id: s.patientId || s.id,
+          name: s.patientName || s.name || 'Patient',
+          email: s.patientEmail || s.email || '',
+          lastVisit: s.lastVisit || s.latestAppointmentDate || '',
+          visitCount: s.appointmentCount ?? s.visitCount ?? 0,
+          completedCount: s.completedCount ?? 0,
+          status: s.status || 'active',
+        }));
+        const sorted = mapped.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        setPatients(sorted);
+        setFiltered(sorted);
+        return;
       }
 
-      const sorted = list.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit));
-      setPatients(sorted);
-      setFiltered(sorted);
+      // fallback: derive from appointments
+      const appts = await api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []) || [];
+      const patMap = new Map();
+      appts.forEach(a => {
+        if (!a.clientId) return;
+        const prev = patMap.get(a.clientId);
+        if (!prev) {
+          patMap.set(a.clientId, { id: a.clientId, name: a.clientName || '', email: a.clientEmail || '', lastVisit: a.date || '', visitCount: 1, completedCount: a.status === 'completed' ? 1 : 0, status: 'active' });
+        } else {
+          prev.visitCount += 1;
+          if (a.status === 'completed') prev.completedCount += 1;
+          if ((a.date || '') > prev.lastVisit) prev.lastVisit = a.date;
+          if (!prev.name && a.clientName) prev.name = a.clientName;
+        }
+      });
+      const enriched = await enrichPatientNames(patMap);
+      const list = Array.from(enriched.values()).sort((a, b) => (b.lastVisit || '').localeCompare(a.lastVisit || ''));
+      setPatients(list);
+      setFiltered(list);
     } catch (err) {
       console.error('DoctorPatientPanel load error:', err);
     } finally {
@@ -211,7 +207,7 @@ export default function DoctorPatientPanelScreen({ navigation }) {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={item => item.id}
+          keyExtractor={(item, index) => String(item.id ?? index)}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, paddingTop: 8 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadPatients(); }} />}

@@ -1,7 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { auth } from '../../../services/firebaseConfig';
 import { fetchPatientBookings } from '../../../services/homeCareService';
 import { statusLabel } from '../../../utils/homeCareUtils';
 import { HomeCareColors as C } from '../../../constants/homeCareColors';
@@ -14,7 +14,7 @@ export default function HomeCareHistoryScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       (async () => {
-        const uid = auth.currentUser?.uid;
+        const uid = await AsyncStorage.getItem('th.userId');
         if (!uid) {
           setLoading(false);
           return;

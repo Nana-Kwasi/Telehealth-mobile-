@@ -13,8 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { collection, query, where, getDocs, addDoc, onSnapshot, doc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../../services/firebaseConfig';
+import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
@@ -35,6 +34,8 @@ const ClientScheduleScreen = ({ navigation }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   
+  // Sessions for the day the user tapped, shown in a detail sheet.
+  const [dayDetail, setDayDetail] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
     date: '',
     time: '',
@@ -66,35 +67,19 @@ const ClientScheduleScreen = ({ navigation }) => {
   const loadClientAndTherapistData = async () => {
     try {
       setIsLoadingTherapist(true);
-      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser?.uid;
-      
-      // Get client data
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+
       let client = getCachedClientData();
-      if (!client) {
-        const clientDoc = await getDoc(doc(db, 'clients', clientId));
-        if (clientDoc.exists()) {
-          client = { id: clientDoc.id, ...clientDoc.data() };
-        }
-      }
+      if (!client) client = await api(`/api/v1/patients/${clientId}`).catch(() => null);
       setClientData(client);
 
-      // Get therapist data
       let therapist = getCachedTherapistData();
       if (!therapist && client?.assignedTherapist) {
         const therapistId = client.assignedTherapist || client.assignedTherapistId;
         try {
-          const therapistDoc = await getDoc(doc(db, 'therapistt', therapistId));
-          if (therapistDoc.exists()) {
-            therapist = { id: therapistDoc.id, ...therapistDoc.data() };
-          } else {
-            const therapistDoc2 = await getDoc(doc(db, 'therapists', therapistId));
-            if (therapistDoc2.exists()) {
-              therapist = { id: therapistDoc2.id, ...therapistDoc2.data() };
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching therapist:', error);
-        }
+          therapist = await api(`/api/v1/therapists/${therapistId}`);
+          if (therapist) therapist = { id: therapistId, ...therapist };
+        } catch {}
       }
       setTherapistData(therapist);
     } catch (error) {
@@ -105,31 +90,21 @@ const ClientScheduleScreen = ({ navigation }) => {
   };
 
   const loadAppointments = () => {
-    const clientId = clientData?.id || auth.currentUser?.uid;
+    const clientId = clientData?.id;
     if (!clientId) return;
-
-    const appointmentsQuery = query(
-      collection(db, 'scheduledCalls'),
-      where('clientId', '==', clientId)
-    );
-
-    const unsubscribe = onSnapshot(appointmentsQuery, (snapshot) => {
-      const appointmentsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      appointmentsData.sort((a, b) => {
-        const timeA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
-        const timeB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
-        return timeA - timeB;
-      });
-
-      setAppointments(appointmentsData);
-    }, (error) => {
-      console.error('Error loading appointments:', error);
-    });
-
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const data = await api(`/api/v1/scheduled-calls?clientId=${clientId}`);
+        const sorted = (Array.isArray(data) ? data : []).sort((a, b) =>
+          new Date(a.scheduledTime || a.scheduledAt || a.startsAt || 0) - new Date(b.scheduledTime || b.scheduledAt || b.startsAt || 0));
+        if (!cancelled) setAppointments(sorted);
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 30_000);
+    const unsubscribe = () => { cancelled = true; clearInterval(id); };
     return unsubscribe;
   };
 
@@ -181,6 +156,24 @@ const ClientScheduleScreen = ({ navigation }) => {
     return date.getMonth() === currentMonth.getMonth();
   };
 
+  // Tapping a day: show what's booked, or start booking that day if it's free.
+  const handleDayPress = (day, dayAppointments) => {
+    setSelectedDate(day);
+    if (dayAppointments.length > 0) {
+      setDayDetail({ date: day, appointments: dayAppointments });
+      return;
+    }
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    if (day < startOfToday) return;            // past day with nothing on it
+    if (!therapistData) return;                // no therapist → nothing to book
+    setScheduleForm((prev) => ({
+      ...prev,
+      date: `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`,
+    }));
+    setShowScheduleForm(true);
+  };
+
   const formatTime = (timestamp) => {
     const date = new Date(timestamp?.toDate?.() || timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -188,34 +181,15 @@ const ClientScheduleScreen = ({ navigation }) => {
 
   const checkTherapistAvailability = async (therapistId, selectedDate) => {
     try {
-      const therapistCallsQuery = query(
-        collection(db, 'scheduledCalls'),
-        where('therapistId', '==', therapistId)
-      );
-
-      const querySnapshot = await getDocs(therapistCallsQuery);
-      
-      const startOfDay = new Date(selectedDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(selectedDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      let hasConflict = false;
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const scheduledTime = data.scheduledTime?.toDate?.() || data.scheduledTime;
-        if (scheduledTime) {
-          const callDate = new Date(scheduledTime);
-          if (callDate >= startOfDay && callDate <= endOfDay) {
-            hasConflict = true;
-          }
-        }
+      const calls = await api(`/api/v1/scheduled-calls?therapistId=${therapistId}`);
+      const startOfDay = new Date(`${selectedDate}T00:00:00`);
+      const endOfDay = new Date(`${selectedDate}T23:59:59`);
+      const list = Array.isArray(calls) ? calls : [];
+      return !list.some(call => {
+        const t = new Date(call.scheduledTime || call.scheduledAt || call.startsAt || 0);
+        return t >= startOfDay && t <= endOfDay;
       });
-
-      return !hasConflict;
-    } catch (error) {
-      console.error('Error checking therapist availability:', error);
+    } catch {
       return false;
     }
   };
@@ -223,27 +197,14 @@ const ClientScheduleScreen = ({ navigation }) => {
   const fetchTherapistBusyDates = async (therapistId) => {
     try {
       setIsLoadingAvailability(true);
-      const busyDates = new Set();
-      
-      const therapistCallsQuery = query(
-        collection(db, 'scheduledCalls'),
-        where('therapistId', '==', therapistId)
-      );
-
-      const querySnapshot = await getDocs(therapistCallsQuery);
-      
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const scheduledTime = data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime);
-        if (scheduledTime) {
-          const dateString = scheduledTime.toISOString().split('T')[0];
-          busyDates.add(dateString);
-        }
-      });
-
-      setTherapistBusyDates(Array.from(busyDates));
-    } catch (error) {
-      console.error('Error fetching therapist busy dates:', error);
+      const calls = await api(`/api/v1/scheduled-calls?therapistId=${therapistId}`);
+      const dates = (Array.isArray(calls) ? calls : []).map(c => {
+        const t = new Date(c.scheduledTime || c.scheduledAt || c.startsAt || 0);
+        return t.toISOString().split('T')[0];
+      }).filter(Boolean);
+      setTherapistBusyDates([...new Set(dates)]);
+    } catch {
+      console.error('Error fetching therapist busy dates');
     } finally {
       setIsLoadingAvailability(false);
     }
@@ -295,20 +256,17 @@ const ClientScheduleScreen = ({ navigation }) => {
         return;
       }
 
-      const appointmentData = {
-        therapistId: therapistData.id,
-        therapistName: therapistData.name,
-        clientId: clientData.id,
-        clientName: clientData.name,
-        scheduledTime: dateTime,
-        duration: parseInt(scheduleForm.duration),
-        notes: scheduleForm.notes || '',
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        createdBy: 'client'
-      };
-
-      await addDoc(collection(db, 'scheduledCalls'), appointmentData);
+      await api('/api/v1/scheduled-calls', {
+        method: 'POST',
+        body: {
+          therapistId: therapistData.id,
+          clientId: clientData.id,
+          scheduledTime: dateTime.toISOString(),
+          durationMinutes: parseInt(scheduleForm.duration),
+          notes: scheduleForm.notes || '',
+          status: 'pending',
+        },
+      });
       
       setMessage({ type: 'success', text: 'Session request submitted successfully! Your therapist will review and confirm.' });
       setScheduleForm({ date: '', time: '', duration: '30', notes: '' });
@@ -403,7 +361,7 @@ const ClientScheduleScreen = ({ navigation }) => {
                     isTodayDay && styles.todayDay,
                     isLastInRow && styles.lastDayInRow
                   ]}
-                  onPress={() => setSelectedDate(day)}
+                  onPress={() => handleDayPress(day, dayAppointments)}
                 >
                   <Text style={[
                     styles.dayNumber,
@@ -448,6 +406,78 @@ const ClientScheduleScreen = ({ navigation }) => {
       >
         <Ionicons name="add" size={40} color={Colors.surface} />
       </TouchableOpacity>
+
+      {/* Day detail sheet — what is booked on the tapped day. */}
+      <Modal
+        visible={!!dayDetail}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setDayDetail(null)}
+      >
+        <View style={styles.detailBackdrop}>
+          <TouchableOpacity
+            style={styles.detailBackdropTap}
+            activeOpacity={1}
+            onPress={() => setDayDetail(null)}
+          />
+          <View style={styles.detailSheet}>
+            <View style={styles.detailGrabber} />
+            <Text style={styles.detailDate}>
+              {dayDetail?.date?.toLocaleDateString(undefined, {
+                weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+              })}
+            </Text>
+            <Text style={styles.detailCount}>
+              {dayDetail?.appointments?.length === 1
+                ? '1 session'
+                : `${dayDetail?.appointments?.length || 0} sessions`}
+            </Text>
+
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              {(dayDetail?.appointments || []).map((appt) => {
+                const type = appointmentTypes[appt.sessionType] || appointmentTypes.individual;
+                return (
+                  <View key={appt.id} style={[styles.detailCard, { borderLeftColor: type.color }]}>
+                    <View style={styles.detailRow}>
+                      <Ionicons name="time-outline" size={18} color={Colors.textSecondary} />
+                      <Text style={styles.detailTime}>{formatTime(appt.scheduledTime)}</Text>
+                      <View style={[styles.detailChip, { backgroundColor: `${type.color}1A` }]}>
+                        <Text style={[styles.detailChipText, { color: type.color }]}>{type.name}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Ionicons name="person-outline" size={18} color={Colors.textSecondary} />
+                      <Text style={styles.detailPerson}>{appt.therapistName || 'Your therapist'}</Text>
+                    </View>
+                    {appt.durationMinutes ? (
+                      <View style={styles.detailRow}>
+                        <Ionicons name="hourglass-outline" size={18} color={Colors.textSecondary} />
+                        <Text style={styles.detailMeta}>{appt.durationMinutes} minutes</Text>
+                      </View>
+                    ) : null}
+                    {appt.status ? (
+                      <View style={styles.detailRow}>
+                        <Ionicons name="checkmark-circle-outline" size={18} color={Colors.textSecondary} />
+                        <Text style={styles.detailMeta}>{appt.status}</Text>
+                      </View>
+                    ) : null}
+                    {appt.notes ? (
+                      <Text style={styles.detailNotes}>{appt.notes}</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.detailClose}
+              onPress={() => setDayDetail(null)}
+            >
+              <Text style={styles.detailCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Schedule Form Modal */}
       <Modal
@@ -736,6 +766,58 @@ const ClientScheduleScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // ── Day detail sheet ──────────────────────────────────────────────────────
+  detailBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.45)' },
+  detailBackdropTap: { flex: 1 },
+  detailSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  detailGrabber: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#cbd5e1',
+    marginBottom: 14,
+  },
+  detailDate: { fontSize: 19, fontWeight: '800', color: '#0f172a' },
+  detailCount: { fontSize: 13, color: '#64748b', marginTop: 2, marginBottom: 14 },
+  detailCard: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderLeftWidth: 4,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    backgroundColor: '#f8fafc',
+  },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  detailTime: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  detailChip: { marginLeft: 'auto', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
+  detailChipText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  detailPerson: { fontSize: 14, fontWeight: '600', color: '#334155' },
+  detailMeta: { fontSize: 13, color: '#64748b', textTransform: 'capitalize' },
+  detailNotes: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#475569',
+    fontStyle: 'italic',
+    lineHeight: 19,
+  },
+  detailClose: {
+    marginTop: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+  },
+  detailCloseText: { fontSize: 15, fontWeight: '700', color: '#334155' },
+
   container: {
     flex: 1,
     backgroundColor: Colors.background,

@@ -10,8 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
 
 const InsuranceDetailsScreen = () => {
@@ -36,12 +35,10 @@ const InsuranceDetailsScreen = () => {
 
   const loadInsurance = async () => {
     try {
-      const uid = auth.currentUser?.uid;
+      const uid = await getStoredUserId();
       if (!uid) return;
-      const snap = await getDoc(doc(db, 'patientProfiles', uid));
-      if (snap.exists() && snap.data().insurance) {
-        setForm(prev => ({ ...prev, ...snap.data().insurance }));
-      }
+      const data = await api(`/api/v1/patients/${uid}`).catch(() => null);
+      if (data?.insurance) setForm(prev => ({ ...prev, ...data.insurance }));
     } catch (err) {
       console.error('Error loading insurance:', err);
     } finally {
@@ -56,12 +53,8 @@ const InsuranceDetailsScreen = () => {
     }
     setSaving(true);
     try {
-      const uid = auth.currentUser?.uid;
-      await setDoc(
-        doc(db, 'patientProfiles', uid),
-        { insurance: form, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
+      const uid = await getStoredUserId();
+      await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { insurance: form } });
       Alert.alert('Saved', 'Your insurance details have been updated.');
     } catch (err) {
       console.error('Error saving insurance:', err);

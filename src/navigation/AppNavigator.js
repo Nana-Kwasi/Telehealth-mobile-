@@ -4,9 +4,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { View, ActivityIndicator, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../services/firebaseConfig';
 import { resolveRole } from '../services/authService';
+import { clearSession } from '../services/apiClient';
 import { applyCoupleLandingIfNeeded } from '../services/coupleTherapyService';
 import { PRIVACY_STORAGE_KEY, syncPrivacyConsentToUser } from '../services/privacyConsentService';
 
@@ -68,12 +67,17 @@ import MedicalTimelineScreen from '../screens/medical-dashboard/MedicalTimelineS
 // Therapist dashboard screens
 import TherapistHomeScreen from '../screens/therapist-dashboard/TherapistHomeScreen';
 import TherapistClientsScreen from '../screens/therapist-dashboard/TherapistClientsScreen';
+import TherapistClientDetailScreen from '../screens/therapist-dashboard/TherapistClientDetailScreen';
+import TherapistClientChatScreen from '../screens/therapist-dashboard/TherapistClientChatScreen';
 import TherapistMessagesScreen from '../screens/therapist-dashboard/TherapistMessagesScreen';
+import TherapistVideoScreen from '../screens/therapist-dashboard/TherapistVideoScreen';
+import TherapistVideoCallSessionScreen from '../screens/therapist-dashboard/TherapistVideoCallSessionScreen';
 import TherapistScheduleScreen from '../screens/therapist-dashboard/TherapistScheduleScreen';
+import TherapistAppointmentsScreen from '../screens/therapist-dashboard/TherapistAppointmentsScreen';
 import TherapistNotesScreen from '../screens/therapist-dashboard/TherapistNotesScreen';
 import TherapistSettingsScreen from '../screens/therapist-dashboard/TherapistSettingsScreen';
 import TherapistMoodScreen from '../screens/therapist-dashboard/TherapistMoodScreen';
-import TherapistReportsScreen from '../screens/therapist-dashboard/TherapistReportsScreen';
+import TherapistReportIssueScreen from '../screens/therapist-dashboard/TherapistReportIssueScreen';
 import TherapistResourcesScreen from '../screens/therapist-dashboard/TherapistResourcesScreen';
 
 // Doctor dashboard screens
@@ -100,6 +104,17 @@ import PharmacyHomeScreen from '../screens/pharmacy-dashboard/PharmacyHomeScreen
 import PharmacyPrescriptionsScreen from '../screens/pharmacy-dashboard/PharmacyPrescriptionsScreen';
 import PharmacyBranchesScreen from '../screens/pharmacy-dashboard/PharmacyBranchesScreen';
 import PharmacyWalkInScreen from '../screens/pharmacy-dashboard/PharmacyWalkInScreen';
+import PharmacyRxOpsScreen from '../screens/pharmacy-dashboard/PharmacyRxOpsScreen';
+import PharmacyActivityScreen from '../screens/pharmacy-dashboard/PharmacyActivityScreen';
+import PharmacyBranchDetailScreen from '../screens/pharmacy-dashboard/PharmacyBranchDetailScreen';
+import PharmacyReportsScreen from '../screens/pharmacy-dashboard/PharmacyReportsScreen';
+import PharmacySettingsScreen from '../screens/pharmacy-dashboard/PharmacySettingsScreen';
+import BranchTransfersScreen from '../screens/branch-dashboard/BranchTransfersScreen';
+import ReportIssueScreen from '../screens/common/ReportIssueScreen';
+import DiagnosticBranchesScreen from '../screens/common/DiagnosticBranchesScreen';
+import DiagnosticBranchDetailScreen from '../screens/common/DiagnosticBranchDetailScreen';
+import DiagnosticOrderDetailScreen from '../screens/common/DiagnosticOrderDetailScreen';
+import DiagnosticSettingsScreen from '../screens/common/DiagnosticSettingsScreen';
 
 // Branch dashboard screens
 import BranchHomeScreen from '../screens/branch-dashboard/BranchHomeScreen';
@@ -138,6 +153,55 @@ const Stack = createStackNavigator();
 const TherapyDrawer = createDrawerNavigator();
 const MedicalDrawer = createDrawerNavigator();
 const TherapistDrawer = createDrawerNavigator();
+const TherapistClientsStackNav = createStackNavigator();
+const TherapistVideoStackNav = createStackNavigator();
+
+function TherapistVideoNavigator({ profile }) {
+  return (
+    <TherapistVideoStackNav.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: TherapistColors.primaryDark },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '700' },
+      }}
+    >
+      <TherapistVideoStackNav.Screen name="TherapistVideoList" options={{ title: 'Video Call', headerShown: false }}>
+        {(props) => <TherapistVideoScreen {...props} profile={profile} />}
+      </TherapistVideoStackNav.Screen>
+      <TherapistVideoStackNav.Screen
+        name="TherapistVideoCallSession"
+        component={TherapistVideoCallSessionScreen}
+        options={{ title: 'Video Session', headerShown: false }}
+      />
+    </TherapistVideoStackNav.Navigator>
+  );
+}
+
+function TherapistClientsNavigator({ profile }) {
+  return (
+    <TherapistClientsStackNav.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: TherapistColors.primaryDark },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '700' },
+      }}
+    >
+      <TherapistClientsStackNav.Screen name="TherapistClientsList" options={{ headerShown: false }}>
+        {(props) => <TherapistClientsScreen {...props} profile={profile} />}
+      </TherapistClientsStackNav.Screen>
+      <TherapistClientsStackNav.Screen
+        name="TherapistClientDetail"
+        component={TherapistClientDetailScreen}
+        options={{ title: 'Client' }}
+      />
+      <TherapistClientsStackNav.Screen
+        name="TherapistClientChat"
+        component={TherapistClientChatScreen}
+        options={{ headerShown: false }}
+      />
+    </TherapistClientsStackNav.Navigator>
+  );
+}
 const DoctorDrawer = createDrawerNavigator();
 const PharmacyDrawer = createDrawerNavigator();
 const BranchDrawer = createDrawerNavigator();
@@ -175,6 +239,24 @@ const PharmacyDrawerNavigator = ({ profile }) => (
     <PharmacyDrawer.Screen name="PharmacyWalkIn"        options={{ title: 'Walk-in Verify' }}>
       {() => <PharmacyWalkInScreen profile={profile} />}
     </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyActivity" options={{ title: 'Activity' }}>
+      {() => <PharmacyActivityScreen profile={profile} isBranch={false} />}
+    </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyReports" options={{ title: 'Reports' }}>
+      {() => <PharmacyReportsScreen profile={profile} isBranch={false} />}
+    </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyReportIssue" options={{ title: 'Report Issue' }}>
+      {() => <ReportIssueScreen profile={profile} reporterType="pharmacy_parent" accent={PharmacyColors.primary} />}
+    </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyPreferences" options={{ title: 'Settings' }}>
+      {() => <PharmacySettingsScreen profile={profile} isBranch={false} locationRoute="PharmacySettings" />}
+    </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyBranchDetail" options={{ title: 'Branch', drawerItemStyle: { display: 'none' } }}>
+      {() => <PharmacyBranchDetailScreen profile={profile} />}
+    </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyRxOps" options={{ title: 'Prescription Operations', drawerItemStyle: { display: 'none' } }}>
+      {() => <PharmacyRxOpsScreen profile={profile} mode="parent" />}
+    </PharmacyDrawer.Screen>
     <PharmacyDrawer.Screen name="PharmacySettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="pharmacies" title="Pharmacy Location Settings" />}
     </PharmacyDrawer.Screen>
@@ -200,6 +282,24 @@ const BranchDrawerNavigator = ({ profile }) => (
     </BranchDrawer.Screen>
     <BranchDrawer.Screen name="BranchWalkIn"        options={{ title: 'Walk-in Verify' }}>
       {() => <BranchWalkInScreen profile={profile} />}
+    </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchTransfers" options={{ title: 'Transfers' }}>
+      {() => <BranchTransfersScreen profile={profile} />}
+    </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchActivity" options={{ title: 'Activity' }}>
+      {() => <PharmacyActivityScreen profile={profile} isBranch={true} />}
+    </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchReports" options={{ title: 'Reports' }}>
+      {() => <PharmacyReportsScreen profile={profile} isBranch={true} />}
+    </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchReportIssue" options={{ title: 'Report Issue' }}>
+      {() => <ReportIssueScreen profile={profile} reporterType="pharmacy_branch" accent={PharmacyColors.primary} />}
+    </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchPreferences" options={{ title: 'Settings' }}>
+      {() => <PharmacySettingsScreen profile={profile} isBranch={true} locationRoute="BranchSettings" />}
+    </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchRxOps" options={{ title: 'Prescription Operations', drawerItemStyle: { display: 'none' } }}>
+      {() => <PharmacyRxOpsScreen profile={profile} mode="branch" />}
     </BranchDrawer.Screen>
     <BranchDrawer.Screen name="BranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="pharmacyBranches" title="Branch Location Settings" />}
@@ -230,6 +330,21 @@ const LabDrawerNavigator = ({ profile }) => (
     <LabDrawer.Screen name="LabResults" options={{ title: 'Results' }}>
       {() => <LabResultsScreen profile={profile} />}
     </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabBranches" options={{ title: 'Branches' }}>
+      {() => <DiagnosticBranchesScreen profile={profile} type={'lab'} detailRoute="LabBranchDetail" accent={LabColors.primary} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabBranchDetail" options={{ title: 'Branch', drawerItemStyle: { display: 'none' } }}>
+      {() => <DiagnosticBranchDetailScreen profile={profile} type={'lab'} accent={LabColors.primary} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
+      {() => <DiagnosticOrderDetailScreen profile={profile} type={'lab'} uploadRoute="LabResults" accent={LabColors.primary} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabReportIssue" options={{ title: 'Report Issue' }}>
+      {() => <ReportIssueScreen profile={profile} reporterType="lab" accent={LabColors.primary} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabPreferences" options={{ title: 'Settings' }}>
+      {() => <DiagnosticSettingsScreen profile={profile} type={'lab'} isBranch={false} locationRoute="LabSettings" accent={LabColors.primary} />}
+    </LabDrawer.Screen>
     <LabDrawer.Screen name="LabSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="labs" title="Lab Location Settings" />}
     </LabDrawer.Screen>
@@ -258,6 +373,15 @@ const LabBranchDrawerNavigator = ({ profile }) => (
     </LabBranchDrawer.Screen>
     <LabBranchDrawer.Screen name="LabBranchResults" options={{ title: 'Results' }}>
       {() => <LabResultsScreen profile={profile} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
+      {() => <DiagnosticOrderDetailScreen profile={profile} type={'lab'} uploadRoute="LabBranchResults" accent={LabColors.primary} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchReportIssue" options={{ title: 'Report Issue' }}>
+      {() => <ReportIssueScreen profile={profile} reporterType="lab_branch" accent={LabColors.primary} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchPreferences" options={{ title: 'Settings' }}>
+      {() => <DiagnosticSettingsScreen profile={profile} type={'lab'} isBranch={true} locationRoute="LabBranchSettings" accent={LabColors.primary} />}
     </LabBranchDrawer.Screen>
     <LabBranchDrawer.Screen name="LabBranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="labBranches" title="Lab Branch Location Settings" />}
@@ -288,6 +412,21 @@ const ScanDrawerNavigator = ({ profile }) => (
     <ScanDrawer.Screen name="ScanResults" options={{ title: 'Reports' }}>
       {() => <ScanResultsScreen profile={profile} />}
     </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanBranches" options={{ title: 'Branches' }}>
+      {() => <DiagnosticBranchesScreen profile={profile} type={'scan'} detailRoute="ScanBranchDetail" accent={ScanColors.primary} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanBranchDetail" options={{ title: 'Branch', drawerItemStyle: { display: 'none' } }}>
+      {() => <DiagnosticBranchDetailScreen profile={profile} type={'scan'} accent={ScanColors.primary} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
+      {() => <DiagnosticOrderDetailScreen profile={profile} type={'scan'} uploadRoute="ScanResults" accent={ScanColors.primary} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanReportIssue" options={{ title: 'Report Issue' }}>
+      {() => <ReportIssueScreen profile={profile} reporterType="scan" accent={ScanColors.primary} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanPreferences" options={{ title: 'Settings' }}>
+      {() => <DiagnosticSettingsScreen profile={profile} type={'scan'} isBranch={false} locationRoute="ScanSettings" accent={ScanColors.primary} />}
+    </ScanDrawer.Screen>
     <ScanDrawer.Screen name="ScanSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="scanCenters" title="Scan Center Location Settings" />}
     </ScanDrawer.Screen>
@@ -316,6 +455,15 @@ const ScanBranchDrawerNavigator = ({ profile }) => (
     </ScanBranchDrawer.Screen>
     <ScanBranchDrawer.Screen name="ScanBranchResults" options={{ title: 'Reports' }}>
       {() => <ScanResultsScreen profile={profile} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
+      {() => <DiagnosticOrderDetailScreen profile={profile} type={'scan'} uploadRoute="ScanBranchResults" accent={ScanColors.primary} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchReportIssue" options={{ title: 'Report Issue' }}>
+      {() => <ReportIssueScreen profile={profile} reporterType="scan_branch" accent={ScanColors.primary} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchPreferences" options={{ title: 'Settings' }}>
+      {() => <DiagnosticSettingsScreen profile={profile} type={'scan'} isBranch={true} locationRoute="ScanBranchSettings" accent={ScanColors.primary} />}
     </ScanBranchDrawer.Screen>
     <ScanBranchDrawer.Screen name="ScanBranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="scanBranches" title="Scan Branch Location Settings" />}
@@ -367,14 +515,37 @@ const TherapistDrawerNavigator = ({ profile }) => {
         drawerInactiveTintColor: TherapistColors.textSecondary,
       }}
     >
-      <TherapistDrawer.Screen name="TherapistHome"      component={TherapistHomeScreen}      options={{ title: 'Dashboard' }} />
-      <TherapistDrawer.Screen name="TherapistClients"   component={TherapistClientsScreen}   options={{ title: 'My Clients' }} />
-      <TherapistDrawer.Screen name="TherapistMessages"  component={TherapistMessagesScreen}  options={{ title: 'Messages' }} />
-      <TherapistDrawer.Screen name="TherapistSchedule"  component={TherapistScheduleScreen}  options={{ title: 'Schedule' }} />
-      <TherapistDrawer.Screen name="TherapistNotes"     component={TherapistNotesScreen}     options={{ title: 'Session Notes' }} />
+      <TherapistDrawer.Screen name="TherapistHome" options={{ title: 'Dashboard' }}>
+        {(props) => <TherapistHomeScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistClients" options={{ title: 'My Clients', headerShown: false }}>
+        {() => <TherapistClientsNavigator profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistCoupleCases" options={{ title: 'Couple Cases' }}>
+        {(props) => <TherapistCoupleCaseScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistMessages" options={{ title: 'Staff' }}>
+        {(props) => <TherapistMessagesScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistVideo" options={{ title: 'Video Call', headerShown: false }}>
+        {() => <TherapistVideoNavigator profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistAppointments" options={{ title: 'Appointments' }}>
+        {(props) => <TherapistAppointmentsScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistSchedule" options={{ title: 'Calendar' }}>
+        {(props) => <TherapistScheduleScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistNotes" options={{ title: 'Notes' }}>
+        {(props) => <TherapistNotesScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistMood"      component={TherapistMoodScreen}      options={{ title: 'Client Moods' }} />
-      <TherapistDrawer.Screen name="TherapistReports"   component={TherapistReportsScreen}   options={{ title: 'Reports' }} />
-      <TherapistDrawer.Screen name="TherapistResources" component={TherapistResourcesScreen} options={{ title: 'Resources' }} />
+      <TherapistDrawer.Screen name="TherapistReportIssue" options={{ title: 'Report Issue' }}>
+        {(props) => <TherapistReportIssueScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistResources" options={{ title: 'Resources' }}>
+        {(props) => <TherapistResourcesScreen {...props} profile={profile} />}
+      </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistSettings"  component={TherapistSettingsScreen}  options={{ title: 'Settings' }} />
     </TherapistDrawer.Navigator>
   );
@@ -466,93 +637,76 @@ const AppNavigator = () => {
   const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        await AsyncStorage.multiRemove(['isAuthenticated', 'userProfile', 'userRole', 'userId', 'userName']);
-        setIsAuthenticated(false);
-        setProfile(null);
-        setUserRole(null);
-        setIsLoading(false);
-        return;
-      }
-
+    let cancelled = false;
+    const checkSession = async () => {
       try {
-        let { role, profile: resolvedProfile } = await resolveRole(user.uid);
-        if (role === 'guest') {
-          await new Promise((r) => setTimeout(r, 600));
-          const retry = await resolveRole(user.uid);
-          role = retry.role;
-          resolvedProfile = retry.profile;
-        }
+        const token = await AsyncStorage.getItem('th.token');
+        const userId = await AsyncStorage.getItem('th.userId');
+        const role   = await AsyncStorage.getItem('userRole');
 
-        const allowedRoles = ['client', 'therapist', 'admin', 'doctor', 'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch', 'homecare_nurse'];
-        if (!allowedRoles.includes(role)) {
-          await auth.signOut();
-          setIsAuthenticated(false);
-          setProfile(null);
-          setIsLoading(false);
+        if (!token || !userId) {
+          if (!cancelled) { setIsAuthenticated(false); setProfile(null); setUserRole(null); setIsLoading(false); }
           return;
         }
 
-        const mergedProfile = resolvedProfile
-          ? { ...resolvedProfile, photoURL: resolvedProfile.photoURL || user.photoURL || null }
-          : resolvedProfile;
+        const allowedRoles = ['client','patient','therapist','admin','doctor','pharmacy','branch_user','lab','lab_branch','scan','scan_branch','homecare_nurse'];
+        if (!allowedRoles.includes(role)) {
+          await clearSession();
+          if (!cancelled) { setIsAuthenticated(false); setIsLoading(false); }
+          return;
+        }
 
-        await AsyncStorage.setItem('isAuthenticated', 'true');
-        await AsyncStorage.setItem('userProfile', JSON.stringify(mergedProfile));
-        await AsyncStorage.setItem('userRole', role);
-        await AsyncStorage.setItem('userId', mergedProfile?.id || user.uid);
-        if (mergedProfile?.name) await AsyncStorage.setItem('userName', mergedProfile.name);
+        const profileStr = await AsyncStorage.getItem('userProfile');
+        const resolvedProfile = profileStr ? JSON.parse(profileStr) : { id: userId, role };
 
         let intent;
         if (role === 'therapist' || role === 'admin') intent = 'therapist';
-        else if (role === 'doctor')      intent = 'doctor';
-        else if (role === 'pharmacy')    intent = 'pharmacy';
-        else if (role === 'branch_user') intent = 'branch';
-        else if (role === 'lab')         intent = 'lab';
-        else if (role === 'lab_branch')  intent = 'lab_branch';
-        else if (role === 'scan')        intent = 'scan';
-        else if (role === 'scan_branch') intent = 'scan_branch';
+        else if (role === 'doctor')       intent = 'doctor';
+        else if (role === 'pharmacy')     intent = 'pharmacy';
+        else if (role === 'branch_user')  intent = 'branch';
+        else if (role === 'lab')          intent = 'lab';
+        else if (role === 'lab_branch')   intent = 'lab_branch';
+        else if (role === 'scan')         intent = 'scan';
+        else if (role === 'scan_branch')  intent = 'scan_branch';
         else if (role === 'homecare_nurse') intent = 'homecare_nurse';
+        else if (role === 'patient')      intent = 'medical';
         else intent = resolvedProfile?.userIntent || await AsyncStorage.getItem('userIntent') || 'therapy';
 
+        await AsyncStorage.setItem('isAuthenticated', 'true');
+        await AsyncStorage.setItem('userId', userId);
         await AsyncStorage.setItem('userIntent', intent);
         const privacyAccepted = await AsyncStorage.getItem(PRIVACY_STORAGE_KEY);
         if (privacyAccepted === 'true') {
-          syncPrivacyConsentToUser({
-            userId: user.uid,
-            role,
-            profileId: mergedProfile?.id || user.uid,
-          }).catch(() => {});
+          syncPrivacyConsentToUser({ userId, role, profileId: resolvedProfile?.id || userId }).catch(() => {});
         }
-        setProfile(mergedProfile);
-        setUserRole(role);
-        setIsAuthenticated(true);
-        setUserIntent(intent);
-      } catch (err) {
-        await auth.signOut().catch(() => {});
-        setIsAuthenticated(false);
-        setProfile(null);
-        setUserRole(null);
-      } finally {
-        setIsLoading(false);
-      }
-    });
 
-    return unsub;
+        if (!cancelled) {
+          setProfile(resolvedProfile);
+          setUserRole(role);
+          setIsAuthenticated(true);
+          setUserIntent(intent);
+          setIsLoading(false);
+        }
+
+        // Re-detect current location on every app open (best-effort).
+        import('../services/liveLocation')
+          .then((m) => m.refreshCurrentLocation())
+          .catch(() => {});
+      } catch {
+        if (!cancelled) { setIsAuthenticated(false); setIsLoading(false); }
+      }
+    };
+    checkSession();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('refreshProfile', async () => {
-      const user = auth.currentUser;
-      if (!user) return;
       try {
-        const { role, profile: resolvedProfile } = await resolveRole(user.uid);
-        const merged = resolvedProfile
-          ? { ...resolvedProfile, photoURL: resolvedProfile.photoURL || user.photoURL || null }
-          : resolvedProfile;
+        const profileStr = await AsyncStorage.getItem('userProfile');
+        if (!profileStr) return;
+        const merged = JSON.parse(profileStr);
         setProfile(merged);
-        await AsyncStorage.setItem('userProfile', JSON.stringify(merged));
         if (merged?.name) await AsyncStorage.setItem('userName', merged.name);
       } catch (_) {}
     });
@@ -600,8 +754,18 @@ const AppNavigator = () => {
         active={isAuthenticated && !isLoading}
         userRole={userRole}
         profile={profile}
-        onSuccess={() => {
+        onSuccess={async () => {
           setProfile((p) => (p ? { ...p, mustChangePassword: false } : null));
+          // Persist the cleared flag first — refreshProfile re-reads userProfile
+          // from storage, so a stale `mustChangePassword: true` there would make
+          // the gate pop straight back up.
+          try {
+            const raw = await AsyncStorage.getItem('userProfile');
+            if (raw) {
+              const merged = { ...JSON.parse(raw), mustChangePassword: false };
+              await AsyncStorage.setItem('userProfile', JSON.stringify(merged));
+            }
+          } catch (_) {}
           DeviceEventEmitter.emit('refreshProfile');
         }}
       />

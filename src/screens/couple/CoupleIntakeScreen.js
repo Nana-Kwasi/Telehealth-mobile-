@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../../services/firebaseConfig';
 import { Colors } from '../../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../../constants/coupleTherapyConfig';
 import { sectionsForPartner } from '../../constants/coupleIntakeSections';
@@ -111,7 +110,7 @@ export default function CoupleIntakeScreen({ navigation, route }) {
           session = await ensureCoupleSession(storedCoupleId, { claimAs });
         }
         if (!session.ok) {
-          if (session.reason === 'no_couple_for_email' && !storedCoupleId && !auth.currentUser) {
+          if (session.reason === 'no_couple_for_email' && !storedCoupleId && !(await AsyncStorage.getItem('th.token'))) {
             navigation.replace('CoupleInitiation');
             return;
           }

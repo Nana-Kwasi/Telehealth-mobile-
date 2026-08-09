@@ -3,7 +3,6 @@ import { Alert, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../services/firebaseConfig';
 import { performLogout } from '../services/authService';
 import { Colors } from '../constants/colors';
 
@@ -44,7 +43,7 @@ export default function CoupleSignOutHeaderButton() {
                 const profileStr = await AsyncStorage.getItem('userProfile');
                 const profile = profileStr ? JSON.parse(profileStr) : null;
                 await performLogout({
-                  userId: auth.currentUser?.uid,
+                  userId: await AsyncStorage.getItem('th.userId'),
                   role,
                   profile,
                   clearCoupleKeys: false,

@@ -5,14 +5,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  doc, getDoc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, getDocs, query, where,
-} from 'firebase/firestore';
-import {
-  EmailAuthProvider, reauthenticateWithCredential, updatePassword, deleteUser,
-} from 'firebase/auth';
+import { api, getStoredUserId, clearSession } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
+import UserAvatar from '../../components/common/UserAvatar';
+import { pickAndUploadAvatar, avatarUrlOf } from '../../utils/profileImage';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -39,6 +35,21 @@ export default function MedicalSettingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
 
   // Profile
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
+  const changeAvatar = async () => {
+    setAvatarBusy(true);
+    try {
+      const url = await pickAndUploadAvatar();
+      if (url) setAvatarUrl(url);
+    } catch (e) {
+      Alert.alert('Could not update photo', e?.message || 'Please try again.');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const [form, setForm] = useState({
     name: '', email: '', phone: '', dob: '', bloodType: '', allergies: '',
     country: '', city: '', area: '', region: '', street: '', ghanaDigitalAddress: '', latitude: null, longitude: null,
@@ -80,56 +91,39 @@ export default function MedicalSettingsScreen({ navigation }) {
 
   const loadAll = async () => {
     try {
-      const uid = auth.currentUser?.uid;
+      const uid = await getStoredUserId();
       if (!uid) return;
-
-      const [authSnap, profileSnap] = await Promise.all([
-        getDoc(doc(db, 'auth', uid)),
-        getDoc(doc(db, 'patientProfiles', uid)),
-      ]);
-
-      if (authSnap.exists()) {
-        const d = authSnap.data();
+      const patData = await api(`/api/v1/patients/${uid}`).catch(() => null);
+      // Seed the avatar from whichever record carries one so an already-saved
+      // picture shows on open, not only after a fresh upload.
+      const roleProfile = await api(`/api/v1/auth/mobile/resolve-role/${uid}`).catch(() => null);
+      setAvatarUrl(avatarUrlOf(roleProfile?.profile) || avatarUrlOf(patData) || null);
+      if (patData) {
         setForm(f => ({
           ...f,
-          name: d.name || '',
-          email: d.email || '',
-          phone: d.phone || '',
-          dob: d.dob || '',
-          bloodType: d.bloodType || '',
-          allergies: d.allergies || '',
-          country: d.country || d.locationMeta?.country || '',
-          city: d.city || d.locationMeta?.city || '',
-          area: d.area || d.locationMeta?.area || '',
-          region: d.region || d.locationMeta?.region || '',
-          street: d.street || d.locationMeta?.street || '',
-          ghanaDigitalAddress: d.ghanaDigitalAddress || '',
-          latitude: d.latitude ?? d.locationMeta?.latitude ?? null,
-          longitude: d.longitude ?? d.locationMeta?.longitude ?? null,
+          name: patData.name || '',
+          email: patData.email || '',
+          phone: patData.phone || '',
+          dob: patData.dob || '',
+          bloodType: patData.bloodType || '',
+          allergies: patData.allergies || '',
+          country: patData.country || patData.locationMeta?.country || '',
+          city: patData.city || patData.locationMeta?.city || '',
+          area: patData.area || patData.locationMeta?.area || '',
+          region: patData.region || patData.locationMeta?.region || '',
+          street: patData.street || patData.locationMeta?.street || '',
+          ghanaDigitalAddress: patData.ghanaDigitalAddress || '',
+          latitude: patData.latitude ?? null,
+          longitude: patData.longitude ?? null,
         }));
-      }
-
-      if (profileSnap.exists()) {
-        const d = profileSnap.data();
-        setForm(f => ({
-          ...f,
-          country: f.country || d.country || d.locationMeta?.country || '',
-          city: f.city || d.city || d.locationMeta?.city || '',
-          area: f.area || d.area || d.locationMeta?.area || '',
-          region: f.region || d.region || d.locationMeta?.region || '',
-          street: f.street || d.street || d.locationMeta?.street || '',
-          ghanaDigitalAddress: f.ghanaDigitalAddress || d.ghanaDigitalAddress || '',
-          latitude: f.latitude ?? d.latitude ?? d.locationMeta?.latitude ?? null,
-          longitude: f.longitude ?? d.longitude ?? d.locationMeta?.longitude ?? null,
-        }));
-        setSecurity(s => ({ ...s, ...(d.security || {}) }));
-        setPrivacy(p => ({ ...DEFAULT_PRIVACY, ...(d.privacy || {}), dataSharing: { ...DEFAULT_PRIVACY.dataSharing, ...(d.privacy?.dataSharing || {}) } }));
-        setEmergency(e => ({ ...DEFAULT_EMERGENCY, ...(d.emergency || {}) }));
-        setLegal(l => ({ ...DEFAULT_LEGAL, ...(d.legal || {}) }));
-        setConsentLogs(d.legal?.consentLogs || []);
-        setBillingHistory(d.billingHistory || []);
-        setInsuranceInfo(d.insurance || null);
-        if (d.status === 'self-discharged') setAlreadyDischarged(true);
+        setSecurity(s => ({ ...s, ...(patData.security || {}) }));
+        setPrivacy(p => ({ ...DEFAULT_PRIVACY, ...(patData.privacy || {}), dataSharing: { ...DEFAULT_PRIVACY.dataSharing, ...(patData.privacy?.dataSharing || {}) } }));
+        setEmergency(e => ({ ...DEFAULT_EMERGENCY, ...(patData.emergency || {}) }));
+        setLegal(l => ({ ...DEFAULT_LEGAL, ...(patData.legal || {}) }));
+        setConsentLogs(patData.legal?.consentLogs || []);
+        setBillingHistory(patData.billingHistory || []);
+        setInsuranceInfo(patData.insurance || null);
+        if (patData.status === 'self-discharged') setAlreadyDischarged(true);
       }
     } catch (err) { console.error('Settings load error:', err); }
     finally { setLoading(false); }
@@ -139,53 +133,13 @@ export default function MedicalSettingsScreen({ navigation }) {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      const uid = auth.currentUser?.uid;
+      const uid = await getStoredUserId();
       const latitude = Number.isFinite(Number(form.latitude)) ? Number(form.latitude) : null;
       const longitude = Number.isFinite(Number(form.longitude)) ? Number(form.longitude) : null;
-      await setDoc(doc(db, 'auth', uid), {
-        name: form.name,
-        phone: form.phone,
-        dob: form.dob,
-        bloodType: form.bloodType,
-        allergies: form.allergies,
-        country: form.country || null,
-        city: form.city || null,
-        area: form.area || null,
-        region: form.region || null,
-        street: form.street || null,
-        ghanaDigitalAddress: form.ghanaDigitalAddress || null,
-        latitude,
-        longitude,
-        locationMeta: {
-          country: form.country || null,
-          city: form.city || null,
-          area: form.area || null,
-          region: form.region || null,
-          street: form.street || null,
-          latitude,
-          longitude,
-        },
-      }, { merge: true });
-      await setDoc(doc(db, 'patientProfiles', uid), {
-        country: form.country || null,
-        city: form.city || null,
-        area: form.area || null,
-        region: form.region || null,
-        street: form.street || null,
-        ghanaDigitalAddress: form.ghanaDigitalAddress || null,
-        latitude,
-        longitude,
-        locationMeta: {
-          country: form.country || null,
-          city: form.city || null,
-          area: form.area || null,
-          region: form.region || null,
-          street: form.street || null,
-          latitude,
-          longitude,
-        },
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      await api(`/api/v1/patients/${uid}`, {
+        method: 'PATCH',
+        body: { name: form.name, phone: form.phone, dob: form.dob, bloodType: form.bloodType, allergies: form.allergies, country: form.country || null, city: form.city || null, area: form.area || null, region: form.region || null, street: form.street || null, ghanaDigitalAddress: form.ghanaDigitalAddress || null, latitude, longitude },
+      });
       if (form.name) await AsyncStorage.setItem('userName', form.name);
       Alert.alert('Saved', 'Profile updated successfully.');
     } catch { Alert.alert('Error', 'Failed to save. Please try again.'); }
@@ -199,14 +153,12 @@ export default function MedicalSettingsScreen({ navigation }) {
     if (next !== confirm) { Alert.alert('Error', 'New passwords do not match.'); return; }
     setChangingPwd(true);
     try {
-      const user = auth.currentUser;
-      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, current));
-      await updatePassword(user, next);
+      await api('/api/v1/auth/password-change', { method: 'POST', body: { currentPassword: current, newPassword: next } });
       setShowPwdModal(false);
       setPwdForm({ current: '', next: '', confirm: '' });
       Alert.alert('Success', 'Password changed successfully.');
     } catch (err) {
-      Alert.alert('Error', err.code === 'auth/wrong-password' ? 'Current password is incorrect.' : 'Could not change password.');
+      Alert.alert('Error', err.message?.includes('incorrect') ? 'Current password is incorrect.' : 'Could not change password.');
     } finally { setChangingPwd(false); }
   };
 
@@ -214,8 +166,8 @@ export default function MedicalSettingsScreen({ navigation }) {
   const saveSecurity = async (newSec, newPriv) => {
     setSavingSecurity(true);
     try {
-      const uid = auth.currentUser?.uid;
-      await setDoc(doc(db, 'patientProfiles', uid), { security: newSec || security, privacy: newPriv || privacy, updatedAt: serverTimestamp() }, { merge: true });
+      const uid = await getStoredUserId();
+      await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { security: newSec || security, privacy: newPriv || privacy } });
     } catch { Alert.alert('Error', 'Could not save settings.'); }
     finally { setSavingSecurity(false); }
   };
@@ -238,12 +190,12 @@ export default function MedicalSettingsScreen({ navigation }) {
     setPrivacy(newPrivacy);
     await saveSecurity(null, newPrivacy);
     // Log the consent change
-    const uid = auth.currentUser?.uid;
+    const uid = await getStoredUserId();
     const log = { action: `dataSharing.${key} set to ${!privacy.dataSharing[key]}`, timestamp: new Date().toISOString() };
-    const existing = consentLogs.slice(-49); // keep last 50
+    const existing = consentLogs.slice(-49);
     const updated = [...existing, log];
     setConsentLogs(updated);
-    await setDoc(doc(db, 'patientProfiles', uid), { 'legal.consentLogs': updated }, { merge: true });
+    api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { 'legal.consentLogs': updated } }).catch(() => {});
   };
 
   const signOutAllDevices = () => {
@@ -251,8 +203,9 @@ export default function MedicalSettingsScreen({ navigation }) {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out All', style: 'destructive', onPress: async () => {
+          api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
+          await clearSession();
           await AsyncStorage.clear();
-          await auth.signOut();
           navigation.getParent()?.replace('Intent');
         }
       }
@@ -261,17 +214,15 @@ export default function MedicalSettingsScreen({ navigation }) {
 
   const downloadMyData = async () => {
     try {
-      const uid = auth.currentUser?.uid;
-      const [authSnap, profileSnap, apptSnap] = await Promise.all([
-        getDoc(doc(db, 'auth', uid)),
-        getDoc(doc(db, 'patientProfiles', uid)),
-        getDocs(query(collection(db, 'doctorAppointments'), where('clientId', '==', uid))),
+      const uid = await getStoredUserId();
+      const [profile, appointments] = await Promise.all([
+        api(`/api/v1/patients/${uid}`).catch(() => ({})),
+        api(`/api/v1/medical/appointments/patient/${uid}`).catch(() => []),
       ]);
       const data = {
         exportedAt: new Date().toISOString(),
-        profile: authSnap.data() || {},
-        patientProfile: profileSnap.data() || {},
-        appointments: apptSnap.docs.map(d => d.data()),
+        profile: profile || {},
+        appointments: appointments || [],
       };
       await Share.share({
         message: JSON.stringify(data, null, 2),
@@ -287,16 +238,12 @@ export default function MedicalSettingsScreen({ navigation }) {
     if (!deletePwd) { Alert.alert('Error', 'Enter your password to confirm.'); return; }
     setDeleting(true);
     try {
-      const user = auth.currentUser;
-      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, deletePwd));
-      // Mark profile as deleted (soft delete for records)
-      await setDoc(doc(db, 'patientProfiles', user.uid), { deletedAt: new Date().toISOString(), status: 'deleted' }, { merge: true });
-      await setDoc(doc(db, 'auth', user.uid), { deletedAt: new Date().toISOString() }, { merge: true });
+      await api('/api/v1/auth/account/delete', { method: 'POST', body: { password: deletePwd } });
+      await clearSession();
       await AsyncStorage.clear();
-      await deleteUser(user);
       navigation.getParent()?.replace('Intent');
     } catch (err) {
-      Alert.alert('Error', err.code === 'auth/wrong-password' ? 'Incorrect password.' : 'Could not delete account. Please try again.');
+      Alert.alert('Error', err.message?.includes('password') ? 'Incorrect password.' : 'Could not delete account. Please try again.');
     } finally { setDeleting(false); }
   };
 
@@ -304,8 +251,8 @@ export default function MedicalSettingsScreen({ navigation }) {
   const saveEmergency = async () => {
     setSavingEmergency(true);
     try {
-      const uid = auth.currentUser?.uid;
-      await setDoc(doc(db, 'patientProfiles', uid), { emergency, updatedAt: serverTimestamp() }, { merge: true });
+      const uid = await getStoredUserId();
+      await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { emergency } });
       Alert.alert('Saved', 'Emergency information updated.');
     } catch { Alert.alert('Error', 'Failed to save.'); }
     finally { setSavingEmergency(false); }
@@ -315,11 +262,11 @@ export default function MedicalSettingsScreen({ navigation }) {
   const saveLegal = async (updatedLegal) => {
     setSavingLegal(true);
     try {
-      const uid = auth.currentUser?.uid;
+      const uid = await getStoredUserId();
       const log = { action: 'Legal consent updated', timestamp: new Date().toISOString(), accepted: updatedLegal };
       const updatedLogs = [...consentLogs.slice(-49), log];
       setConsentLogs(updatedLogs);
-      await setDoc(doc(db, 'patientProfiles', uid), { legal: { ...updatedLegal, consentLogs: updatedLogs }, updatedAt: serverTimestamp() }, { merge: true });
+      await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { legal: { ...updatedLegal, consentLogs: updatedLogs } } });
       Alert.alert('Saved', 'Legal preferences saved.');
     } catch { Alert.alert('Error', 'Failed to save.'); }
     finally { setSavingLegal(false); }
@@ -333,43 +280,30 @@ export default function MedicalSettingsScreen({ navigation }) {
     if (!dischargeForm.confirmed) { Alert.alert('Required', 'Please check the confirmation box.'); return; }
     setSubmittingDischarge(true);
     try {
-      const uid = auth.currentUser?.uid;
-      const user = auth.currentUser;
+      const uid = await getStoredUserId();
+      const patData = await api(`/api/v1/patients/${uid}`).catch(() => ({}));
 
-      // Load current patient data to include in the discharge record
-      const [authSnap, profileSnap] = await Promise.all([
-        getDoc(doc(db, 'auth', uid)),
-        getDoc(doc(db, 'patientProfiles', uid)),
-      ]);
-      const authData = authSnap.data() || {};
-      const profileData = profileSnap.data() || {};
-
-      const dischargePayload = {
-        patientId: uid,
-        patientName: authData.name || user.displayName || 'Patient',
-        patientEmail: authData.email || user.email || '',
-        patientPhone: authData.phone || '',
-        patientDob: authData.dob || '',
-        bloodType: authData.bloodType || '',
-        allergies: authData.allergies || '',
-        reason: dischargeForm.reason.trim(),
-        message: dischargeForm.message.trim(),
-        type: 'self',
-        requestedAt: serverTimestamp(),
-        status: 'pending_review',
-        patientProfile: { emergency: profileData.emergency || {}, insurance: profileData.insurance || {}, legal: profileData.legal || {} },
-      };
-
-      // Write to shared dischargeRequests collection (doctor can see this)
-      await addDoc(collection(db, 'dischargeRequests'), dischargePayload);
-
-      // Update patient profile status
-      await setDoc(doc(db, 'patientProfiles', uid), {
-        status: 'self-discharged',
-        selfDischargeReason: dischargeForm.reason.trim(),
-        selfDischargeMessage: dischargeForm.message.trim(),
-        selfDischargedAt: serverTimestamp(),
-      }, { merge: true });
+      await api(`/api/v1/patients/${uid}/discharge-requests`, {
+        method: 'POST',
+        body: {
+          patientId: uid,
+          patientName: patData.name || 'Patient',
+          patientEmail: patData.email || '',
+          patientPhone: patData.phone || '',
+          patientDob: patData.dob || '',
+          bloodType: patData.bloodType || '',
+          allergies: patData.allergies || '',
+          reason: dischargeForm.reason.trim(),
+          message: dischargeForm.message.trim(),
+          type: 'self',
+          status: 'pending_review',
+          patientProfile: { emergency: patData.emergency || {}, insurance: patData.insurance || {}, legal: patData.legal || {} },
+        },
+      });
+      await api(`/api/v1/patients/${uid}`, {
+        method: 'PATCH',
+        body: { status: 'self-discharged', selfDischargeReason: dischargeForm.reason.trim(), selfDischargeMessage: dischargeForm.message.trim() },
+      });
 
       setAlreadyDischarged(true);
       Alert.alert('Request Submitted', 'Your discharge request has been submitted. Your doctor has been notified. Thank you for using NessaHub.');
@@ -382,7 +316,7 @@ export default function MedicalSettingsScreen({ navigation }) {
   const handleLogout = async () => {
     Alert.alert('Log Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => { await AsyncStorage.clear(); await auth.signOut(); navigation.getParent()?.replace('Intent'); } }
+      { text: 'Log Out', style: 'destructive', onPress: async () => { api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); await clearSession(); await AsyncStorage.clear(); navigation.getParent()?.replace('Intent'); } }
     ]);
   };
 
@@ -409,10 +343,22 @@ export default function MedicalSettingsScreen({ navigation }) {
         {activeTab === 'profile' && (
           <>
             <View style={s.avatarRow}>
-              <View style={s.avatar}><Text style={s.avatarText}>{(form.name || 'P')[0].toUpperCase()}</Text></View>
-              <View>
+              {/* Tap to set a profile picture — stored on the user record, so it
+                  shows anywhere this person is rendered. */}
+              <UserAvatar
+                user={{ ...form, avatarUrl }}
+                size={58}
+                onPress={changeAvatar}
+                backgroundColor={MedicalColors.primary}
+              />
+              <View style={{ flex: 1 }}>
                 <Text style={s.profileName}>{form.name || 'Patient'}</Text>
                 <Text style={s.profileEmail}>{form.email}</Text>
+                <TouchableOpacity onPress={changeAvatar} disabled={avatarBusy}>
+                  <Text style={s.avatarAction}>
+                    {avatarBusy ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Add photo'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -713,7 +659,7 @@ export default function MedicalSettingsScreen({ navigation }) {
 
             <View style={s.card}>
               <Text style={s.cardTitle}>Payment Preferences</Text>
-              <TouchableOpacity style={s.rowLink} onPress={() => navigation.getParent()?.navigate('MedicalBilling')}>
+              <TouchableOpacity style={s.rowLink} onPress={() => navigation.navigate('MedicalBilling')}>
                 <View style={[s.rowIcon, { backgroundColor: '#eff6ff' }]}><Ionicons name="card-outline" size={18} color="#2563eb" /></View>
                 <Text style={s.rowLinkText}>Manage Billing & Payments</Text>
                 <Ionicons name="chevron-forward" size={16} color="#94a3b8" style={{ marginLeft: 'auto' }} />
@@ -923,6 +869,7 @@ const s = StyleSheet.create({
   avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: MedicalColors.border },
   avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: MedicalColors.primary, justifyContent: 'center', alignItems: 'center' },
   avatarText: { fontSize: 24, fontWeight: '800', color: '#fff' },
+  avatarAction: { marginTop: 6, fontSize: 13, fontWeight: '700', color: MedicalColors.primary },
   profileName: { fontSize: 16, fontWeight: '700', color: MedicalColors.text },
   profileEmail: { fontSize: 12, color: MedicalColors.textSecondary, marginTop: 2 },
 

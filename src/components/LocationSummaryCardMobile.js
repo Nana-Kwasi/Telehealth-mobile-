@@ -4,23 +4,31 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 function pickLocation(profile = {}) {
   const src = profile || {};
   const locationMeta = src.locationMeta || {};
-  const location = src.location || {};
+  // `location` may be a structured object OR a plain address string (staff/doctor
+  // profiles store a string). Live coords captured on app open land in
+  // `currentLocation` (or `metadata.currentLocation`).
+  const location = (src.location && typeof src.location === 'object') ? src.location : {};
+  const locationStr = (typeof src.location === 'string') ? src.location.trim() : '';
+  const current = src.currentLocation || src.metadata?.currentLocation || {};
   const country = src.country || locationMeta.country || location.country || '';
   const city = src.city || locationMeta.city || location.city || '';
   const area = src.area || locationMeta.area || location.area || '';
   const region = src.region || locationMeta.region || location.region || '';
   const street = src.street || locationMeta.street || location.street || '';
-  const rawAddress = String(src.address || location.address || src.formattedAddress || '').trim();
+  const rawAddress = String(
+    src.address || location.address || src.formattedAddress || current.address || locationStr || '',
+  ).trim();
   const codeMatch = rawAddress.match(/\b[A-Z]{2}-\d{3}-\d{4}\b/i);
   const ghanaDigitalAddress = src.ghanaDigitalAddress || locationMeta.ghanaDigitalAddress || location.ghanaDigitalAddress || (codeMatch ? codeMatch[0].toUpperCase() : '');
-  const latitude = Number(src.latitude ?? locationMeta.latitude ?? location.latitude);
-  const longitude = Number(src.longitude ?? locationMeta.longitude ?? location.longitude);
+  const latitude = Number(src.latitude ?? locationMeta.latitude ?? location.latitude ?? current.latitude);
+  const longitude = Number(src.longitude ?? locationMeta.longitude ?? location.longitude ?? current.longitude);
   return {
     country,
     city,
     area,
     region,
     street,
+    address: rawAddress,
     ghanaDigitalAddress,
     latitude: Number.isFinite(latitude) ? latitude : null,
     longitude: Number.isFinite(longitude) ? longitude : null,
@@ -62,10 +70,10 @@ function flagFromCountry(country = '') {
   return String.fromCodePoint(...points);
 }
 
-export default function LocationSummaryCardMobile({ profile, title = 'Your Saved Location', onEdit }) {
+export default function LocationSummaryCardMobile({ profile, title = 'Your Saved Location', onEdit, embedded = false }) {
   const loc = pickLocation(profile);
   const composedAddress = [loc.area || loc.street, loc.city].filter(Boolean).join(', ');
-  const rawFormatted = (profile?.formattedAddress || profile?.address || profile?.location?.address || '').trim();
+  const rawFormatted = (loc.address || '').trim();
   const isDigitalCodeOnly = /^[A-Z]{2}-\d{3}-\d{4}$/i.test(rawFormatted);
   const formattedAddress = composedAddress || (rawFormatted && !isDigitalCodeOnly ? rawFormatted : '');
   const hasStructured = Boolean(loc.country || loc.city || loc.area || loc.region || loc.street);
@@ -74,7 +82,7 @@ export default function LocationSummaryCardMobile({ profile, title = 'Your Saved
 
   const CardWrapper = onEdit ? TouchableOpacity : View;
   return (
-    <CardWrapper style={s.card} onPress={onEdit} activeOpacity={0.85}>
+    <CardWrapper style={[s.card, embedded && s.cardEmbedded]} onPress={onEdit} activeOpacity={0.85}>
       <View style={s.header}>
         <View style={s.titleWrap}>
           <View style={s.flagCircle}>
@@ -101,12 +109,17 @@ export default function LocationSummaryCardMobile({ profile, title = 'Your Saved
 const s = StyleSheet.create({
   card: {
     marginHorizontal: 16,
+    marginTop: 12,
     marginBottom: 8,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#dbeafe',
     backgroundColor: '#f8fafc',
     padding: 8,
+  },
+  cardEmbedded: {
+    marginTop: 12,
+    marginBottom: 4,
   },
   header: {
     flexDirection: 'row',

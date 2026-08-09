@@ -4,10 +4,8 @@ import {
   ActivityIndicator, RefreshControl, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, orderBy, doc, getDoc, limit
-} from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../../services/apiClient';
 import { TherapistColors } from '../../constants/colors';
 import { LineChart } from 'react-native-chart-kit';
 
@@ -37,44 +35,35 @@ const TherapistMoodScreen = ({ navigation }) => {
   const [summary, setSummary] = useState({ avg: 0, total: 0, trend: 'neutral' });
 
   useEffect(() => {
-    if (auth.currentUser) loadClients();
+    AsyncStorage.getItem('th.userId').then(uid => { if (uid) loadClients(uid); });
   }, []);
 
-  const loadClients = async () => {
+  const loadClients = async (therapistId) => {
     try {
       setIsLoading(true);
-      const ref = collection(db, 'therapists', auth.currentUser.uid, 'clients');
-      const snap = await getDocs(ref);
-      const ids = snap.docs.map(d => d.data().clientId).filter(Boolean);
+      const assignments = await api(`/api/v1/therapy-management/assignments?therapistId=${therapistId}`).catch(() => []);
+      const ids = (Array.isArray(assignments) ? assignments : []).map(a => a.clientId).filter(Boolean);
       const list = [];
       for (const id of ids) {
         try {
-          const cSnap = await getDoc(doc(db, 'clients', id));
-          if (cSnap.exists()) {
-            const cd = cSnap.data();
-            list.push({ id, name: cd.name || cd.email || 'Client', email: cd.email || '' });
-          }
-        } catch (_) {}
+          const data = await api(`/api/v1/patients/${id}`);
+          if (data) list.push({ id, name: data.fullName || data.name || data.email || 'Client', email: data.email || '' });
+        } catch {}
       }
       setClients(list);
-    } catch (e) {
-      console.error('Load clients error:', e);
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (e) { console.error('Load clients error:', e); }
+    finally { setIsLoading(false); }
   };
 
   const loadMoodData = async (client) => {
     setIsMoodLoading(true);
     try {
-      const q = query(
-        collection(db, 'Client daily mood tracking'),
-        where('clientId', '==', client.id),
-        orderBy('createdAt', 'desc'),
-        limit(30)
-      );
-      const snap = await getDocs(q);
-      const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const data = await api(`/api/v1/therapy-engagement/clients/${client.id}/moods?limit=30`);
+      const entries = (Array.isArray(data) ? data : []).map(e => ({
+        ...e,
+        moodValue: e.moodScore,
+        moodLabel: e.notes ? e.notes.split(':')[0] : '',
+      }));
       setMoodEntries(entries);
       computeSummary(entries);
     } catch (e) {

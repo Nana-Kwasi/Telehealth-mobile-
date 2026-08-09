@@ -4,8 +4,7 @@ import {
   ActivityIndicator, RefreshControl, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { fetchClientAppointments, fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 
@@ -37,32 +36,21 @@ const MedicalHistoryScreen = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
-      const uid = cu.uid;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
-      const [appts, rxs] = await Promise.all([
+      const [appts, rxs, patData] = await Promise.all([
         fetchClientAppointments(uid),
         fetchClientPrescriptions(uid),
+        api(`/api/v1/patients/${uid}`).catch(() => null),
       ]);
 
       setPastAppointments(appts.filter(a => a.status === 'completed'));
       setPrescriptions(rxs);
-
-      // Load health records and allergies from patientProfiles
-      try {
-        const profSnap = await getDoc(doc(db, 'patientProfiles', uid));
-        if (profSnap.exists()) {
-          const pd = profSnap.data();
-          setHealthRecords(pd.healthRecords || []);
-        }
-      } catch (_) {}
-
-      // Load allergies from auth doc
-      try {
-        const authSnap = await getDoc(doc(db, 'auth', uid));
-        if (authSnap.exists()) setAllergies(authSnap.data().allergies || '');
-      } catch (_) {}
+      if (patData) {
+        setHealthRecords(patData.healthRecords || []);
+        setAllergies(patData.allergies || '');
+      }
     } catch (error) {
       console.error('Error loading history:', error);
     } finally {

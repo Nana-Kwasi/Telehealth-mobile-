@@ -11,10 +11,8 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, storeSession } from '../services/apiClient';
 import { Colors } from '../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
 import {
@@ -29,6 +27,9 @@ const SignUpScreen = ({ route, navigation }) => {
   const lockEmail = !!clientData?.lockEmail;
   const [name, setName] = useState(clientData?.name || clientData?.displayName || '');
   const [email, setEmail] = useState(clientData?.email || '');
+  // Captured on every signup so the admin user-detail screen has a phone for each
+  // account, and so care staff can reach the person.
+  const [phone, setPhone] = useState(clientData?.phone || clientData?.phoneNumber || '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -53,11 +54,30 @@ const SignUpScreen = ({ route, navigation }) => {
 
     try {
       setLoading(true);
-      
-      // Note: navigator.onLine is not available in React Native, but Firebase will handle offline errors
-      
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const userId = userCredential.user.uid;
+
+      // Determine the account's intent BEFORE registering so the backend role is
+      // correct. The backend derives intent from role (PATIENT → medical,
+      // CLIENT → therapy); couples & home care stay CLIENT and use userIntent.
+      const medicalSkipEarly = await AsyncStorage.getItem('th.medicalSkip');
+      const pendingBookingEarly = await AsyncStorage.getItem('th.pendingBooking');
+      const storedIntentEarly = await AsyncStorage.getItem('userIntent');
+      const coupleIdEarly =
+        clientData?.coupleId || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
+      const isCoupleEarly = clientData?.therapyType === 'couples' || !!coupleIdEarly;
+      // Medical intent is set on IntentScreen ('userIntent'='medical') even if the
+      // user bails before the doctor-booking intake (which sets th.medicalSkip).
+      const isMedicalEarly =
+        !isCoupleEarly &&
+        (storedIntentEarly === 'medical' || !!(medicalSkipEarly || pendingBookingEarly));
+      const regRole = isMedicalEarly ? 'PATIENT' : 'CLIENT';
+      const sessionRole = isMedicalEarly ? 'patient' : 'client';
+
+      const regData = await api('/api/v1/auth/register', {
+        method: 'POST', authenticated: false,
+        body: { email: email.toLowerCase(), password, fullName: name, role: regRole, phone: phone.trim() },
+      });
+      const userId = regData.userId;
+      await storeSession({ token: regData.token, refreshToken: regData.refreshToken, userId, role: sessionRole });
       let clientId = await AsyncStorage.getItem('th.clientId');
       const coupleId =
         clientData?.coupleId || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
@@ -78,55 +98,48 @@ const SignUpScreen = ({ route, navigation }) => {
         await AsyncStorage.setItem('th.clientId', clientId);
       }
 
-      // Create user profile in auth collection (matching web version)
+      const homecareIntent = storedIntentEarly === 'homecare';
+      const isMedical = isMedicalEarly;
+
       const userProfile = {
-        uid: userId,
-        name: name,
-        email: email.toLowerCase(),
-        role: 'client',
-        clientId: clientId || userId,
-        coupleId: isCouple ? coupleId : undefined,
+        id: userId, uid: userId, name, email: email.toLowerCase(), role: sessionRole,
+        clientId: clientId || userId, coupleId: isCouple ? coupleId : undefined,
         couplePartnerRole: isCouple ? couplePartnerRole : undefined,
-        therapyType: isCouple ? 'couples' : undefined,
-        status: 'pending',
-        createdAt: new Date().toISOString()
+        therapyType: isCouple ? 'couples' : undefined, status: 'pending',
+        userIntent: isCouple ? 'therapy' : homecareIntent ? 'homecare' : isMedical ? 'medical' : 'therapy',
+        ...buildLegalPrivacyFields(),
       };
 
-      // Check user intent — medical skip or pending booking goes to medical dashboard
-      const medicalSkip = await AsyncStorage.getItem('th.medicalSkip');
-      const pendingBooking = await AsyncStorage.getItem('th.pendingBooking');
-      const homecareIntent = (await AsyncStorage.getItem('userIntent')) === 'homecare';
-      const isMedical = !!(medicalSkip || pendingBooking);
+      await AsyncStorage.setItem('userProfile', JSON.stringify(userProfile));
+      await AsyncStorage.setItem('userRole', sessionRole);
+      await AsyncStorage.setItem('userId', userId);
+      await AsyncStorage.setItem('th.userId', userId);
+      await AsyncStorage.setItem('userName', name);
+      await syncPrivacyConsentToUser({ userId, role: sessionRole, profileId: (isMedicalEarly ? userId : clientId) || userId }).catch(() => {});
 
-      userProfile.userIntent = isCouple
-        ? 'therapy'
-        : homecareIntent
-          ? 'homecare'
-          : isMedical
-            ? 'medical'
-            : 'therapy';
-      Object.assign(userProfile, buildLegalPrivacyFields());
-
-      await setDoc(doc(db, 'auth', userId), userProfile);
-      await syncPrivacyConsentToUser({ userId, role: 'client', profileId: clientId || userId }).catch(() => {});
-
-      // Update the client document with the auth UID and proper name (matching web version)
-      if (clientId) {
-        await setDoc(
-          doc(db, 'clients', clientId),
-          {
-            authUid: userId,
-            displayName: name,
-            clientName: name,
-            email: email.toLowerCase(),
-            therapyType: isCouple ? 'couples' : undefined,
-            coupleId: isCouple ? coupleId : undefined,
-            couplePartnerRole: isCouple ? couplePartnerRole : undefined,
-            status: 'pending',
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true },
-        );
+      if (isMedicalEarly) {
+        // Medical patient: create the patient profile (POST upserts) under THIS
+        // user id — using a stale th.clientId would write another user's row and
+        // leave this account with no profile (blank name + location PATCH 404).
+        await AsyncStorage.setItem('th.clientId', userId);
+        await api(`/api/v1/patients/${userId}`, {
+          method: 'POST',
+          body: { fullName: name },
+        }).catch(() => {});
+      } else if (clientId || !homecareIntent) {
+        // Therapy clients land here. This used to be gated on `clientId` alone, but the
+        // questionnaire clears `th.clientId` right before navigating to SignUp, so for a
+        // plain therapy signup the branch never ran and the account was created with no
+        // profile row at all — the dashboard's GET /api/v1/patients/{id} then 400'd
+        // ("Patient not found") and the client home screen failed with "Error loading
+        // dashboard data". PATCH creates the row when missing, so fall back to the user
+        // id. Home care keeps its own onboarding and is left untouched.
+        const profileId = clientId || userId;
+        await AsyncStorage.setItem('th.clientId', profileId);
+        await api(`/api/v1/patients/${profileId}`, {
+          method: 'PATCH',
+          body: { fullName: name, email: email.toLowerCase(), status: 'pending' },
+        }).catch(() => {});
       }
 
       if (isCouple && coupleId) {
@@ -161,7 +174,8 @@ const SignUpScreen = ({ route, navigation }) => {
         await AsyncStorage.setItem('userIntent', 'homecare');
         resetToHomeCarePatientDashboard(navigation);
       } else {
-        navigation.navigate('Payment');
+        // Therapy clients choose a therapist first, then pay that therapist's rate.
+        navigation.navigate('MatchTherapist');
       }
     } catch (error) {
       console.error('Sign up error:', error);
@@ -169,10 +183,10 @@ const SignUpScreen = ({ route, navigation }) => {
       // Handle specific Firebase errors (matching web version)
       if (error.message.includes('offline') || error.message.includes('Failed to get document')) {
         setError('You are currently offline. Please check your internet connection and try again.');
-      } else if (error.code === 'auth/email-already-in-use') {
+      } else if (/email.*already|already.*registered/i.test(error.message)) {
         setError('This email is already registered. Please try logging in instead.');
-      } else if (error.code === 'auth/weak-password') {
-        setError('Password should be at least 6 characters long.');
+      } else if (/at least 8|weak.*password/i.test(error.message)) {
+        setError('Password should be at least 8 characters long.');
       } else {
         setError(error.message || 'Failed to create account');
       }
@@ -226,6 +240,19 @@ const SignUpScreen = ({ route, navigation }) => {
               autoCapitalize="none"
               autoCorrect={false}
               editable={!lockEmail}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Phone Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 0243899834"
+              placeholderTextColor={Colors.textLight}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              autoCorrect={false}
             />
           </View>
 

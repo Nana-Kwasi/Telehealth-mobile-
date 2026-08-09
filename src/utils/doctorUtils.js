@@ -1,11 +1,5 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../services/firebaseConfig';
+import { api } from '../services/apiClient';
 
-/**
- * For each patient in patMap whose name is missing/generic,
- * fetches the real name from auth/{patientId} in Firestore.
- * Returns a new Map with enriched names.
- */
 export async function enrichPatientNames(patMap) {
   const enriched = new Map(patMap);
   const lookups = [];
@@ -19,14 +13,11 @@ export async function enrichPatientNames(patMap) {
   await Promise.all(
     lookups.map(async (id) => {
       try {
-        const snap = await getDoc(doc(db, 'auth', id));
-        if (snap.exists()) {
-          const d = snap.data();
-          const name = d.name || d.displayName || d.fullName || null;
-          if (name) {
-            const existing = enriched.get(id);
-            enriched.set(id, { ...existing, name });
-          }
+        const data = await api(`/api/v1/patients/${id}`);
+        const name = data?.fullName || data?.name || null;
+        if (name) {
+          const existing = enriched.get(id);
+          enriched.set(id, { ...existing, name });
         }
       } catch (_) {}
     })
@@ -35,10 +26,6 @@ export async function enrichPatientNames(patMap) {
   return enriched;
 }
 
-/**
- * Builds a patient map from an appointments snapshot,
- * then enriches with real names from Firestore auth collection.
- */
 export async function buildEnrichedPatientMap(apptDocs) {
   const patMap = new Map();
 

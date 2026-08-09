@@ -8,9 +8,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { doc, updateDoc } from 'firebase/firestore';
-import { updatePassword as updatePwd } from 'firebase/auth';
-import { auth, db } from '../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../services/apiClient';
+import { performLogout } from '../services/authService';
 import { Colors } from '../constants/colors';
 
 export function getForcedPasswordFirestoreTarget(userRole, profile) {
@@ -24,6 +24,8 @@ export function getForcedPasswordFirestoreTarget(userRole, profile) {
       return { collection: 'therapists', docId: id };
     case 'client':
       return { collection: 'auth', docId: id };
+    case 'patient':
+      return { collection: 'patients', docId: id };
     case 'pharmacy':
       return { collection: 'pharmacies', docId: id };
     case 'branch_user':
@@ -61,39 +63,20 @@ export default function ForcedPasswordChangeGateMobile({ active, userRole, profi
 
   const handleChangePassword = async () => {
     setPwError('');
-    if (newPw.length < 8) {
-      setPwError('Password must be at least 8 characters.');
-      return;
-    }
-    if (newPw !== confirmPw) {
-      setPwError('Passwords do not match.');
-      return;
-    }
+    if (newPw.length < 8) { setPwError('Password must be at least 8 characters.'); return; }
+    if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
     setPwSaving(true);
     try {
-      const user = auth.currentUser;
-      if (!user) {
-        setPwError('Not signed in.');
-        return;
-      }
-      await updatePwd(user, newPw);
-      await updateDoc(doc(db, target.collection, target.docId), { mustChangePassword: false });
-      if (target.collection === 'auth' && profile?.clientId) {
-        try {
-          await updateDoc(doc(db, 'clients', profile.clientId), { mustChangePassword: false });
-        } catch (_) {
-          /* optional second doc */
-        }
-      }
-      setNewPw('');
-      setConfirmPw('');
+      const userId = await AsyncStorage.getItem('th.userId');
+      if (!userId) { setPwError('Not signed in.'); return; }
+      await api('/api/v1/auth/password-change', {
+        method: 'POST',
+        body: { userId, currentPassword: profile?.tempPassword || newPw, newPassword: newPw },
+      });
+      setNewPw(''); setConfirmPw('');
       onSuccess?.();
     } catch (err) {
-      if (err?.code === 'auth/requires-recent-login') {
-        setPwError('Log out, sign in with your temporary password again, then try.');
-      } else {
-        setPwError('Failed to update password. Try again.');
-      }
+      setPwError(err?.message || 'Failed to update password. Try again.');
     } finally {
       setPwSaving(false);
     }
@@ -144,7 +127,7 @@ export default function ForcedPasswordChangeGateMobile({ active, userRole, profi
           <TouchableOpacity
             onPress={async () => {
               try {
-                await auth.signOut();
+                await performLogout();
               } catch (_) {}
             }}
             style={styles.pwLogout}

@@ -11,8 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../services/firebaseConfig';
+import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
@@ -55,116 +54,41 @@ const ClientBillingScreen = ({ navigation }) => {
   const fetchBillingData = async () => {
     try {
       setIsLoading(true);
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
+      const userId = await AsyncStorage.getItem('th.userId');
+      if (!userId) return;
+      const clientId = await AsyncStorage.getItem('th.clientId') || userId;
 
-      const clientId = await AsyncStorage.getItem('th.clientId') || currentUser.uid;
-      
-      // Fetch client profile
       let client = getCachedClientData();
       if (!client) {
-        const clientDoc = await getDoc(doc(db, 'clients', clientId));
-        if (clientDoc.exists()) {
-          client = { id: clientDoc.id, ...clientDoc.data() };
-        }
+        client = await api(`/api/v1/patients/${clientId}`).catch(() => null);
       }
       setClientData(client);
 
-      // Fetch billing history - query without orderBy to avoid index requirement, sort client-side
       try {
-        const billingQuery = query(
-          collection(db, 'billing'),
-          where('clientId', '==', clientId)
-        );
-        const billingSnapshot = await getDocs(billingQuery);
-        const history = billingSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .sort((a, b) => {
-            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-            return dateB - dateA; // Descending order (newest first)
-          });
+        const invoices = await api(`/api/v1/billing/invoices?patientId=${clientId}`);
+        const history = (Array.isArray(invoices) ? invoices : [])
+          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
         setBillingHistory(history);
         setFilteredHistory(history);
       } catch (error) {
         console.error('Error fetching billing history:', error);
-        // Fallback: fetch all and filter client-side
-        try {
-          const allBillingQuery = query(collection(db, 'billing'));
-          const allBillingSnapshot = await getDocs(allBillingQuery);
-          const history = allBillingSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(item => item.clientId === clientId)
-            .sort((a, b) => {
-              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-              return dateB - dateA;
-            });
-          setBillingHistory(history);
-          setFilteredHistory(history);
-        } catch (fallbackError) {
-          console.error('Fallback billing query failed:', fallbackError);
-        }
       }
 
-      // Fetch payment methods
       try {
-        const paymentMethodsQuery = query(
-          collection(db, 'paymentMethods'),
-          where('clientId', '==', clientId),
-          where('isActive', '==', true)
-        );
-        const paymentMethodsSnapshot = await getDocs(paymentMethodsQuery);
-        const methods = paymentMethodsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setPaymentMethods(methods);
+        const methods = await api(`/api/v1/billing-profile/payment-methods?userId=${userId}`);
+        setPaymentMethods(Array.isArray(methods) ? methods : []);
       } catch (error) {
         console.error('Error fetching payment methods:', error);
       }
 
-      // Fetch subscription info - query without orderBy to avoid index requirement, sort client-side
       try {
-        const subscriptionQuery = query(
-          collection(db, 'subscriptions'),
-          where('clientId', '==', clientId)
-        );
-        const subscriptionSnapshot = await getDocs(subscriptionQuery);
-        if (!subscriptionSnapshot.empty) {
-          // Sort client-side and get the most recent one
-          const subscriptions = subscriptionSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(sub => ['active', 'pending', 'cancelled'].includes(sub.status))
-            .sort((a, b) => {
-              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-              return dateB - dateA; // Descending order (newest first)
-            });
-          if (subscriptions.length > 0) {
-            setSubscription(subscriptions[0]);
-          }
-        }
+        const subs = await api(`/api/v1/billing-profile/subscriptions?userId=${userId}`);
+        const list = (Array.isArray(subs) ? subs : [])
+          .filter(s => ['active', 'pending', 'cancelled'].includes(s.status))
+          .sort((a, b) => new Date(b.startedAt || b.createdAt || 0) - new Date(a.startedAt || a.createdAt || 0));
+        if (list.length > 0) setSubscription(list[0]);
       } catch (error) {
         console.error('Error fetching subscription:', error);
-        // Fallback: fetch all and filter client-side
-        try {
-          const allSubscriptionsQuery = query(collection(db, 'subscriptions'));
-          const allSubscriptionsSnapshot = await getDocs(allSubscriptionsQuery);
-          const activeSub = allSubscriptionsSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(sub => sub.clientId === clientId && ['active', 'pending', 'cancelled'].includes(sub.status))
-            .sort((a, b) => {
-              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-              return dateB - dateA;
-            })[0];
-          if (activeSub) {
-            setSubscription(activeSub);
-          }
-        } catch (fallbackError) {
-          console.error('Fallback subscription query failed:', fallbackError);
-        }
       }
 
     } catch (error) {

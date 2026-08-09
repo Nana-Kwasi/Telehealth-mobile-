@@ -4,21 +4,29 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../services/firebaseConfig';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { api } from '../services/apiClient';
 import { MedicalColors } from '../constants/colors';
 import { signOut } from '../services/authService';
 
 const MedicalDrawerContent = ({ navigation, profile }) => {
   const [hasPrimaryDoctor, setHasPrimaryDoctor] = useState(false);
+  const [displayName, setDisplayName] = useState(profile?.name || profile?.fullName || '');
+
+  // The `profile` prop can be stale; fall back to the stored userName so the
+  // drawer header shows the patient's real name, not "Patient".
+  useEffect(() => {
+    const fromProfile = profile?.name || profile?.fullName;
+    if (fromProfile) { setDisplayName(fromProfile); return; }
+    AsyncStorage.getItem('userName').then(n => { if (n) setDisplayName(n); }).catch(() => {});
+  }, [profile?.name, profile?.fullName]);
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
+    const uid = profile?.id;
     if (!uid) return;
-    getDocs(query(collection(db, 'doctorAppointments'), where('clientId', '==', uid), where('status', 'in', ['pending', 'confirmed', 'completed'])))
-      .then(snap => setHasPrimaryDoctor(snap.size > 0))
+    api(`/api/v1/medical/appointments/patient/${uid}`)
+      .then(data => setHasPrimaryDoctor(Array.isArray(data) && data.length > 0))
       .catch(() => {});
-  }, []);
+  }, [profile?.id]);
   const handleLogout = async () => {
     try {
       await AsyncStorage.clear();
@@ -60,7 +68,7 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>
-                {(profile?.name || 'P')[0].toUpperCase()}
+                {(displayName || 'P')[0].toUpperCase()}
               </Text>
             </View>
           )}

@@ -3,8 +3,7 @@ import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { DoctorColors as C } from '../../constants/colors';
 
 const EVENT_CONFIG = {
@@ -23,11 +22,21 @@ const STATUS_COLORS = {
   COMPLETED:   { bg: '#dcfce7', text: '#14532d' },
 };
 
+// createdAt may arrive as a Firestore-style { seconds } object OR as an ISO
+// string / epoch (the REST API serialises Instant as an ISO-8601 string), so
+// normalise both — otherwise every event grouped under "Unknown Date".
+function toDate(v) {
+  if (!v) return null;
+  const d = v.seconds != null ? new Date(v.seconds * 1000) : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function groupByDate(items) {
   const groups = {};
   items.forEach(item => {
-    const key = item.createdAt
-      ? new Date(item.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    const d = toDate(item.createdAt);
+    const key = d
+      ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
       : 'Unknown Date';
     if (!groups[key]) groups[key] = [];
     groups[key].push(item);
@@ -45,25 +54,9 @@ export default function DoctorPatientTimelineScreen({ route }) {
 
   const loadTimeline = async () => {
     try {
-      const snap = await getDocs(
-        query(collection(db, 'patientTimeline'), where('patientId', '==', patientId))
-      );
-      let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const rxItems = items.filter(i => i.type === 'PRESCRIPTION' && i.relatedId);
-      if (rxItems.length > 0) {
-        await Promise.all(rxItems.map(async (evt) => {
-          try {
-            const rxSnap = await getDoc(doc(db, 'doctorPrescriptions', evt.relatedId));
-            if (!rxSnap.exists()) return;
-            const rx = rxSnap.data();
-            const pharmacyDone = rx.pharmacyStatus === 'delivered';
-            const patientDone = rx.status === 'completed';
-            evt.status = patientDone ? 'COMPLETED' : (pharmacyDone ? 'IN_PROGRESS' : 'PENDING');
-            evt.title = `Prescription · Pharmacy: ${pharmacyDone ? 'Delivered' : 'Not delivered'} · Patient: ${patientDone ? 'Completed' : 'Not completed'}`;
-          } catch {}
-        }));
-      }
-      items.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      const data = await api(`/api/v1/patient-timeline?patientId=${patientId}`);
+      const items = (Array.isArray(data) ? data : [])
+        .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0));
       setSections(groupByDate(items));
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -90,7 +83,7 @@ export default function DoctorPatientTimelineScreen({ route }) {
           <Text style={styles.title}>{item.title}</Text>
           {item.actor?.name && <Text style={styles.actor}>by {item.actor.name}</Text>}
           <Text style={styles.time}>
-            {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+            {toDate(item.createdAt) ? toDate(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
           </Text>
         </View>
       </View>

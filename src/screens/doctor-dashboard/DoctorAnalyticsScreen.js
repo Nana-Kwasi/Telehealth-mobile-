@@ -4,8 +4,7 @@ import {
   RefreshControl, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -108,69 +107,47 @@ export default function DoctorAnalyticsScreen() {
 
   const loadAnalytics = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
+      const uid = await getStoredUserId();
+      if (!uid) return;
 
+      // Compute from real data. (The /analytics endpoint only returns bare counts,
+      // not the per-month / distribution shape these charts need.) Earnings = the
+      // doctor's consultation fee × completed appointments, since appointment rows
+      // don't carry a fee.
       const months = getLast12Months();
-
-      // Appointments
-      const apptSnap = await getDocs(
-        query(collection(db, 'doctorAppointments'), where('doctorId', '==', cu.uid))
-      );
-      const appts = apptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-      // Month buckets
+      const [apptsRaw, reviewsRaw, docProfile] = await Promise.all([
+        api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []),
+        api(`/api/v1/doctors/reviews?targetUserId=${uid}`).catch(() => []),
+        api(`/api/v1/doctors/${uid}`).catch(() => null),
+      ]);
+      const appts = Array.isArray(apptsRaw) ? apptsRaw : [];
+      let fee = Number(docProfile?.consultationFee);
+      if (!Number.isFinite(fee)) {
+        try { fee = Number(JSON.parse(docProfile?.metadataJson || '{}').consultationFee) || 0; } catch { fee = 0; }
+      }
       const apptM = Array(12).fill(0);
       const earnM = Array(12).fill(0);
       let totalEarnings = 0;
       const status = { completed: 0, cancelled: 0, pending: 0 };
       const type = { video: 0, chat: 0, inPerson: 0 };
       const patientIds = new Set();
-
       appts.forEach(a => {
         if (a.clientId) patientIds.add(a.clientId);
-
         const monthKey = (a.date || '').slice(0, 7);
         const idx = months.indexOf(monthKey);
-        if (idx >= 0) {
-          apptM[idx] += 1;
-          if (a.status === 'completed') {
-            earnM[idx] += Number(a.consultationFee) || 0;
-          }
-        }
-
-        if (a.status === 'completed') { status.completed += 1; totalEarnings += Number(a.consultationFee) || 0; }
+        const completed = a.status === 'completed';
+        if (idx >= 0) { apptM[idx] += 1; if (completed) earnM[idx] += fee; }
+        if (completed) { status.completed += 1; totalEarnings += fee; }
         else if (a.status === 'cancelled') status.cancelled += 1;
         else status.pending += 1;
-
         const t = (a.consultationType || a.type || '').toLowerCase();
-        if (t === 'video') type.video += 1;
-        else if (t === 'chat') type.chat += 1;
-        else type.inPerson += 1;
+        if (t === 'video') type.video += 1; else if (t === 'chat') type.chat += 1; else type.inPerson += 1;
       });
-
-      // Patients subcollection
-      let patientCount = patientIds.size;
-      try {
-        const patSnap = await getDocs(collection(db, 'doctors', cu.uid, 'patients'));
-        if (patSnap.size > patientCount) patientCount = patSnap.size;
-      } catch {}
-
-      // Average rating
-      let avgRating = 0;
-      try {
-        const revSnap = await getDocs(
-          query(collection(db, 'doctorReviews'), where('doctorId', '==', cu.uid))
-        );
-        const ratings = revSnap.docs.map(d => d.data().rating || 0);
-        if (ratings.length > 0) avgRating = (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1);
-      } catch {}
-
-      setStats({ earnings: totalEarnings, appointments: appts.length, patients: patientCount, avgRating });
-      setApptByMonth(apptM);
-      setEarningsByMonth(earnM);
-      setStatusDist(status);
-      setTypeDist(type);
+      const reviews = Array.isArray(reviewsRaw) ? reviewsRaw : (reviewsRaw?.reviews || []);
+      const ratings = reviews.map(r => r.rating || 0);
+      const avgRating = ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : 0;
+      setStats({ earnings: totalEarnings, appointments: appts.length, patients: patientIds.size, avgRating });
+      setApptByMonth(apptM); setEarningsByMonth(earnM); setStatusDist(status); setTypeDist(type);
     } catch (err) {
       console.error('DoctorAnalytics error:', err);
     } finally {

@@ -12,8 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../../services/firebaseConfig';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { createAppointment } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 
@@ -88,15 +87,14 @@ const BookAppointmentScreen = ({ route, navigation }) => {
       return;
     }
 
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
+    const clientId = await getStoredUserId();
+    if (!clientId) {
       Alert.alert('Not Logged In', 'Please log in to book an appointment.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const clientId = currentUser.uid;
       const clientName = (await AsyncStorage.getItem('userName')) || 'Patient';
 
       // Build vitals payload (only include non-empty values)
@@ -127,15 +125,8 @@ const BookAppointmentScreen = ({ route, navigation }) => {
         vitals: vitalsPayload,
       });
 
-      // Save latest vitals to patientProfiles
       if (vitalsPayload) {
-        try {
-          await setDoc(
-            doc(db, 'patientProfiles', clientId),
-            { vitals: { latest: { ...vitalsPayload, recordedAt: serverTimestamp() } }, updatedAt: serverTimestamp() },
-            { merge: true }
-          );
-        } catch (_) {}
+        api(`/api/v1/patients/${clientId}/vitals`, { method: 'POST', body: vitalsPayload }).catch(() => {});
       }
 
       Alert.alert(

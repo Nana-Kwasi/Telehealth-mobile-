@@ -14,9 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
-import { auth, db, storage } from '../../services/firebaseConfig';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { api, getStoredUserId, uploadFile } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
 
 // ── Type groups ──────────────────────────────────────────────────────────────
@@ -97,12 +95,10 @@ const HealthRecordsScreen = () => {
 
   const loadRecords = async () => {
     try {
-      const uid = auth.currentUser?.uid;
+      const uid = await getStoredUserId();
       if (!uid) return;
-      const snap = await getDoc(doc(db, 'patientProfiles', uid));
-      if (snap.exists() && snap.data().healthRecords) {
-        setRecords(snap.data().healthRecords);
-      }
+      const data = await api(`/api/v1/patients/${uid}`).catch(() => null);
+      if (data?.healthRecords) setRecords(data.healthRecords);
     } catch (err) {
       console.error('Error loading records:', err);
     } finally {
@@ -111,12 +107,8 @@ const HealthRecordsScreen = () => {
   };
 
   const persistRecords = async (updated) => {
-    const uid = auth.currentUser?.uid;
-    await setDoc(
-      doc(db, 'patientProfiles', uid),
-      { healthRecords: updated, updatedAt: serverTimestamp() },
-      { merge: true }
-    );
+    const uid = await getStoredUserId();
+    await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { healthRecords: updated } });
   };
 
   const toggleType = (t) => {
@@ -151,12 +143,8 @@ const HealthRecordsScreen = () => {
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
       setUploading(radioType || 'general');
-      const uid = auth.currentUser?.uid;
-      const storageRef = ref(storage, `healthRecords/${uid}/${Date.now()}_${asset.name}`);
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
+      const uid = await getStoredUserId();
+      const downloadURL = await uploadFile(`healthRecords/${uid}`, asset.uri, asset.mimeType || 'application/octet-stream');
       if (radioType) {
         setForm(p => ({
           ...p,

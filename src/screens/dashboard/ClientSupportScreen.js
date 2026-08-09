@@ -13,8 +13,7 @@ import {
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, orderBy, limit } from 'firebase/firestore';
-import { db, auth } from '../../services/firebaseConfig';
+import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
@@ -90,124 +89,27 @@ const ClientSupportScreen = ({ navigation }) => {
   const fetchSupportData = async () => {
     try {
       setIsLoading(true);
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+      if (!clientId) return;
 
-      const clientId = await AsyncStorage.getItem('th.clientId') || currentUser.uid;
-
-      // Fetch recent sessions - query without orderBy to avoid index requirement
       try {
-        const sessionsQuery = query(
-          collection(db, 'scheduledCalls'),
-          where('clientId', '==', clientId),
-          where('status', '==', 'completed')
-        );
-        const sessionsSnapshot = await getDocs(sessionsQuery);
-        const sessions = sessionsSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .sort((a, b) => {
-            const dateA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
-            const dateB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
-            return dateB - dateA;
-          })
+        const calls = await api(`/api/v1/scheduled-calls?clientId=${clientId}`);
+        const sessions = (Array.isArray(calls) ? calls : [])
+          .filter(s => s.status === 'completed')
+          .sort((a, b) => new Date(b.scheduledTime || b.scheduledAt || b.startsAt || 0) - new Date(a.scheduledTime || a.scheduledAt || a.startsAt || 0))
           .slice(0, 5);
         setRecentSessions(sessions);
-      } catch (error) {
-        console.error('Error fetching sessions:', error);
-        // Fallback: fetch all and filter client-side
-        try {
-          const allSessionsQuery = query(collection(db, 'scheduledCalls'));
-          const allSessionsSnapshot = await getDocs(allSessionsQuery);
-          const sessions = allSessionsSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(session => session.clientId === clientId && session.status === 'completed')
-            .sort((a, b) => {
-              const dateA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
-              const dateB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
-              return dateB - dateA;
-            })
-            .slice(0, 5);
-          setRecentSessions(sessions);
-        } catch (fallbackError) {
-          console.error('Fallback sessions query failed:', fallbackError);
-        }
-      }
+      } catch (error) { console.error('Error fetching sessions:', error); }
 
-      // Fetch support tickets - query without orderBy to avoid index requirement
       try {
-        const ticketsQuery = query(
-          collection(db, 'supportTickets'),
-          where('clientId', '==', clientId)
-        );
-        const ticketsSnapshot = await getDocs(ticketsQuery);
-        const tickets = ticketsSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .sort((a, b) => {
-            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-            return dateB - dateA;
-          })
-          .slice(0, 10);
-        setSupportTickets(tickets);
-      } catch (error) {
-        console.error('Error fetching support tickets:', error);
-        // Fallback: fetch all and filter client-side
-        try {
-          const allTicketsQuery = query(collection(db, 'supportTickets'));
-          const allTicketsSnapshot = await getDocs(allTicketsQuery);
-          const tickets = allTicketsSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(ticket => ticket.clientId === clientId)
-            .sort((a, b) => {
-              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-              return dateB - dateA;
-            })
-            .slice(0, 10);
-          setSupportTickets(tickets);
-        } catch (fallbackError) {
-          console.error('Fallback tickets query failed:', fallbackError);
-        }
-      }
+        const tickets = await api(`/api/v1/care/support/tickets?reporterId=${clientId}`);
+        setSupportTickets((Array.isArray(tickets) ? tickets : []).slice(0, 10));
+      } catch (error) { console.error('Error fetching support tickets:', error); }
 
-      // Fetch incidents
       try {
-        const incidentsQuery = query(
-          collection(db, 'therapistReports'),
-          where('clientId', '==', clientId)
-        );
-        const incidentsSnapshot = await getDocs(incidentsQuery);
-        const incidentsData = incidentsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        incidentsData.sort((a, b) => {
-          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-          return dateB - dateA;
-        });
-        
-        setIncidents(incidentsData);
-      } catch (error) {
-        console.error('Error fetching incidents:', error);
-        // Fallback: fetch all and filter client-side
-        try {
-          const allIncidentsQuery = query(collection(db, 'therapistReports'));
-          const allIncidentsSnapshot = await getDocs(allIncidentsQuery);
-          const incidentsData = allIncidentsSnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(incident => incident.clientId === clientId)
-            .sort((a, b) => {
-              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-              return dateB - dateA;
-            });
-          setIncidents(incidentsData);
-        } catch (fallbackError) {
-          console.error('Fallback incident query failed:', fallbackError);
-        }
-      }
+        const incidents = await api(`/api/v1/therapist-reports?clientId=${clientId}`);
+        setIncidents(Array.isArray(incidents) ? incidents : []);
+      } catch (error) { console.error('Error fetching incidents:', error); }
 
     } catch (error) {
       console.error('Error fetching support data:', error);
@@ -223,15 +125,19 @@ const ClientSupportScreen = ({ navigation }) => {
     }
 
     try {
-      await addDoc(collection(db, 'sessionRatings'), {
-        sessionId: selectedSession.id,
-        clientId: auth.currentUser.uid,
-        therapistId: selectedSession.therapistId,
-        sessionRating: rating,
-        therapistRating: ratingTherapist,
-        systemRating: ratingSystem,
-        comment: ratingComment,
-        createdAt: serverTimestamp()
+      const uid = await AsyncStorage.getItem('th.userId');
+      await api('/api/v1/session-ratings', {
+        method: 'POST',
+        body: {
+          sessionId: selectedSession.id,
+          clientId: uid,
+          therapistId: selectedSession.therapistId,
+          rating,
+          therapistRating: ratingTherapist,
+          systemRating: ratingSystem,
+          comment: ratingComment,
+          sessionDate: (selectedSession.scheduledTime || selectedSession.scheduledAt) ? new Date(selectedSession.scheduledTime || selectedSession.scheduledAt).toISOString().split('T')[0] : null,
+        },
       });
 
       Alert.alert('Success', 'Thank you for your feedback!');
@@ -254,16 +160,17 @@ const ClientSupportScreen = ({ navigation }) => {
     }
 
     try {
-      await addDoc(collection(db, 'supportTickets'), {
-        clientId: auth.currentUser.uid,
-        title: issueForm.title,
-        description: issueForm.description,
-        severity: issueForm.severity,
-        relatedSession: issueForm.relatedSession || null,
-        attachments: [],
-        consentToShare: issueForm.consentToShare,
-        status: 'open',
-        createdAt: serverTimestamp()
+      const uid = await AsyncStorage.getItem('th.userId');
+      await api('/api/v1/care/support/tickets', {
+        method: 'POST',
+        body: {
+          reporterId: uid,
+          subject: issueForm.title,
+          description: issueForm.description,
+          severity: issueForm.severity,
+          relatedSessionId: issueForm.relatedSession || null,
+          status: 'open',
+        },
       });
 
       Alert.alert('Success', 'Support ticket created successfully! We will get back to you soon.');

@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert,
@@ -11,7 +12,6 @@ import { HomeCareColors as C } from '../../../constants/homeCareColors';
 import { hc } from '../../../components/home-care/homeCareStyles';
 import HomeCareDateField from '../../../components/home-care/HomeCareDateField';
 import HomeCareAddressField from '../../../components/home-care/HomeCareAddressField';
-import { auth } from '../../../services/firebaseConfig';
 
 export default function HomeCareBookScreen({ navigation, route }) {
   const { nurseId } = route.params;
@@ -53,7 +53,7 @@ export default function HomeCareBookScreen({ navigation, route }) {
 
   useEffect(() => {
     (async () => {
-      const uid = auth.currentUser?.uid;
+      const uid = await AsyncStorage.getItem('th.userId');
       if (!uid) return;
       try {
         const p = await fetchHomeCarePatientProfile(uid);

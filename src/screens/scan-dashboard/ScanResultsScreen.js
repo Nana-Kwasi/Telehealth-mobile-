@@ -5,9 +5,9 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { ScanColors as C } from '../../constants/colors';
+import { formatDateTime } from '../../utils/dateDisplay';
 
 const SCAN_ICONS = { 'X-Ray': 'body-outline', 'MRI': 'radio-outline', 'CT Scan': 'scan-outline', 'Ultrasound': 'pulse-outline' };
 
@@ -23,11 +23,8 @@ export default function ScanResultsScreen({ profile }) {
     try {
       const pid = profile?.id;
       if (!pid) return;
-      const snap = await getDocs(
-        query(collection(db, 'diagnosticResults'), where('uploadedBy', '==', pid), where('type', '==', 'scan'))
-      );
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      list.sort((a, b) => (b.uploadedAt?.seconds || 0) - (a.uploadedAt?.seconds || 0));
+      const list = await api(`/api/v1/diagnostics/operations/results-query?uploadedBy=${pid}&type=scan`).catch(() => []) || [];
+      list.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
       setResults(list);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -54,7 +51,7 @@ export default function ScanResultsScreen({ profile }) {
           </View>
         ) : null}
         <Text style={styles.date}>
-          {item.uploadedAt ? new Date(item.uploadedAt.seconds * 1000).toLocaleString() : 'Recently'}
+          {formatDateTime(item.uploadedAt, 'Recently')}
         </Text>
       </TouchableOpacity>
     );
@@ -102,7 +99,7 @@ export default function ScanResultsScreen({ profile }) {
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Uploaded</Text>
                 <Text style={styles.detailValue}>
-                  {selected?.uploadedAt ? new Date(selected.uploadedAt.seconds * 1000).toLocaleString() : 'Unknown'}
+                  {selected?.uploadedAt ? formatDateTime(selected.uploadedAt) : 'Unknown'}
                 </Text>
               </View>
             </ScrollView>

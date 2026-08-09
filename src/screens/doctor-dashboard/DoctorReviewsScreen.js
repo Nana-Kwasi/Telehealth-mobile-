@@ -5,11 +5,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, updateDoc, doc,
-  orderBy, serverTimestamp,
-} from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 
 const STAR_FILTERS = ['All', '5', '4', '3', '2', '1'];
@@ -63,12 +60,11 @@ export default function DoctorReviewsScreen() {
 
   const loadReviews = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
-      const snap = await getDocs(
-        query(collection(db, 'doctorReviews'), where('doctorId', '==', cu.uid), orderBy('date', 'desc'))
-      );
-      setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const doctorId = await AsyncStorage.getItem('th.userId');
+      if (!doctorId) return;
+      const data = await api(`/api/v1/doctors/${doctorId}/reviews`);
+      const list = Array.isArray(data?.reviews) ? data.reviews : (Array.isArray(data) ? data : []);
+      setReviews(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
     } catch (err) {
       console.error('DoctorReviews load error:', err);
     } finally {
@@ -81,10 +77,10 @@ export default function DoctorReviewsScreen() {
     if (!replyText.trim()) return;
     setSendingReply(true);
     try {
-      await updateDoc(doc(db, 'doctorReviews', replyingTo.id), {
-        doctorReply: replyText.trim(),
-        doctorReplyDate: serverTimestamp(),
-      });
+      await api(`/api/v1/doctors/reviews/${replyingTo.id}`, {
+        method: 'PATCH',
+        body: { doctorReply: replyText.trim() },
+      }).catch(() => {});
       setReviews(prev => prev.map(r =>
         r.id === replyingTo.id ? { ...r, doctorReply: replyText.trim() } : r
       ));

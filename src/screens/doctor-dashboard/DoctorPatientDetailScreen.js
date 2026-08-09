@@ -6,13 +6,10 @@ import {
   KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, addDoc, deleteDoc,
-  doc, getDoc, setDoc, updateDoc, serverTimestamp,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
+import { formatDate, formatDateTime, toDateSafe } from '../../utils/dateDisplay';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const TABS = ['Overview', 'Appointments', 'Notes', 'Prescriptions', 'E-Pharmacy', 'Patient Info', 'Daily Feeling'];
@@ -62,8 +59,59 @@ function RestrictedBanner({ section }) {
   );
 }
 
+
+// A health record's attachments are NOT a single `fileUrl`. The patient's Health
+// Records form uploads one file per selected document type and stores them under
+// `radiologyFiles: { "MRI": {fileUrl, fileName}, … }`, leaving the flat `fileUrl` an
+// empty string — which is why the doctor had no way to download them here.
+function recordFiles(rec) {
+  if (!rec) return [];
+  const out = [];
+  const push = (label, url, name) => {
+    if (!url || typeof url !== 'string' || !url.trim()) return;
+    if (out.some(f => f.url === url)) return;
+    out.push({ label: label || name || 'Attachment', url, name: name || label || 'file' });
+  };
+  const bag = rec.radiologyFiles && typeof rec.radiologyFiles === 'object' ? rec.radiologyFiles : {};
+  Object.entries(bag).forEach(([label, v]) => {
+    if (!v) return;
+    if (typeof v === 'string') push(label, v, label);
+    else push(label, v.fileUrl || v.url, v.fileName || v.name);
+  });
+  push(rec.fileName || 'Attachment', rec.fileUrl || rec.url, rec.fileName);
+  return out;
+}
+
+// The form stores the selected document types as `types` (an array); the singular
+// `type` the row rendered does not exist on the record.
+function recordTypes(rec) {
+  if (!rec) return [];
+  if (Array.isArray(rec.types)) return rec.types.filter(Boolean);
+  if (typeof rec.types === 'string' && rec.types.trim()) return [rec.types.trim()];
+  if (rec.type) return [rec.type];
+  return [];
+}
+
+/** Latest vitals live in `vitalsLatestJson` (JSON string); tolerate legacy shapes. */
+function pickLatestVitals(pd) {
+  if (!pd || typeof pd !== 'object') return null;
+  if (typeof pd.vitalsLatestJson === 'string' && pd.vitalsLatestJson.trim()) {
+    try {
+      const parsed = JSON.parse(pd.vitalsLatestJson);
+      if (parsed && typeof parsed === 'object') return parsed.latest || parsed;
+    } catch { /* fall through */ }
+  }
+  const nested = pd.vitals?.latest;
+  if (nested && typeof nested === 'object') return nested;
+  const legacy = pd.latestVitals;
+  if (legacy && typeof legacy === 'object') return legacy.latest || legacy;
+  return null;
+}
+
 export default function DoctorPatientDetailScreen({ route, navigation }) {
-  const { patientId, patientName } = route.params || {};
+  // patientEmail is carried from the list so the header still shows it when the
+  // patient has no profile row (GET /api/v1/patients/{id} answers 400 for those).
+  const { patientId, patientName, patientEmail } = route.params || {};
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Overview');
@@ -77,6 +125,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
   const [notes, setNotes] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [healthRecords, setHealthRecords] = useState([]);
+  const [viewingRecord, setViewingRecord] = useState(null);
   const [dailyFeelings, setDailyFeelings] = useState([]);
   const [intakeData, setIntakeData] = useState(null);
   const [doctorProfile, setDoctorProfile] = useState(null);
@@ -117,132 +166,89 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
 
   useEffect(() => { loadAll(); }, [patientId]);
 
-  // Re-fetch prescriptions whenever the Prescriptions tab becomes active
-  // (useFocusEffect only fires on screen focus, not on tab switch within the same screen)
+  const fetchPrescriptions = async (uid) => {
+    const doctorId = uid || await getStoredUserId();
+    if (!doctorId || !patientId) return;
+    api(`/api/v1/medical/prescriptions/doctor/${doctorId}`).then(rxRaw => {
+      const list = (rxRaw || []).filter(r => r.patientId === patientId || r.clientId === patientId);
+      setPrescriptions(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+    }).catch(() => {});
+  };
+
   useEffect(() => {
     if (activeTab !== 'Prescriptions' || !patientId) return;
-    const cu = auth.currentUser;
-    if (!cu) return;
-    getDocs(query(
-      collection(db, 'doctorPrescriptions'),
-      where('doctorId', '==', cu.uid),
-      where('patientId', '==', patientId)
-    )).then(snap => {
-      setPrescriptions(snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-    }).catch(() => {});
+    fetchPrescriptions();
   }, [activeTab, patientId]);
 
-  // Also re-fetch prescriptions when screen regains focus from navigation
   useFocusEffect(useCallback(() => {
     if (!patientId) return;
-    const cu = auth.currentUser;
-    if (!cu) return;
-    getDocs(query(
-      collection(db, 'doctorPrescriptions'),
-      where('doctorId', '==', cu.uid),
-      where('patientId', '==', patientId)
-    )).then(snap => {
-      setPrescriptions(snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-    }).catch(() => {});
+    fetchPrescriptions();
   }, [patientId]));
 
   const loadAll = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu || !patientId) return;
+      const uid = await getStoredUserId();
+      if (!uid || !patientId) return;
 
-      // Doctor profile
-      const dSnap = await getDoc(doc(db, 'doctors', cu.uid));
-      const dp = dSnap.exists() ? { id: cu.uid, ...dSnap.data() } : { id: cu.uid, name: 'Doctor' };
-      setDoctorProfile(dp);
+      const dp = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      setDoctorProfile(dp ? { id: uid, ...dp } : { id: uid, name: 'Doctor' });
 
-      // Patient auth data
-      try {
-        const authSnap = await getDoc(doc(db, 'auth', patientId));
-        if (authSnap.exists()) {
-          const d = authSnap.data();
-          setPatient({
-            id: patientId,
-            name: d.name || d.displayName || patientName || 'Patient',
-            email: d.email || '',
-            bloodType: d.bloodType || '',
-            allergies: d.allergies || '',
-            dob: d.dob || '',
-            phone: d.phone || '',
-          });
+      const patData = await api(`/api/v1/patients/${patientId}`).catch(() => null);
+      if (patData) {
+        setPatient({
+          id: patientId,
+          name: patData.name || patData.displayName || patientName || 'Patient',
+          email: patData.email || patientEmail || '',
+          bloodType: patData.bloodType || '',
+          allergies: patData.allergies || '',
+          dob: patData.dob || '',
+          phone: patData.phone || '',
+        });
+        setPatientProfile(patData);
+        setHealthRecords(patData.healthRecords || []);
+        // Latest reading lives in `vitalsLatestJson` (a JSON string); reading
+        // `vitals.latest` alone always yielded null, so the vitals card showed
+        // "No vitals recorded yet" for patients who had them.
+        setLatestVitals(pickLatestVitals(patData));
+        setPharmacies(patData.pharmacies || []);
+        setPatientStatus(patData.status || 'active');
+        setDataSharing(patData.privacy?.dataSharing || {});
+      }
+
+      // The endpoint returns { patientId, intakeJson: "<json string>", updatedAt } —
+      // the answers live inside intakeJson. Reading complaint/duration/severity/
+      // symptoms straight off the response meant the intake panel was always blank.
+      const intakeRaw = await api(`/api/v1/patients/${patientId}/medical-intake`).catch(() => null);
+      if (intakeRaw) {
+        let parsed = {};
+        if (typeof intakeRaw.intakeJson === 'string' && intakeRaw.intakeJson.trim()) {
+          try { parsed = JSON.parse(intakeRaw.intakeJson) || {}; } catch { parsed = {}; }
+        } else if (intakeRaw.intakeJson && typeof intakeRaw.intakeJson === 'object') {
+          parsed = intakeRaw.intakeJson;
         }
-      } catch {}
+        // `submittedAt` is rendered as a Firestore-style { seconds } value.
+        const stamp = parsed.submittedAt || intakeRaw.updatedAt;
+        const submittedAt = stamp && !stamp.seconds
+          ? { seconds: Math.floor(new Date(stamp).getTime() / 1000) }
+          : stamp;
+        setIntakeData({ ...intakeRaw, ...parsed, submittedAt });
+      }
 
-      // Patient profile (insurance, emergency, health records, vitals, pharmacies)
-      try {
-        const ppSnap = await getDoc(doc(db, 'patientProfiles', patientId));
-        if (ppSnap.exists()) {
-          const ppData = ppSnap.data();
-          setPatientProfile(ppData);
-          setHealthRecords(ppData.healthRecords || []);
-          setLatestVitals(ppData.vitals?.latest || null);
-          setPharmacies(ppData.pharmacies || []);
-          setPatientStatus(ppData.status || 'active');
-          setDataSharing(ppData.privacy?.dataSharing || {});
-        }
-      } catch {}
+      const disRequests = await api(`/api/v1/patients/${patientId}/discharge-requests`).catch(() => []) || [];
+      if (disRequests.length > 0) {
+        setSelfDischargeRequest(disRequests.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0))[0]);
+      }
 
-      // Intake / questionnaire data
-      try {
-        const intakeSnap = await getDoc(doc(db, 'patientIntake', patientId));
-        if (intakeSnap.exists()) setIntakeData(intakeSnap.data());
-      } catch {}
+      const feelings = await api(`/api/v1/patients/${patientId}/daily-feelings`).catch(() => []) || [];
+      setDailyFeelings(feelings.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
 
-      // Self-discharge request
-      try {
-        const disSnap = await getDocs(query(
-          collection(db, 'dischargeRequests'),
-          where('patientId', '==', patientId)
-        ));
-        if (!disSnap.empty) {
-          const sorted = disSnap.docs
-            .map(d => ({ id: d.id, ...d.data() }))
-            .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
-          setSelfDischargeRequest(sorted[0]);
-        }
-      } catch {}
+      const allAppts = await api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []) || [];
+      setAppointments(allAppts.filter(a => a.clientId === patientId).sort((a, b) => (b.date || '').localeCompare(a.date || '')));
 
-      // Daily feelings
-      try {
-        const feelSnap = await getDocs(query(
-          collection(db, 'patientDailyFeelings'),
-          where('patientId', '==', patientId)
-        ));
-        const feelings = feelSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setDailyFeelings(feelings);
-      } catch {}
+      const notesList = await api(`/api/v1/doctor-notes?doctorId=${uid}&patientId=${patientId}`).catch(() => []) || [];
+      setNotes(notesList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
 
-      // Appointments
-      const apptSnap = await getDocs(query(
-        collection(db, 'doctorAppointments'),
-        where('doctorId', '==', cu.uid),
-        where('clientId', '==', patientId)
-      ));
-      setAppointments(apptSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.date || '').localeCompare(a.date || '')));
-
-      // Notes
-      const notesSnap = await getDocs(query(
-        collection(db, 'doctorNotes'),
-        where('doctorId', '==', cu.uid),
-        where('patientId', '==', patientId)
-      ));
-      setNotes(notesSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-
-      // Prescriptions
-      const rxSnap = await getDocs(query(
-        collection(db, 'doctorPrescriptions'),
-        where('doctorId', '==', cu.uid),
-        where('patientId', '==', patientId)
-      ));
-      setPrescriptions(rxSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+      await fetchPrescriptions(uid);
     } catch (err) {
       console.error('DoctorPatientDetail load error:', err);
     } finally {
@@ -261,19 +267,12 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
     if (!noteForm.content.trim()) { Alert.alert('Validation', 'Content is required.'); return; }
     setSavingNote(true);
     try {
-      const cu = auth.currentUser;
-      const newNote = await addDoc(collection(db, 'doctorNotes'), {
-        doctorId: cu.uid,
-        doctorName: doctorProfile?.name || 'Doctor',
-        patientId,
-        patientName: patient.name,
-        title: noteForm.title.trim(),
-        content: noteForm.content.trim(),
-        type: noteForm.type,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const uid = await getStoredUserId();
+      const newNote = await api('/api/v1/doctor-notes', {
+        method: 'POST',
+        body: { doctorId: uid, doctorName: doctorProfile?.name || 'Doctor', patientId, patientName: patient.name, title: noteForm.title.trim(), content: noteForm.content.trim(), type: noteForm.type },
       });
-      setNotes(prev => [{ id: newNote.id, ...noteForm, patientName: patient.name, patientId }, ...prev]);
+      setNotes(prev => [{ id: newNote?.id, ...noteForm, patientName: patient.name, patientId }, ...prev]);
       setShowNoteForm(false);
       setNoteForm({ type: 'consultation', title: '', content: '' });
     } catch {
@@ -288,7 +287,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await deleteDoc(doc(db, 'doctorNotes', noteId));
+          await api(`/api/v1/doctor-notes/${noteId}`, { method: 'DELETE' });
           setNotes(prev => prev.filter(n => n.id !== noteId));
         } catch { Alert.alert('Error', 'Could not delete note.'); }
       }},
@@ -300,7 +299,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
     setRemovingPharmacyKey(rk);
     try {
       const updated = removePatientPharmacyByKey(pharmacies, ph);
-      await setDoc(doc(db, 'patientProfiles', patientId), { pharmacies: updated }, { merge: true });
+      await api(`/api/v1/patients/${patientId}`, { method: 'PATCH', body: { pharmacies: updated } });
       setPharmacies(updated);
     } catch {
       Alert.alert('Error', 'Could not remove pharmacy.');
@@ -325,23 +324,14 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
     if (!dischargeReason.trim()) { Alert.alert('Validation', 'Discharge reason is required.'); return; }
     setDischarging(true);
     try {
-      const cu = auth.currentUser;
-      // Write discharge note
-      await addDoc(collection(db, 'doctorNotes'), {
-        doctorId: cu.uid, doctorName: doctorProfile?.name || 'Doctor',
-        patientId, patientName: patient.name,
-        type: 'discharge', title: 'Patient Discharged',
-        content: dischargeReason.trim(),
-        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      const uid = await getStoredUserId();
+      await api('/api/v1/doctor-notes', {
+        method: 'POST',
+        body: { doctorId: uid, doctorName: doctorProfile?.name || 'Doctor', patientId, patientName: patient.name, type: 'discharge', title: 'Patient Discharged', content: dischargeReason.trim() },
       });
-      // Update doctor's patient subcollection
-      await setDoc(doc(db, 'doctors', cu.uid, 'patients', patientId), {
-        status: 'discharged', dischargedAt: serverTimestamp(), dischargeReason: dischargeReason.trim(),
-      }, { merge: true });
-      // Cancel pending/confirmed appointments
       for (const appt of appointments) {
         if (appt.status === 'pending' || appt.status === 'confirmed') {
-          await updateDoc(doc(db, 'doctorAppointments', appt.id), { status: 'cancelled' });
+          await api(`/api/v1/medical/appointments/${appt.id}`, { method: 'PATCH', body: { status: 'cancelled' } }).catch(() => {});
         }
       }
       Alert.alert('Done', `${patient.name} has been discharged.`, [
@@ -358,7 +348,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
   // Appointment status update
   const updateApptStatus = async (apptId, newStatus) => {
     try {
-      await updateDoc(doc(db, 'doctorAppointments', apptId), { status: newStatus, updatedAt: serverTimestamp() });
+      await api(`/api/v1/medical/appointments/${apptId}`, { method: 'PATCH', body: { status: newStatus } });
       setAppointments(prev => prev.map(a => a.id === apptId ? { ...a, status: newStatus } : a));
     } catch { Alert.alert('Error', 'Could not update appointment.'); }
   };
@@ -374,11 +364,9 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
     if (!rescheduleDate.trim()) { Alert.alert('Validation', 'Please enter a date (YYYY-MM-DD).'); return; }
     setRescheduling(true);
     try {
-      await updateDoc(doc(db, 'doctorAppointments', rescheduleAppt.id), {
-        date: rescheduleDate.trim(),
-        time: rescheduleTime.trim() || rescheduleAppt.time,
-        status: 'confirmed',
-        rescheduledAt: serverTimestamp(),
+      await api(`/api/v1/care/appointments/${rescheduleAppt.id}/reschedule`, {
+        method: 'PATCH',
+        body: { newDate: rescheduleDate.trim(), newTime: rescheduleTime.trim() || rescheduleAppt.time },
       });
       setAppointments(prev => prev.map(a =>
         a.id === rescheduleAppt.id
@@ -432,7 +420,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   { text: 'Set Inactive', onPress: async () => {
                     setChangingStatus(true);
                     try {
-                      await setDoc(doc(db, 'patientProfiles', patientId), { status: 'inactive', updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid }, { merge: true });
+                      await api(`/api/v1/patients/${patientId}`, { method: 'PATCH', body: { status: 'inactive' } });
                       setPatientStatus('inactive');
                     } catch { Alert.alert('Error', 'Could not update status.'); }
                     finally { setChangingStatus(false); }
@@ -454,7 +442,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   { text: 'Activate', onPress: async () => {
                     setChangingStatus(true);
                     try {
-                      await setDoc(doc(db, 'patientProfiles', patientId), { status: 'active', updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid }, { merge: true });
+                      await api(`/api/v1/patients/${patientId}`, { method: 'PATCH', body: { status: 'active' } });
                       setPatientStatus('active');
                     } catch { Alert.alert('Error', 'Could not update status.'); }
                     finally { setChangingStatus(false); }
@@ -476,7 +464,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   { text: 'Reactivate', onPress: async () => {
                     setChangingStatus(true);
                     try {
-                      await setDoc(doc(db, 'patientProfiles', patientId), { status: 'active', updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid }, { merge: true });
+                      await api(`/api/v1/patients/${patientId}`, { method: 'PATCH', body: { status: 'active' } });
                       setPatientStatus('active');
                     } catch { Alert.alert('Error', 'Could not update status.'); }
                     finally { setChangingStatus(false); }
@@ -739,11 +727,11 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                     </Text>
                   ) : null}
                   {rx.instructions ? <Text style={styles.rxInstructions}>{rx.instructions}</Text> : null}
-                  {rx.createdAt?.seconds && (
+                  {toDateSafe(rx.createdAt) ? (
                     <Text style={styles.rxDate}>
-                      {new Date(rx.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {toDateSafe(rx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </Text>
-                  )}
+                  ) : null}
                   <Text style={{ marginTop: 6, fontSize: 11, color: '#94a3b8', textAlign: 'right' }}>Tap card for full details</Text>
                 </TouchableOpacity>
               );
@@ -812,10 +800,9 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                             text: 'Send', onPress: async () => {
                               const latestRx = prescriptions[0];
                               try {
-                                await updateDoc(doc(db, 'doctorPrescriptions', latestRx.id), {
-                                  pharmacy: { id: ph.name, name: ph.name, location: addrLine || '', contact: phoneLine || '' },
-                                  pharmacyStatus: 'sent',
-                                  sentToPharmacyAt: serverTimestamp(),
+                                await api(`/api/v1/medical/prescriptions/${latestRx.id}`, {
+                                  method: 'PATCH',
+                                  body: { pharmacy: { id: ph.name, name: ph.name, location: addrLine || '', contact: phoneLine || '' }, pharmacyStatus: 'sent' },
                                 });
                                 Alert.alert('Sent', `Prescription sent to ${ph.name}.`);
                               } catch { Alert.alert('Error', 'Could not send prescription.'); }
@@ -981,26 +968,42 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             ) : healthRecords.length > 0 ? (
               <>
                 <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Health Records & Medical Files</Text>
-                {healthRecords.map((rec, i) => (
-                  <View key={i} style={[styles.infoCard, { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 }]}>
+                {healthRecords.map((rec, i) => {
+                  const recTypes = recordTypes(rec);
+                  const files = recordFiles(rec);
+                  return (
+                  <TouchableOpacity
+                    key={i}
+                    activeOpacity={0.7}
+                    onPress={() => setViewingRecord(rec)}
+                    style={[styles.infoCard, { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 }]}
+                  >
                     <View style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: DoctorColors.primaryLight, justifyContent: 'center', alignItems: 'center' }}>
                       <Ionicons name="document-outline" size={18} color={DoctorColors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: DoctorColors.text }}>{rec.name || rec.type || 'Record'}</Text>
-                      <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{rec.type}{rec.date ? '  ·  ' + rec.date : ''}</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: DoctorColors.text }}>{rec.name || recTypes[0] || 'Record'}</Text>
+                      <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{recTypes.join(', ')}{rec.date ? '  ·  ' + rec.date : ''}</Text>
                       {rec.notes ? <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }} numberOfLines={1}>{rec.notes}</Text> : null}
+                      {files.length > 0 ? (
+                        <Text style={{ fontSize: 11, color: DoctorColors.primary, marginTop: 3, fontWeight: '700' }}>
+                          {files.length} file{files.length > 1 ? 's' : ''} · tap to view
+                        </Text>
+                      ) : null}
                     </View>
-                    {rec.fileUrl ? (
+                    {files.length === 1 ? (
                       <TouchableOpacity
                         style={{ padding: 8, backgroundColor: DoctorColors.primaryLight, borderRadius: 8 }}
-                        onPress={() => Linking.openURL(rec.fileUrl)}
+                        onPress={() => Linking.openURL(files[0].url)}
                       >
                         <Ionicons name="download-outline" size={18} color={DoctorColors.primary} />
                       </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ))}
+                    ) : (
+                      <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+                    )}
+                  </TouchableOpacity>
+                  );
+                })}
               </>
             ) : null}
 
@@ -1030,12 +1033,9 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   bad:   { color: '#b91c1c', bg: '#fff1f2', border: '#fecdd3', icon: 'sad' },
                 };
                 const meta = MOOD_META[f.mood?.toLowerCase()] || { color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', icon: 'help-circle-outline' };
-                const dateStr = f.createdAt?.seconds
-                  ? new Date(f.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-                  : '';
-                const timeStr = f.createdAt?.seconds
-                  ? new Date(f.createdAt.seconds * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-                  : '';
+                const fD = toDateSafe(f.createdAt);
+                const dateStr = fD ? fD.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                const timeStr = fD ? fD.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
                 const painColor = f.painLevel >= 7 ? '#ef4444' : f.painLevel >= 4 ? '#f59e0b' : '#22c55e';
                 const symptomList = Array.isArray(f.symptoms) ? f.symptoms.filter(Boolean) : [];
                 return (
@@ -1173,6 +1173,79 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         );
       })()}
 
+      {/* Health Record Detail Modal — the row only fits a summary, and a record's
+          files are stored per document type, so show the whole thing here. */}
+      {viewingRecord && (() => {
+        const recTypes = recordTypes(viewingRecord);
+        const files = recordFiles(viewingRecord);
+        return (
+          <Modal visible={!!viewingRecord} transparent animationType="slide" onRequestClose={() => setViewingRecord(null)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.dischargeCard, { padding: 0, overflow: 'hidden', maxHeight: '85%' }]}>
+                <View style={{ backgroundColor: '#eff6ff', borderBottomWidth: 1, borderBottomColor: '#bfdbfe', padding: 16, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: '#1e3a8a' }}>{viewingRecord.name || 'Health record'}</Text>
+                    <Text style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>
+                      {viewingRecord.date || formatDate(viewingRecord.savedAt, '')}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setViewingRecord(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="close" size={22} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+                  {recTypes.length > 0 ? (
+                    <View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 8 }}>Document types</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {recTypes.map(t => (
+                          <View key={t} style={{ backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                            <Text style={{ fontSize: 12, color: '#1e40af', fontWeight: '700' }}>{t}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {viewingRecord.notes ? (
+                    <View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 8 }}>Patient notes</Text>
+                      <View style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 10, padding: 12 }}>
+                        <Text style={{ fontSize: 14, color: '#0f172a', lineHeight: 21 }}>{viewingRecord.notes}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 8 }}>
+                      Attachments{files.length > 0 ? ` (${files.length})` : ''}
+                    </Text>
+                    {files.length === 0 ? (
+                      <Text style={{ fontSize: 13, color: '#94a3b8' }}>No files attached to this record.</Text>
+                    ) : files.map((f, i) => (
+                      <TouchableOpacity
+                        key={`${f.url}-${i}`}
+                        activeOpacity={0.7}
+                        onPress={() => Linking.openURL(f.url)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 8 }}
+                      >
+                        <Ionicons name="document-text-outline" size={20} color={DoctorColors.primary} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a' }}>{f.label}</Text>
+                          <Text style={{ fontSize: 11, color: '#64748b' }} numberOfLines={1}>{f.name}</Text>
+                        </View>
+                        <Ionicons name="download-outline" size={20} color={DoctorColors.primary} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
+
       {/* Daily Feeling Detail Modal */}
       {viewingFeeling && (() => {
         const MOOD_META = {
@@ -1183,12 +1256,9 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
           bad:   { color: '#b91c1c', bg: '#fff1f2', border: '#fecdd3', icon: 'sad' },
         };
         const meta = MOOD_META[viewingFeeling.mood?.toLowerCase()] || { color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', icon: 'help-circle-outline' };
-        const dateStr = viewingFeeling.createdAt?.seconds
-          ? new Date(viewingFeeling.createdAt.seconds * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-          : 'Unknown date';
-        const timeStr = viewingFeeling.createdAt?.seconds
-          ? new Date(viewingFeeling.createdAt.seconds * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-          : '';
+        const feelD = toDateSafe(viewingFeeling.createdAt);
+        const dateStr = feelD ? feelD.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Unknown date';
+        const timeStr = feelD ? feelD.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
         const painColor = viewingFeeling.painLevel >= 7 ? '#ef4444' : viewingFeeling.painLevel >= 4 ? '#f59e0b' : '#22c55e';
         const symptomList = Array.isArray(viewingFeeling.symptoms) ? viewingFeeling.symptoms.filter(Boolean) : [];
         return (
@@ -1271,6 +1341,18 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                       <View style={{ backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#e2e8f0' }}>
                         <Text style={{ fontSize: 14, color: DoctorColors.text, lineHeight: 22 }}>{viewingFeeling.notes}</Text>
                       </View>
+                    </View>
+                  ) : null}
+
+                  {/* Every section above is conditional, so a check-in with no
+                      stored content rendered as a blank panel that looked broken. */}
+                  {!viewingFeeling.mood && viewingFeeling.painLevel == null && symptomList.length === 0
+                    && !viewingFeeling.medications && !viewingFeeling.notes ? (
+                    <View style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, borderRadius: 10, padding: 14 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#92400e' }}>No details were recorded with this check-in.</Text>
+                      <Text style={{ fontSize: 13, color: '#a16207', marginTop: 4, lineHeight: 19 }}>
+                        The patient logged it, but the answers were not stored. Check-ins submitted from now on capture mood, pain level, symptoms, medications and notes.
+                      </Text>
                     </View>
                   ) : null}
 

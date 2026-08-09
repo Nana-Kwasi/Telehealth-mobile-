@@ -1,14 +1,14 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback,useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Modal, ScrollView, RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { MedicalColors as C } from '../../constants/colors';
 import { normalizeDiagnosticOrderStatus, patientMobileStatusStyleKey } from '../../utils/diagnosticOrderStatus';
+import { formatDate } from '../../utils/dateDisplay';
 
 const STATUS_CONFIG = {
   pending:     { label: 'Pending',     bg: '#fef3c7', text: '#92400e', icon: 'time-outline' },
@@ -29,23 +29,26 @@ export default function MedicalDiagnosticScreen({ navigation }) {
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState('All');
 
-  const patientId = auth.currentUser?.uid;
+  const [patientId, setPatientId] = useState(null);
+  useEffect(() => { getStoredUserId().then(setPatientId); }, []);
 
-  useFocusEffect(useCallback(() => { loadOrders(); }, []));
+  useFocusEffect(useCallback(() => { if (patientId) loadOrders(); }, [patientId]));
 
   const loadOrders = async () => {
     try {
-      const snap = await getDocs(
-        query(collection(db, 'diagnosticOrders'), where('patientId', '==', patientId))
-      );
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      const list = await api(`/api/v1/diagnostics/operations/orders?patientId=${patientId}`).catch(() => []) || [];
+      list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setOrders(list);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  const filteredOrders = filter === 'All' ? orders : orders.filter(o => o.type === filter.toLowerCase());
+  const rowKind = (o) => String(o.type || o.centerType || o.diagnosticType || '').toLowerCase();
+  const filteredOrders =
+    filter === 'All' ? orders
+      // "Ready" = the centre has finished and released the result.
+      : filter === 'Ready' ? orders.filter(o => normalizeDiagnosticOrderStatus(o.status) === 'COMPLETED')
+        : orders.filter(o => rowKind(o) === filter.toLowerCase());
 
   const renderItem = ({ item }) => {
     const sk = patientMobileStatusStyleKey(item.status);
@@ -74,7 +77,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
         <View style={styles.cardFooter}>
           <Text style={styles.orderId}>Order: {item.orderId || item.id.slice(0, 8).toUpperCase()}</Text>
           <Text style={styles.dateText}>
-            {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
+            {formatDate(item.createdAt, 'Recently')}
           </Text>
         </View>
       </TouchableOpacity>
@@ -84,7 +87,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.filterRow}>
-        {['All', 'Lab', 'Scan'].map(f => (
+        {['All', 'Ready', 'Lab', 'Scan'].map(f => (
           <TouchableOpacity key={f} style={[styles.filterBtn, filter === f && styles.filterBtnActive]} onPress={() => setFilter(f)}>
             <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
           </TouchableOpacity>
@@ -152,7 +155,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Doctor</Text><Text style={styles.detailValue}>Dr. {selected?.doctorName || 'Your Doctor'}</Text></View>
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Ordered</Text>
                 <Text style={styles.detailValue}>
-                  {selected?.createdAt ? new Date(selected.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
+                  {selected?.createdAt ? formatDate(selected.createdAt) : 'Recently'}
                 </Text>
               </View>
               {selected?.notes ? (
@@ -171,8 +174,8 @@ export default function MedicalDiagnosticScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
-  filterRow: { flexDirection: 'row', padding: 16, paddingBottom: 8, gap: 10 },
-  filterBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: C.border },
+  filterRow: { flexDirection: 'row', padding: 16, paddingBottom: 8, gap: 10, flexWrap: 'wrap' },
+  filterBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: C.border },
   filterBtnActive: { backgroundColor: C.primary, borderColor: C.primary },
   filterText: { fontSize: 13, color: C.textSecondary, fontWeight: '600' },
   filterTextActive: { color: '#fff' },

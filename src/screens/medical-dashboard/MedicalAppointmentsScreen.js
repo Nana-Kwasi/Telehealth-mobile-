@@ -10,12 +10,10 @@ import {
   Modal,
   TextInput,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../../services/firebaseConfig';
-import {
-  collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp,
-} from 'firebase/firestore';
+import { api, getStoredUserId } from '../../services/apiClient';
 import { listenToAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 
@@ -94,11 +92,24 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
   useEffect(() => {
     let unsubscribe = null;
     const setup = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) { setIsLoading(false); return; }
-      unsubscribe = listenToAppointments(currentUser.uid, (appts) => {
+      const uid = await getStoredUserId();
+      if (!uid) { setIsLoading(false); return; }
+      // Doctors the patient was prescribed by — so a patient who has a prescription
+      // (but no appointment yet) can still book with their existing doctor.
+      const rxDocs = [];
+      try {
+        const rxs = await api(`/api/v1/medical/prescriptions/patient/${uid}`).catch(() => []);
+        const seenRx = new Set();
+        for (const r of (rxs || [])) {
+          if (r.doctorId && !seenRx.has(r.doctorId)) {
+            seenRx.add(r.doctorId);
+            rxDocs.push({ id: r.doctorId, name: r.doctorName || 'Doctor', spec: r.doctorSpecialization || '' });
+          }
+        }
+      } catch { /* ignore */ }
+      unsubscribe = listenToAppointments(uid, (appts) => {
         setAppointments(appts);
-        // Build unique doctor list from appointments
+        // Build unique doctor list from appointments, then merge in prescription docs.
         const seen = new Set();
         const docs = [];
         for (const a of appts) {
@@ -106,6 +117,9 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
             seen.add(a.doctorId);
             docs.push({ id: a.doctorId, name: a.doctorName || 'Doctor', spec: a.doctorSpecialization || '' });
           }
+        }
+        for (const rd of rxDocs) {
+          if (!seen.has(rd.id)) { seen.add(rd.id); docs.push(rd); }
         }
         setMyDoctors(docs);
         setIsLoading(false);
@@ -154,6 +168,16 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
       setModalDateStr(dateStr);
       setModalDateAppts(dayAppts);
     } else if (!isPast) {
+      // A patient can only book with a doctor they already have. With no doctor,
+      // the schedule modal had an empty picker and could never be submitted, so
+      // send them to find one instead of opening a dead form.
+      if (myDoctors.length === 0) {
+        Alert.alert(
+          'No doctor yet',
+          'You need a doctor before you can schedule an appointment. Find a doctor first.',
+        );
+        return;
+      }
       // Empty future date — open schedule modal
       setScheduleDay(dateStr);
       setConflict(null);
@@ -166,16 +190,10 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
   const checkConflict = async (doctorId, date) => {
     if (!doctorId || !date) { setConflict(null); return; }
     try {
-      const q = query(
-        collection(db, 'doctorAppointments'),
-        where('doctorId', '==', doctorId),
-        where('date', '==', date)
-      );
-      const snap = await getDocs(q);
-      const results = snap.docs.map(d => d.data()).filter(a => a.status !== 'cancelled');
+      const appts = await api(`/api/v1/medical/appointments/doctor/${doctorId}`);
+      const results = (appts || []).filter(a => a.date === date && a.status !== 'cancelled');
       setConflict(results.length > 0 ? results : null);
-    } catch (err) {
-      console.error('conflict check error', err);
+    } catch {
       setConflict(null);
     }
   };
@@ -184,9 +202,8 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
     if (!doctorId) return;
     setDocCalLoading(true);
     try {
-      const q = query(collection(db, 'doctorAppointments'), where('doctorId', '==', doctorId));
-      const snap = await getDocs(q);
-      setDocCalAppts(snap.docs.map(d => d.data()).filter(a => a.status !== 'cancelled'));
+      const appts = await api(`/api/v1/medical/appointments/doctor/${doctorId}`);
+      setDocCalAppts((appts || []).filter(a => a.status !== 'cancelled'));
     } catch (err) { console.error(err); }
     finally { setDocCalLoading(false); }
   };
@@ -197,19 +214,20 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
     if (!sForm.time)     { setSError('Please enter a time.'); return; }
     setSSaving(true); setSError('');
     try {
-      const currentUser = auth.currentUser;
-      await addDoc(collection(db, 'doctorAppointments'), {
-        doctorId: sForm.doctorId,
-        doctorName: sForm.doctorName,
-        doctorSpecialization: sForm.doctorSpec,
-        clientId: currentUser.uid,
-        clientName: currentUser.displayName || 'Patient',
-        date: scheduleDay,
-        time: sForm.time,
-        consultationType: sForm.type,
-        reason: sForm.reason,
-        status: 'pending',
-        createdAt: serverTimestamp(),
+      const uid = await getStoredUserId();
+      // The backend expects { doctorId, patientId, scheduledAt (LocalDateTime), notes }.
+      // Combine the picked day + time into an ISO local datetime, and fold the
+      // consultation type into the notes (the appointment row has no type column).
+      const scheduledAt = `${scheduleDay}T${(sForm.time || '09:00')}:00`;
+      const notes = [sForm.type ? `[${sForm.type}]` : '', sForm.reason || ''].filter(Boolean).join(' ').trim();
+      await api('/api/v1/medical/appointments', {
+        method: 'POST',
+        body: {
+          doctorId: sForm.doctorId,
+          patientId: uid,
+          scheduledAt,
+          notes,
+        },
       });
       setScheduleDay(null);
       setConflict(null);
@@ -235,12 +253,9 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
     setRescheduleSaving(true);
     setRescheduleError('');
     try {
-      await updateDoc(doc(db, 'doctorAppointments', rescheduleAppt.id), {
-        date: rescheduleDate,
-        time: rescheduleTime,
-        status: 'pending',
-        rescheduledAt: serverTimestamp(),
-        rescheduledBy: 'patient',
+      await api(`/api/v1/care/appointments/${rescheduleAppt.id}/reschedule`, {
+        method: 'PATCH',
+        body: { newDate: rescheduleDate, newTime: rescheduleTime },
       });
       setRescheduleAppt(null);
     } catch (err) {
@@ -566,7 +581,19 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
               {activeFilter === 'upcoming' && (
                 <TouchableOpacity
                   style={styles.bookBtn}
-                  onPress={() => navigation.getParent()?.navigate('DoctorSearch')}
+                  onPress={() => {
+                    // Already assigned to a doctor → open the booking modal directly
+                    // (same as tapping a free day on the calendar). Only send brand-new
+                    // patients with no doctor to the doctor search.
+                    if (myDoctors.length > 0) {
+                      setConflict(null);
+                      setSError('');
+                      setSForm({ doctorId: '', doctorName: '', doctorSpec: '', time: '09:00', type: 'video', reason: '' });
+                      setScheduleDay(TODAY);
+                    } else {
+                      navigation.getParent()?.navigate('DoctorSearch');
+                    }
+                  }}
                 >
                   <Text style={styles.bookBtnText}>Book an Appointment</Text>
                 </TouchableOpacity>

@@ -6,14 +6,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { auth, db, storage } from '../../services/firebaseConfig';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import {
-  doc, getDoc, updateDoc, serverTimestamp,
-  collection, getDocs, addDoc, deleteDoc, query, where, orderBy,
-} from 'firebase/firestore';
+import { api, getStoredUserId, uploadFile } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
-import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 
 const TABS = ['Profile', 'Availability'];
@@ -59,44 +53,46 @@ export default function DoctorSettingsScreen() {
 
   const loadAll = async () => {
     try {
-      const cu = auth.currentUser;
-      if (!cu) return;
-      const snap = await getDoc(doc(db, 'doctors', cu.uid));
-      if (snap.exists()) {
-        const data = snap.data();
-        setDoctorName(data.name || '');
-        setPhotoURL(data.photoURL || null);
+      const uid = await getStoredUserId();
+      if (!uid) return;
+      const data = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      if (data) {
+        // GET /doctors/{id} returns only fullName/specialization/phone/location/bio
+        // as columns — experience, fee, consultation types, languages, photo and
+        // location meta are preserved inside metadataJson (a JSON string). Expand it
+        // so every field the form edits actually loads back.
+        let meta = {};
+        try { meta = data.metadataJson ? JSON.parse(data.metadataJson) : {}; } catch { meta = {}; }
+        const d = { ...meta, ...data };
+        setDoctorName(d.name || d.fullName || '');
+        setPhotoURL(d.photoURL || d.photoUrl || null);
         setForm({
-          name: data.name || '',
-          specialty: data.specialty || data.specialization || '',
-          phone: data.phone || '',
-          bio: data.bio || '',
-          location: data.location || data.city || '',
-          consultationFee: data.consultationFee ? String(data.consultationFee) : '',
-          languages: Array.isArray(data.languages) ? data.languages.join(', ') : (data.languages || ''),
-          experience: data.experience ? String(data.experience) : '',
+          name: d.name || d.fullName || '',
+          specialty: d.specialty || d.specialization || '',
+          phone: d.phone || '',
+          bio: d.bio || '',
+          location: (typeof d.location === 'string' ? d.location : '') || d.city || '',
+          consultationFee: d.consultationFee != null && d.consultationFee !== '' ? String(d.consultationFee) : '',
+          languages: Array.isArray(d.languages) ? d.languages.join(', ') : (d.languages || ''),
+          experience: d.experience != null && d.experience !== '' ? String(d.experience) : '',
           consultationTypes: {
-            video: !!data.consultationTypes?.video,
-            chat: !!data.consultationTypes?.chat,
-            inPerson: !!data.consultationTypes?.inPerson,
+            video: !!d.consultationTypes?.video,
+            chat: !!d.consultationTypes?.chat,
+            inPerson: !!d.consultationTypes?.inPerson,
           },
         });
         setLocationMeta({
-          latitude: data?.latitude ?? data?.location?.latitude ?? null,
-          longitude: data?.longitude ?? data?.location?.longitude ?? null,
-          country: data?.country || data?.location?.country || '',
-          city: data?.city || data?.location?.city || '',
-          area: data?.area || data?.location?.area || '',
-          region: data?.region || data?.location?.region || '',
-          street: data?.street || data?.location?.street || '',
+          latitude: d.latitude ?? null,
+          longitude: d.longitude ?? null,
+          country: d.country || '',
+          city: d.city || '',
+          area: d.area || '',
+          region: d.region || '',
+          street: d.street || '',
         });
       }
-
-      // Load availability
-      const availSnap = await getDocs(
-        query(collection(db, 'doctorAvailability'), where('doctorId', '==', cu.uid), orderBy('date', 'asc'))
-      );
-      setAvailSlots(availSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const avail = await api(`/api/v1/care/doctors/${uid}/availability?all=true`).catch(() => []);
+      setAvailSlots((avail || []).sort((a, b) => (a.date || '').localeCompare(b.date || '')));
     } catch (err) {
       console.error('DoctorSettings load error:', err);
     } finally {
@@ -108,8 +104,12 @@ export default function DoctorSettingsScreen() {
     if (!form.name.trim()) { Alert.alert('Validation', 'Name is required.'); return; }
     setSaving(true);
     try {
-      const cu = auth.currentUser;
-      await updateDoc(doc(db, 'doctors', cu.uid), {
+      const uid = await getStoredUserId();
+      // The backend PATCH only persists fullName/specialization/phone/location/bio
+      // as columns; every other field must ride inside metadataJson or it is
+      // silently dropped (and would never load back). Send the columns AND a full
+      // metadataJson snapshot.
+      const meta = {
         name: form.name.trim(),
         specialty: form.specialty.trim(),
         specialization: form.specialty.trim(),
@@ -123,20 +123,22 @@ export default function DoctorSettingsScreen() {
         area: locationMeta.area || null,
         region: locationMeta.region || null,
         street: locationMeta.street || null,
-        locationMeta: {
-          country: locationMeta.country || null,
-          city: locationMeta.city || form.location.trim() || null,
-          area: locationMeta.area || null,
-          region: locationMeta.region || null,
-          street: locationMeta.street || null,
-          latitude: locationMeta.latitude ?? null,
-          longitude: locationMeta.longitude ?? null,
-        },
         consultationFee: form.consultationFee ? Number(form.consultationFee) : null,
         languages: form.languages.split(',').map(l => l.trim()).filter(Boolean),
         experience: form.experience ? Number(form.experience) : null,
         consultationTypes: form.consultationTypes,
-        updatedAt: serverTimestamp(),
+        photoURL: photoURL || null,
+      };
+      await api(`/api/v1/doctors/${uid}`, {
+        method: 'PATCH',
+        body: {
+          fullName: form.name.trim(),
+          specialization: form.specialty.trim(),
+          phone: form.phone.trim(),
+          location: form.location.trim(),
+          bio: form.bio.trim(),
+          metadataJson: JSON.stringify(meta),
+        },
       });
       showSuccess('Profile saved successfully.');
     } catch (err) {
@@ -153,15 +155,12 @@ export default function DoctorSettingsScreen() {
     if (next !== confirm) { Alert.alert('Error', 'New passwords do not match.'); return; }
     setChangingPwd(true);
     try {
-      const user = auth.currentUser;
-      const credential = EmailAuthProvider.credential(user.email, current);
-      await reauthenticateWithCredential(user, credential);
-      await updatePassword(user, next);
+      await api('/api/v1/auth/password-change', { method: 'POST', body: { currentPassword: current, newPassword: next } });
       setShowPwdModal(false);
       setPwdForm({ current: '', next: '', confirm: '' });
       showSuccess('Password changed successfully.');
     } catch (err) {
-      Alert.alert('Error', err.code === 'auth/wrong-password' ? 'Current password is incorrect.' : 'Could not change password. Try again.');
+      Alert.alert('Error', err.message?.includes('incorrect') ? 'Current password is incorrect.' : 'Could not change password. Try again.');
     } finally {
       setChangingPwd(false);
     }
@@ -172,7 +171,6 @@ export default function DoctorSettingsScreen() {
     if (newSlot.startTime >= newSlot.endTime) { Alert.alert('Validation', 'End time must be after start time.'); return; }
     setSavingAvail(true);
     try {
-      const cu = auth.currentUser;
       // Build 30-min slots between start and end
       const slots = [];
       let [h, m] = newSlot.startTime.split(':').map(Number);
@@ -183,17 +181,12 @@ export default function DoctorSettingsScreen() {
         if (m >= 60) { h += 1; m -= 60; }
       }
 
-      const docRef = await addDoc(collection(db, 'doctorAvailability'), {
-        doctorId: cu.uid,
-        doctorName: doctorName || form.name,
-        date: newSlot.date,
-        startTime: newSlot.startTime,
-        endTime: newSlot.endTime,
-        slots,
-        booked: [],
-        createdAt: serverTimestamp(),
+      const uid = await getStoredUserId();
+      const created = await api(`/api/v1/care/doctors/${uid}/availability`, {
+        method: 'POST',
+        body: { doctorName: doctorName || form.name, date: newSlot.date, startTime: newSlot.startTime, endTime: newSlot.endTime, slots, booked: [] },
       });
-      setAvailSlots(prev => [...prev, { id: docRef.id, ...newSlot, slots, booked: [] }].sort((a, b) => a.date.localeCompare(b.date)));
+      setAvailSlots(prev => [...prev, { id: created?.id || Date.now().toString(), ...newSlot, slots, booked: [] }].sort((a, b) => (a.date || '').localeCompare(b.date || '')));
       setNewSlot({ date: '', startTime: '09:00', endTime: '17:00' });
       showSuccess('Availability added.');
     } catch (err) {
@@ -208,7 +201,8 @@ export default function DoctorSettingsScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => {
         try {
-          await deleteDoc(doc(db, 'doctorAvailability', slotId));
+          const uid = await getStoredUserId();
+          await api(`/api/v1/care/doctors/${uid}/availability/${slotId}`, { method: 'DELETE' });
           setAvailSlots(prev => prev.filter(s => s.id !== slotId));
         } catch {
           Alert.alert('Error', 'Could not remove slot.');
@@ -233,21 +227,17 @@ export default function DoctorSettingsScreen() {
 
     setUploadingPhoto(true);
     try {
-      const cu = auth.currentUser;
+      const uid = await getStoredUserId();
       const uri = result.assets[0].uri;
-
-      // Upload to Firebase Storage
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const storageRef = ref(storage, `doctor-photos/${cu.uid}`);
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
-
-      // Save to Firestore
-      await updateDoc(doc(db, 'doctors', cu.uid), { photoURL: downloadURL, updatedAt: serverTimestamp() });
+      const downloadURL = await uploadFile(`doctor-photos/${uid}`, uri, 'image/jpeg');
+      // photoURL isn't a doctor column — persist it inside metadataJson (merged with
+      // the existing metadata) so it survives and loads back on the profile.
+      const cur = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      let meta = {};
+      try { meta = cur?.metadataJson ? JSON.parse(cur.metadataJson) : {}; } catch { meta = {}; }
+      meta.photoURL = downloadURL;
+      await api(`/api/v1/doctors/${uid}`, { method: 'PATCH', body: { metadataJson: JSON.stringify(meta) } });
       setPhotoURL(downloadURL);
-
-      // Notify all screens to refresh profile
       DeviceEventEmitter.emit('refreshProfile');
       showSuccess('Profile photo updated!');
     } catch (err) {
@@ -264,11 +254,8 @@ export default function DoctorSettingsScreen() {
       { text: 'Remove', style: 'destructive', onPress: async () => {
         setUploadingPhoto(true);
         try {
-          const cu = auth.currentUser;
-          // Remove from Storage (ignore error if not there)
-          try { await deleteObject(ref(storage, `doctor-photos/${cu.uid}`)); } catch (_) {}
-          // Clear in Firestore
-          await updateDoc(doc(db, 'doctors', cu.uid), { photoURL: null, updatedAt: serverTimestamp() });
+          const uid = await getStoredUserId();
+          await api(`/api/v1/doctors/${uid}`, { method: 'PATCH', body: { photoURL: null } });
           setPhotoURL(null);
           DeviceEventEmitter.emit('refreshProfile');
           showSuccess('Profile photo removed.');

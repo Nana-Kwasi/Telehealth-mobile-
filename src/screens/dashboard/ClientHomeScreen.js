@@ -15,9 +15,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../../services/firebaseConfig';
 import { fetchClientData, getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
-import { collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { api } from '../../services/apiClient';
 import { Colors } from '../../constants/colors';
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
@@ -26,7 +25,7 @@ import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/loca
 const { width } = Dimensions.get('window');
 
 async function resolveMoodClientId(client) {
-  return (await AsyncStorage.getItem('th.clientId')) || client?.id || auth.currentUser?.uid;
+  return (await AsyncStorage.getItem('th.clientId')) || client?.id || (await AsyncStorage.getItem('th.userId'));
 }
 
 const chartConfig = {
@@ -104,6 +103,9 @@ const MOOD_OPTIONS = [
 
 const ClientHomeScreen = ({ navigation }) => {
   const [clientData, setClientData] = useState(null);
+  // The signed-in account's name — the same source the drawer uses. Kept separate
+  // because the patient-profile row returns a blank name for therapy clients.
+  const [sessionName, setSessionName] = useState('');
   const [locationProfile, setLocationProfile] = useState(null);
   const [therapistData, setTherapistData] = useState(null);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
@@ -134,57 +136,34 @@ const ClientHomeScreen = ({ navigation }) => {
   const [moodDistribution, setMoodDistribution] = useState([]);
 
   useEffect(() => {
-    const unsubAuth = auth.onAuthStateChanged(async (user) => {
-      if (!user) {
-        setIsLoading(false);
-        setClientData(null);
-        setTherapistData(null);
-        setNextSession(null);
-        setSessionsCompleted(0);
-        setProgressScore(0);
-        setScheduledDates(new Set());
-        setSessionsByMonth([]);
-        setMoodTrendData([]);
-        setTherapyNotes([]);
-        setUpcomingCount(0);
-        setAllScheduledCalls([]);
-        setSelectedDateForModal(null);
-        return;
-      }
+    let cancelled = false;
+    const init = async () => {
+      const token = await AsyncStorage.getItem('th.token');
+      if (!token) { setIsLoading(false); return; }
       try {
         await loadDashboardData();
-        const clientId = await AsyncStorage.getItem('th.clientId') || user.uid;
-        const nextSessionQuery = query(
-          collection(db, 'scheduledCalls'),
-          where('clientId', '==', clientId),
-          where('status', '==', 'scheduled')
-        );
-        snapshotUnsubRef.current = onSnapshot(nextSessionQuery, (snapshot) => {
-          if (!snapshot.empty) {
-            const sessions = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data()
-            })).filter(session => {
-              const sessionTime = session.scheduledTime?.toDate ? session.scheduledTime.toDate() : new Date(session.scheduledTime);
-              return sessionTime >= new Date();
-            }).sort((a, b) => {
-              const timeA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
-              const timeB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
-              return timeA - timeB;
-            });
-            setNextSession(sessions.length > 0 ? sessions[0] : null);
-          } else {
-            setNextSession(null);
-          }
-        }, (err) => console.error('Next session snapshot:', err));
+        const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+        const pollNextSession = async () => {
+          if (cancelled) return;
+          try {
+            const calls = await api(`/api/v1/scheduled-calls?clientId=${clientId}`);
+            const sessions = (Array.isArray(calls) ? calls : [])
+              .filter(s => s.status === 'scheduled' && new Date(s.scheduledTime || s.scheduledAt || s.startsAt) >= new Date())
+              .sort((a, b) => new Date(a.scheduledTime || a.scheduledAt || a.startsAt) - new Date(b.scheduledTime || b.scheduledAt || b.startsAt));
+            if (!cancelled) setNextSession(sessions.length > 0 ? sessions[0] : null);
+          } catch {}
+        };
+        pollNextSession();
+        snapshotUnsubRef.current = setInterval(pollNextSession, 30_000);
       } catch (error) {
         console.error('Error loading dashboard data:', error);
         setIsLoading(false);
       }
-    });
+    };
+    init();
     return () => {
-      unsubAuth();
-      if (snapshotUnsubRef.current) snapshotUnsubRef.current();
+      cancelled = true;
+      if (snapshotUnsubRef.current) clearInterval(snapshotUnsubRef.current);
     };
   }, []);
 
@@ -194,7 +173,7 @@ const ClientHomeScreen = ({ navigation }) => {
       let client = getCachedClientData();
       if (!client) client = await fetchClientData();
       setClientData(client);
-      const uid = auth.currentUser?.uid;
+      const uid = await AsyncStorage.getItem('th.userId');
       let storedProfile = null;
       try {
         const profileStr = await AsyncStorage.getItem('userProfile');
@@ -204,11 +183,16 @@ const ClientHomeScreen = ({ navigation }) => {
       }
       const authLoc = uid ? await fetchAuthLocationProfile(uid) : null;
       setLocationProfile(mergeLocationProfile(storedProfile, authLoc, client));
-      let therapist = getCachedTherapistData();
-      if (client?.therapist) therapist = client.therapist;
-      setTherapistData(therapist);
+      setSessionName(
+        storedProfile?.fullName || storedProfile?.name || storedProfile?.displayName || '',
+      );
+      // Prefer the therapist just resolved from the server; only fall back to the
+      // device cache. The other order let a stale cache (or its absence) decide,
+      // so a freshly-assigned therapist never appeared.
+      const therapist = client?.therapist || getCachedTherapistData();
+      setTherapistData(therapist || null);
 
-      const clientId = await AsyncStorage.getItem('th.clientId') || client?.id || auth.currentUser?.uid;
+      const clientId = await AsyncStorage.getItem('th.clientId') || client?.id || await AsyncStorage.getItem('th.userId');
       if (!clientId) {
         setIsLoading(false);
         return;
@@ -216,9 +200,8 @@ const ClientHomeScreen = ({ navigation }) => {
 
       let notes = [];
       try {
-        const notesRef = collection(db, 'clients', clientId, 'therapyNotes');
-        const notesSnap = await getDocs(notesRef);
-        notes = notesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const notesData = await api(`/api/v1/clinical-notes?clientId=${clientId}&visibleOnly=true`);
+        notes = Array.isArray(notesData) ? notesData : [];
         setTherapyNotes(notes);
       } catch (e) {
         console.error('Error fetching therapy notes:', e);
@@ -230,9 +213,8 @@ const ClientHomeScreen = ({ navigation }) => {
       else progressPct = Math.min(95, progressPct);
       setProgressScore(progressPct);
 
-      const allCallsQuery = query(collection(db, 'scheduledCalls'), where('clientId', '==', clientId));
-      const allCallsSnap = await getDocs(allCallsQuery);
-      const allCalls = allCallsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const allCallsData = await api(`/api/v1/scheduled-calls?clientId=${clientId}`).catch(() => []);
+      const allCalls = Array.isArray(allCallsData) ? allCallsData : [];
       setAllScheduledCalls(allCalls);
       const completedCount = allCalls.filter(c => (c.status || '').toLowerCase() === 'completed').length;
       const upcomingCount = allCalls.filter(c => ['scheduled', 'pending', 'confirmed'].includes((c.status || '').toLowerCase())).length;
@@ -309,10 +291,8 @@ const ClientHomeScreen = ({ navigation }) => {
   };
 
   const onRefresh = async () => {
-    if (!auth.currentUser) {
-      setRefreshing(false);
-      return;
-    }
+    const token = await AsyncStorage.getItem('th.token');
+    if (!token) { setRefreshing(false); return; }
     setRefreshing(true);
     await loadDashboardData();
     setRefreshing(false);
@@ -365,18 +345,16 @@ const ClientHomeScreen = ({ navigation }) => {
     setSubmittingMood(true);
     try {
       const moodClientId = await resolveMoodClientId(clientData);
-      await addDoc(collection(db, 'Client daily mood tracking'), {
-        clientId: moodClientId,
-        clientName: clientData?.name || 'Client',
-        assignedTherapistId: clientData?.assignedTherapist || clientData?.assignedTherapistId || '',
-        assignedTherapistName: clientData?.assignedTherapistName || therapistData?.name || '',
-        mood: selectedMood.emoji,
-        moodValue: selectedMood.value,
-        moodLabel: selectedMood.label,
-        journalEntry: moodJournal,
-        date: new Date().toISOString().split('T')[0],
-        timestamp: serverTimestamp(),
-        createdAt: serverTimestamp(),
+      const therapistId = clientData?.assignedTherapistId || clientData?.assignedTherapist || therapistData?.id || null;
+
+      await api('/api/v1/therapy-engagement/clients/moods', {
+        method: 'POST',
+        body: {
+          clientId: moodClientId,
+          therapistId,
+          moodScore: selectedMood.value,
+          notes: `${selectedMood.label}: ${moodJournal}`,
+        },
       });
       await AsyncStorage.setItem('lastMoodCheck', new Date().toISOString());
       setShowMoodModal(false);
@@ -394,13 +372,11 @@ const ClientHomeScreen = ({ navigation }) => {
 
   const loadMoodDistribution = async (clientId) => {
     try {
-      const snap = await getDocs(query(
-        collection(db, 'Client daily mood tracking'),
-        where('clientId', '==', clientId)
-      ));
+      const moodData = await api(`/api/v1/therapy-engagement/clients/${clientId}/moods`);
+      const moodList = Array.isArray(moodData) ? moodData : [];
       const counts = {};
-      snap.docs.forEach(d => {
-        const label = d.data().moodLabel || 'Unknown';
+      moodList.forEach(d => {
+        const label = (d.notes || '').split(':')[0] || 'Unknown';
         counts[label] = (counts[label] || 0) + 1;
       });
       const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
@@ -452,7 +428,12 @@ const ClientHomeScreen = ({ navigation }) => {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Welcome back!</Text>
-          <Text style={styles.name}>{clientData?.name || 'Client'}</Text>
+          {/* The patient profile returns an empty fullName for therapy clients —
+              the name lives on the user account, which is what the drawer reads.
+              Fall through the same chain here so the greeting matches. */}
+          <Text style={styles.name}>
+            {clientData?.name || clientData?.fullName || sessionName || 'Client'}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.moodCheckBtn} onPress={() => setShowMoodModal(true)}>
@@ -583,6 +564,26 @@ const ClientHomeScreen = ({ navigation }) => {
           <View style={styles.therapistInfo}>
             <Text style={styles.therapistLabel}>Your Therapist</Text>
             <Text style={styles.therapistName}>{therapistData.name || 'Not assigned'}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      )}
+
+      {/* No therapist yet → route back into selection, the same way a medical
+          patient who skipped doctor booking gets a "Find a Doctor" CTA.
+          Deliberately the exact inverse of the card above: gating this on
+          coupleId as well meant a client carrying a stale cached coupleId saw
+          NEITHER card and had no way back to therapist selection. MatchTherapist
+          handles the couple flow itself, so sending couples there is safe. */}
+      {!therapistData && (
+        <TouchableOpacity
+          style={styles.findTherapistCard}
+          onPress={() => navigation.navigate('MatchTherapist')}
+        >
+          <Ionicons name="search-circle" size={48} color={Colors.primary} />
+          <View style={styles.therapistInfo}>
+            <Text style={styles.therapistLabel}>No therapist yet</Text>
+            <Text style={styles.therapistName}>Find a Therapist</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
@@ -900,6 +901,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+  },
+  findTherapistCard: {
+    flexDirection: 'row',
+    backgroundColor: '#eef2ff',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#a5b4fc',
   },
   therapistInfo: {
     marginLeft: 16,

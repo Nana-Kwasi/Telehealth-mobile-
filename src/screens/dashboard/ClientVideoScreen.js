@@ -15,8 +15,7 @@ import {
 const { width } = Dimensions.get('window');
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { collection, query, where, getDocs, addDoc, doc, getDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '../../services/firebaseConfig';
+import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
@@ -49,39 +48,17 @@ const ClientVideoScreen = ({ navigation }) => {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const clientId = await AsyncStorage.getItem('th.clientId') || auth.currentUser?.uid;
-      
-      // Get client data
+      const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
       let client = getCachedClientData();
-      if (!client) {
-        const clientDoc = await getDoc(doc(db, 'clients', clientId));
-        if (clientDoc.exists()) {
-          client = { id: clientDoc.id, ...clientDoc.data() };
-        }
-      }
+      if (!client) client = await api(`/api/v1/patients/${clientId}`).catch(() => null);
       setClientData(client);
 
-      // Get therapist data
       let therapist = getCachedTherapistData();
       if (!therapist && client?.assignedTherapist) {
-        const therapistId = client.assignedTherapist || client.assignedTherapistId;
-        try {
-          const therapistDoc = await getDoc(doc(db, 'therapistt', therapistId));
-          if (therapistDoc.exists()) {
-            therapist = { id: therapistDoc.id, ...therapistDoc.data() };
-          } else {
-            const therapistDoc2 = await getDoc(doc(db, 'therapists', therapistId));
-            if (therapistDoc2.exists()) {
-              therapist = { id: therapistDoc2.id, ...therapistDoc2.data() };
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching therapist:', error);
-        }
+        const tid = client.assignedTherapist || client.assignedTherapistId;
+        try { const d = await api(`/api/v1/therapists/${tid}`); if (d) therapist = { id: tid, ...d }; } catch {}
       }
       setTherapistData(therapist);
-
-      // Load scheduled calls
       loadScheduledCalls(clientId);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -91,89 +68,40 @@ const ClientVideoScreen = ({ navigation }) => {
   };
 
   const loadScheduledCalls = (clientId) => {
-    const callsQuery = query(
-      collection(db, 'scheduledCalls'),
-      where('clientId', '==', clientId)
-    );
-
-    const unsubscribe = onSnapshot(callsQuery, (snapshot) => {
-      const calls = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      calls.sort((a, b) => {
-        const timeA = a.scheduledTime?.toDate ? a.scheduledTime.toDate() : new Date(a.scheduledTime);
-        const timeB = b.scheduledTime?.toDate ? b.scheduledTime.toDate() : new Date(b.scheduledTime);
-        return timeB - timeA;
-      });
-
-      setScheduledCalls(calls);
-    }, (error) => {
-      console.error('Error loading scheduled calls:', error);
-    });
-
-    return unsubscribe;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const data = await api(`/api/v1/scheduled-calls?clientId=${clientId}`);
+        const sorted = (Array.isArray(data) ? data : []).sort((a, b) =>
+          new Date(b.scheduledTime || b.scheduledAt || b.startsAt || 0) - new Date(a.scheduledTime || a.scheduledAt || a.startsAt || 0));
+        if (!cancelled) setScheduledCalls(sorted);
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
   };
 
   const checkTherapistAvailability = async (therapistId, selectedDate) => {
     try {
-      const therapistCallsQuery = query(
-        collection(db, 'scheduledCalls'),
-        where('therapistId', '==', therapistId)
-      );
-
-      const querySnapshot = await getDocs(therapistCallsQuery);
-      
-      const startOfDay = new Date(selectedDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(selectedDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      let hasConflict = false;
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const scheduledTime = data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime);
-        if (scheduledTime >= startOfDay && scheduledTime <= endOfDay) {
-          hasConflict = true;
-        }
+      const calls = await api(`/api/v1/scheduled-calls?therapistId=${therapistId}`);
+      const start = new Date(`${selectedDate}T00:00:00`);
+      const end = new Date(`${selectedDate}T23:59:59`);
+      return !(Array.isArray(calls) ? calls : []).some(c => {
+        const t = new Date(c.scheduledTime || c.scheduledAt || c.startsAt || 0);
+        return t >= start && t <= end;
       });
-
-      return !hasConflict;
-    } catch (error) {
-      console.error('Error checking therapist availability:', error);
-      return false;
-    }
+    } catch { return false; }
   };
 
   const fetchTherapistBusyDates = async (therapistId) => {
     try {
       setIsLoadingAvailability(true);
-      const busyDates = new Set();
-      
-      const therapistCallsQuery = query(
-        collection(db, 'scheduledCalls'),
-        where('therapistId', '==', therapistId)
-      );
-
-      const querySnapshot = await getDocs(therapistCallsQuery);
-      
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const scheduledTime = data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime);
-        if (scheduledTime) {
-          const dateString = scheduledTime.toISOString().split('T')[0];
-          busyDates.add(dateString);
-        }
-      });
-
-      setTherapistBusyDates(Array.from(busyDates));
-    } catch (error) {
-      console.error('Error fetching therapist busy dates:', error);
-    } finally {
-      setIsLoadingAvailability(false);
-    }
+      const calls = await api(`/api/v1/scheduled-calls?therapistId=${therapistId}`);
+      const dates = (Array.isArray(calls) ? calls : []).map(c => new Date(c.scheduledTime || c.scheduledAt || c.startsAt || 0).toISOString().split('T')[0]).filter(Boolean);
+      setTherapistBusyDates([...new Set(dates)]);
+    } catch {} finally { setIsLoadingAvailability(false); }
   };
 
   const handleScheduleSubmit = async () => {
@@ -209,20 +137,17 @@ const ClientVideoScreen = ({ navigation }) => {
         return;
       }
 
-      const callData = {
-        therapistId: therapistData.id,
-        therapistName: therapistData.name,
-        clientId: clientData.id,
-        clientName: clientData.name,
-        scheduledTime: dateTime,
-        duration: parseInt(scheduleForm.duration),
-        notes: scheduleForm.notes || '',
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        createdBy: 'client'
-      };
-
-      await addDoc(collection(db, 'scheduledCalls'), callData);
+      await api('/api/v1/scheduled-calls', {
+        method: 'POST',
+        body: {
+          therapistId: therapistData.id,
+          clientId: clientData.id,
+          scheduledTime: dateTime.toISOString(),
+          durationMinutes: parseInt(scheduleForm.duration),
+          notes: scheduleForm.notes || '',
+          status: 'pending',
+        },
+      });
       
       setMessage({ type: 'success', text: 'Session request submitted successfully! Your therapist will review and confirm.' });
       setScheduleForm({ date: '', time: '', duration: '30', notes: '' });

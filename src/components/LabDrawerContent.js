@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { performLogout } from '../services/authService';
+import { api } from '../services/apiClient';
 import { LabColors as C } from '../constants/colors';
 
 const LAB_NAV = [
@@ -11,6 +11,9 @@ const LAB_NAV = [
   { name: 'LabOrders',  label: 'Orders',        icon: 'flask-outline' },
   { name: 'LabVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'LabResults', label: 'Results',       icon: 'document-text-outline' },
+  { name: 'LabBranches',    label: 'Branches',      icon: 'business-outline' },
+  { name: 'LabReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
+  { name: 'LabPreferences', label: 'Settings',      icon: 'settings-outline' },
 ];
 
 const LAB_BRANCH_NAV = [
@@ -18,6 +21,8 @@ const LAB_BRANCH_NAV = [
   { name: 'LabBranchOrders',  label: 'Orders',        icon: 'flask-outline' },
   { name: 'LabBranchVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'LabBranchResults', label: 'Results',       icon: 'document-text-outline' },
+  { name: 'LabBranchReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
+  { name: 'LabBranchPreferences', label: 'Settings',      icon: 'settings-outline' },
 ];
 
 export default function LabDrawerContent({ navigation, state, profile, isBranch = false }) {
@@ -27,17 +32,25 @@ export default function LabDrawerContent({ navigation, state, profile, isBranch 
 
   useEffect(() => {
     if (!isBranch || !profile?.labId) return;
-    getDoc(doc(db, 'labs', profile.labId))
-      .then((snap) => {
-        if (snap.exists()) setParentLabName(snap.data()?.labName || '');
-      })
-      .catch(() => {});
+    api(`/api/v1/admin/users/${profile.labId}`).then((data) => {
+      if (data?.labName || data?.name) setParentLabName(data.labName || data.name || '');
+    }).catch(() => {});
   }, [isBranch, profile?.labId]);
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => { try { await signOut(auth); } catch (_) {} } },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          // Clearing the session is not enough: without resetting navigation the
+          // dashboard stays mounted and the user appears to still be logged in.
+          try { await performLogout(); } catch (_) {}
+          try { await AsyncStorage.clear(); } catch (_) {}
+          navigation.getParent()?.replace('Intent');
+        },
+      },
     ]);
   };
 

@@ -9,9 +9,8 @@ import {
   Image,
   Alert,
 } from 'react-native';
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
-import { db, auth } from '../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, getStoredUserId } from '../services/apiClient';
 import { Colors } from '../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
 import {
@@ -21,6 +20,14 @@ import {
   proposeCoupleTherapist,
   confirmCoupleTherapist,
 } from '../services/coupleTherapyService';
+
+
+/** A therapist's own per-session charge (kept in their profile metadata). */
+export function therapistRate(t) {
+  const raw = t?.sessionRate ?? t?.consultationFee ?? t?.rate ?? t?.price;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 const MatchTherapistScreen = ({ navigation, route }) => {
   const [therapists, setTherapists] = useState([]);
@@ -42,9 +49,10 @@ const MatchTherapistScreen = ({ navigation, route }) => {
     else if (therapist.role === 'therapist') score += 15;
     else if (therapist.role === 'user') score += 10;
     
-    // Type match
-    if (therapist.type && data.therapyType) {
-      if (therapist.type.toLowerCase().includes(data.therapyType)) score += 10;
+    // Type match (the API returns `therapyType`; `type` is the Firestore-era name)
+    const therapistType = therapist.therapyType || therapist.type;
+    if (therapistType && data.therapyType) {
+      if (String(therapistType).toLowerCase().includes(String(data.therapyType).toLowerCase())) score += 10;
     }
     
     // Religious match
@@ -87,7 +95,7 @@ const MatchTherapistScreen = ({ navigation, route }) => {
         const id = resolvedCoupleId;
         const couple = await loadCouple(id);
         setCoupleProfile(couple);
-        const uid = auth.currentUser?.uid;
+        const uid = await getStoredUserId();
         const pk = couple?.partnerA?.authUid === uid ? 'partnerA' : couple?.partnerB?.authUid === uid ? 'partnerB' : null;
         setMyPartnerKey(pk);
 
@@ -110,21 +118,38 @@ const MatchTherapistScreen = ({ navigation, route }) => {
         return;
       }
 
-      let therapistsRef = collection(db, 'therapists');
-      let snapshot = await getDocs(therapistsRef);
-      if (snapshot.empty) {
-        therapistsRef = collection(db, 'therapistt');
-        snapshot = await getDocs(therapistsRef);
-      }
-      const allTherapists = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const allTherapistsRaw = await api('/api/v1/therapists').catch(() => []);
+      const allTherapists = Array.isArray(allTherapistsRaw) ? allTherapistsRaw : [];
+      // Only exclude a therapist on a *definite* mismatch. These filters used to read
+      // `t.type` (the API returns `therapyType`) and treated a therapist with no
+      // recorded gender / religion / affirming flag as a mismatch — so a single stated
+      // preference emptied the whole list and the screen rendered no names at all.
+      // Preference strength is already expressed by calculateRelevanceScore ranking.
+      const matchesPreference = (value, pref) => {
+        if (!pref) return true;
+        if (value == null || value === '') return true; // unknown → don't exclude
+        return String(value).toLowerCase() === String(pref).toLowerCase();
+      };
       const filtered = allTherapists.filter((t) => {
-        const typeMatch = !data.therapyType || (t.type || '').toLowerCase().includes(data.therapyType);
-        const christianPref = data.preferChristianTherapist === 'Yes';
-        const religionMatch = !christianPref || (t.religion || '').toLowerCase() === 'christianity';
-        const genderPref = data.therapistGender;
-        const genderMatch = !genderPref || genderPref === 'No preference' || (t.gender || '').toLowerCase() === genderPref.toLowerCase();
-        const lgbtqiaPref = data.lgbtqia;
-        const lgbtqiaMatch = !lgbtqiaPref || lgbtqiaPref === 'No preference' || t.lgbtqiaAffirming === true;
+        // Therapy modality (individual/couples/teen) is its own axis — do NOT fold
+        // specialization/specialties in here, or a therapist listed under "Anxiety"
+        // gets excluded from individual therapy.
+        //
+        // `t.type` is NOT a modality: promoting a therapist to admin stores
+        // type='Administrator', which matched no modality and silently removed
+        // them from every client's match list. Read therapyType only.
+        const therapistType = String(t.therapyType || '').toLowerCase();
+        const typeMatch =
+          !data.therapyType || !therapistType || therapistType.includes(String(data.therapyType).toLowerCase());
+        const religionMatch =
+          data.preferChristianTherapist !== 'Yes' || matchesPreference(t.religion, 'christianity');
+        const genderPref = data.therapistGender === 'No preference' ? null : data.therapistGender;
+        const genderMatch = matchesPreference(t.gender, genderPref);
+        const lgbtqiaMatch =
+          data.lgbtqia !== 'Yes, this is important to me' ||
+          t.lgbtqiaAffirming == null ||
+          t.lgbtqiaAffirming === true ||
+          String(t.lgbtqiaAffirming).toLowerCase() === 'true';
         return typeMatch && religionMatch && genderMatch && lgbtqiaMatch;
       });
       const scored = filtered.map((t) => ({ ...t, score: calculateRelevanceScore(t, data) }));
@@ -140,7 +165,6 @@ const MatchTherapistScreen = ({ navigation, route }) => {
 
   const chooseTherapist = async (therapist) => {
     try {
-      const user = auth.currentUser;
       const clientId = await AsyncStorage.getItem('th.clientId');
       const coupleId =
         coupleProfile?.id || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
@@ -160,24 +184,21 @@ const MatchTherapistScreen = ({ navigation, route }) => {
         );
         navigation.replace('CoupleDashboard', { coupleId });
         return;
-      } else if (user && clientId) {
-        await setDoc(
-          doc(db, 'clients', clientId),
-          {
-            assignedTherapistId: therapist.id,
-            assignedTherapistName: therapist.name,
-            assignedAt: new Date().toISOString(),
-          },
-          { merge: true },
-        );
-
-        await setDoc(doc(db, 'therapists', therapist.id, 'clients', clientId), {
-          clientId,
-          assignedAt: new Date().toISOString(),
-        });
       }
 
-      navigation.replace('Main');
+      // Individual therapy: hand the chosen therapist to Payment so the client is
+      // charged that therapist's own session rate. The assignment is written after
+      // payment succeeds — choosing someone is not the same as booking them.
+      navigation.navigate('Payment', {
+        therapist: {
+          id: therapist.id,
+          name: therapist.name || therapist.fullName || therapist.displayName || 'Therapist',
+          specialization: therapist.specialization || therapist.therapyType || '',
+          sessionRate: therapistRate(therapist),
+          photoURL: therapist.photoURL || null,
+        },
+        clientId,
+      });
     } catch (error) {
       console.error('Error assigning therapist:', error);
       Alert.alert('Error', 'There was an error assigning your therapist. Please try again.');
@@ -224,6 +245,15 @@ const MatchTherapistScreen = ({ navigation, route }) => {
             : 'We matched options based on your preferences'}
       </Text>
 
+      {/* Escape hatch, matching web and the medical patient flow: go to the
+          dashboard now and choose a therapist later. Couples can't skip — that
+          flow needs both partners on one therapist. */}
+      {!coupleProfile ? (
+        <TouchableOpacity onPress={() => navigation.replace('Main')} style={styles.skipLink}>
+          <Text style={styles.skipLinkText}>Skip for now — I'll choose a therapist later</Text>
+        </TouchableOpacity>
+      ) : null}
+
       {coupleProfile && !availabilityOverlap ? (
         <View style={styles.warnBox}>
           <Text style={styles.warnText}>
@@ -262,8 +292,12 @@ const MatchTherapistScreen = ({ navigation, route }) => {
                   </View>
                 )}
                 <View style={styles.therapistInfo}>
-                  <Text style={styles.therapistName}>{therapist.name}</Text>
-                  <Text style={styles.therapistType}>{therapist.type || 'Therapist'}</Text>
+                  <Text style={styles.therapistName}>
+                    {therapist.name || therapist.fullName || therapist.displayName || 'Therapist'}
+                  </Text>
+                  <Text style={styles.therapistType}>
+                    {therapist.therapyType || therapist.type || therapist.specialization || 'Therapist'}
+                  </Text>
                   {therapist.yearsExperience && (
                     <Text style={styles.therapistExp}>{therapist.yearsExperience} years experience</Text>
                   )}
@@ -279,6 +313,11 @@ const MatchTherapistScreen = ({ navigation, route }) => {
                   Languages: {Array.isArray(therapist.languagesSpoken) ? therapist.languagesSpoken.join(', ') : therapist.languagesSpoken}
                 </Text>
               )}
+              <Text style={styles.therapistRate}>
+                {therapistRate(therapist) != null
+                  ? `GHS ${therapistRate(therapist).toFixed(2)} / session`
+                  : 'Rate not published'}
+              </Text>
               {therapist.score && (
                 <View style={styles.matchScore}>
                   <Text style={styles.matchScoreText}>Match: {Math.round(therapist.score)}%</Text>
@@ -390,6 +429,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textLight,
   },
+  therapistRate: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   specialties: {
     fontSize: 14,
     color: Colors.textSecondary,
@@ -428,6 +468,13 @@ const styles = StyleSheet.create({
     color: Colors.surface,
     fontSize: 16,
     fontWeight: '700',
+  },
+  skipLink: { alignSelf: 'flex-start', marginBottom: 16 },
+  skipLinkText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   warnBox: {
     backgroundColor: '#fef3c7',

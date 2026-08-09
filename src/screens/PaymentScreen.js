@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, getStoredUserId } from '../services/apiClient';
 import { Colors } from '../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
 import {
@@ -21,6 +22,10 @@ import {
 const PaymentScreen = ({ navigation, route }) => {
   const coupleIdParam = route.params?.coupleId;
   const isCouple = route.params?.therapyType === 'couples';
+  // Individual therapy picks a therapist before paying, so the amount due is that
+  // therapist's own session rate rather than a fixed subscription tier.
+  const selectedTherapist = route.params?.therapist || null;
+  const therapistFee = Number(selectedTherapist?.sessionRate) || null;
   const [plan, setPlan] = useState('standard');
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -62,7 +67,13 @@ const PaymentScreen = ({ navigation, route }) => {
 
     await AsyncStorage.setItem(
       'th.subscription',
-      JSON.stringify({ plan, price: prices[plan], activatedAt: new Date().toISOString() }),
+      JSON.stringify({
+        plan: selectedTherapist ? 'per-session' : plan,
+        price: therapistFee ?? prices[plan],
+        therapistId: selectedTherapist?.id || null,
+        therapistName: selectedTherapist?.name || null,
+        activatedAt: new Date().toISOString(),
+      }),
     );
 
     if (isCouple) {
@@ -72,6 +83,37 @@ const PaymentScreen = ({ navigation, route }) => {
         navigation.replace('MatchTherapist', { coupleId, therapyType: 'couples' });
       } catch (e) {
         Alert.alert('Error', e.message || 'Could not record payment.');
+      }
+      return;
+    }
+
+    // Therapist already chosen → record the assignment now that payment is done,
+    // then go to the dashboard. (Previously this bounced back to MatchTherapist,
+    // which is now the screen that sent us here.)
+    //
+    // Endpoint is /client-select-therapist, NOT /assignments: the latter is
+    // @PreAuthorize THERAPIST/ADMIN *and* guards requireSelfOrAdmin(therapistId),
+    // so a client calling it always got 403 Forbidden. The self-select endpoint is
+    // the client-side counterpart — CLIENT role, guarded on clientId instead.
+    //
+    // clientId must be the authenticated user's id for that guard to pass.
+    // `th.clientId` is a therapy-clients row id from a different namespace, so
+    // sending it 403s just the same even on the right endpoint.
+    if (selectedTherapist?.id) {
+      try {
+        const clientId = (await getStoredUserId()) || route.params?.clientId;
+        if (clientId) {
+          await api('/api/v1/therapy-management/client-select-therapist', {
+            method: 'POST',
+            body: {
+              clientId,
+              therapistId: selectedTherapist.id,
+            },
+          });
+        }
+        navigation.replace('Main');
+      } catch (e) {
+        Alert.alert('Almost there', e.message || 'Payment recorded, but we could not assign your therapist.');
       }
       return;
     }
@@ -97,33 +139,57 @@ const PaymentScreen = ({ navigation, route }) => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.title}>{isCouple ? 'Couple plan' : 'Choose your plan'}</Text>
+      <Text style={styles.title}>
+        {selectedTherapist ? 'Confirm and pay' : isCouple ? 'Couple plan' : 'Choose your plan'}
+      </Text>
       <Text style={styles.subtitle}>
-        {isCouple
-          ? 'One subscription covers both partners. Billed monthly — cancel anytime.'
-          : 'Weekly subscription billed monthly. Cancel anytime.'}
+        {selectedTherapist
+          ? `You are booking ${selectedTherapist.name}. This is their session rate.`
+          : isCouple
+            ? 'One subscription covers both partners. Billed monthly — cancel anytime.'
+            : 'Weekly subscription billed monthly. Cancel anytime.'}
       </Text>
 
-      <View style={styles.plansContainer}>
-        {plans.map((p) => (
-          <TouchableOpacity
-            key={p.key}
-            style={[styles.planCard, plan === p.key && styles.planCardSelected]}
-            onPress={() => setPlan(p.key)}
-          >
-            <Text style={styles.planTitle}>{p.title}</Text>
-            <Text style={styles.planPrice}>${p.price}</Text>
-            <Text style={styles.planPeriod}>/week</Text>
-            <View style={styles.featuresContainer}>
-              {p.features.map((feature, index) => (
-                <Text key={index} style={styles.feature}>
-                  • {feature}
-                </Text>
-              ))}
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Therapist-first flow: charge the therapist's own published rate. Showing
+          the generic $70/$85/$100 tiers here billed an amount unrelated to the
+          therapist the client just picked. */}
+      {selectedTherapist ? (
+        <View style={[styles.planCard, styles.planCardSelected, styles.therapistCard]}>
+          <Text style={styles.planTitle}>{selectedTherapist.name}</Text>
+          {selectedTherapist.specialization ? (
+            <Text style={styles.feature}>{selectedTherapist.specialization}</Text>
+          ) : null}
+          <Text style={styles.planPrice}>
+            {therapistFee != null ? `GHS ${therapistFee.toFixed(2)}` : 'Rate not set'}
+          </Text>
+          <Text style={styles.planPeriod}>
+            {therapistFee != null
+              ? 'per session'
+              : 'This therapist has not published a rate yet.'}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.plansContainer}>
+          {plans.map((p) => (
+            <TouchableOpacity
+              key={p.key}
+              style={[styles.planCard, plan === p.key && styles.planCardSelected]}
+              onPress={() => setPlan(p.key)}
+            >
+              <Text style={styles.planTitle}>{p.title}</Text>
+              <Text style={styles.planPrice}>${p.price}</Text>
+              <Text style={styles.planPeriod}>/week</Text>
+              <View style={styles.featuresContainer}>
+                {p.features.map((feature, index) => (
+                  <Text key={index} style={styles.feature}>
+                    • {feature}
+                  </Text>
+                ))}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       <View style={styles.paymentForm}>
         <Text style={styles.formTitle}>Payment Details</Text>
@@ -142,7 +208,15 @@ const PaymentScreen = ({ navigation, route }) => {
           </View>
         </View>
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>{isCouple ? 'Activate couple subscription' : 'Activate Subscription'}</Text>
+          <Text style={styles.submitButtonText}>
+            {selectedTherapist
+              ? therapistFee != null
+                ? `Pay GHS ${therapistFee.toFixed(2)}`
+                : 'Confirm therapist'
+              : isCouple
+                ? 'Activate couple subscription'
+                : 'Activate Subscription'}
+          </Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -164,6 +238,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   planCardSelected: { borderColor: Colors.primary, backgroundColor: '#f0f9f4' },
+  therapistCard: { marginBottom: 32 },
   planTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.text, marginBottom: 8 },
   planPrice: { fontSize: 32, fontWeight: 'bold', color: Colors.primary },
   planPeriod: { fontSize: 14, color: Colors.textSecondary, marginBottom: 16 },
