@@ -12,10 +12,39 @@ import { fetchClientAppointments, fetchClientPrescriptions } from '../../service
 import { MedicalColors } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 import { mergeLocationProfile } from '../../utils/locationProfile';
+import WeatherCardMobile from '../../components/WeatherCardMobile';
+import { dateMillis, formatDate } from '../../utils/dateDisplay';
 
 const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
+// How the daily check-in prompt paces itself. A logged check-in keeps it away
+// for a full day; dismissing it only snoozes, so it can still catch the patient
+// later the same day without reappearing on every visit to this screen.
+const FEELING_PROMPT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const FEELING_SNOOZE_MS = 4 * 60 * 60 * 1000;
+
+// Per-user, because these live on a shared device: an unscoped key let one
+// account's dismissal silence the prompt for the next person to sign in.
+const feelingStampKey = (uid) => `lastDailyFeeling_${uid}`;
+const feelingSnoozeKey = (uid) => `dailyFeelingSnooze_${uid}`;
+
 const SCREEN_WIDTH = Dimensions.get('window').width - 32;
+
+// Mood chips read at a glance rather than as five identical grey pills.
+const MOOD_TINT = {
+  Great: '#bbf7d0', Good: '#d9f99d', Okay: '#fef08a', Poor: '#fed7aa', Bad: '#fecaca',
+};
+
+/** One-line summary of a vitals reading, for the dashboard card. */
+function summariseVitals(v) {
+  if (!v) return '';
+  const bits = [];
+  if (v.bpSystolic && v.bpDiastolic) bits.push(`BP ${v.bpSystolic}/${v.bpDiastolic}`);
+  if (v.heartRate) bits.push(`HR ${v.heartRate}`);
+  if (v.spo2) bits.push(`SpO2 ${v.spo2}%`);
+  if (v.temperature) bits.push(`${v.temperature}\u00b0${v.tempUnit || 'C'}`);
+  return bits.length ? bits.join(' \u00b7 ') : 'Recorded';
+}
 
 function getInitials(name) {
   if (!name) return 'D';
@@ -115,12 +144,34 @@ const MedicalHomeScreen = ({ navigation }) => {
 
   // Quick log dropdown (+ button)
   const [hasLoggedVitals, setHasLoggedVitals] = useState(false);
+  // The last reading on file, plus whether the modal is reading it back or
+  // editing it. Editing always starts from this so "save" amends the most
+  // recent entry rather than making the patient retype it.
+  const [latestVitals, setLatestVitals] = useState(null);
+  const [vitalsMode, setVitalsMode] = useState('edit');
   const [showLogDropdown, setShowLogDropdown] = useState(false);
   const [latestFeeling, setLatestFeeling] = useState(null);
+  const [feelingHistory, setFeelingHistory] = useState([]);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Coming back from Settings after saving a location used to show the old one:
+  // this screen loads once on mount and nothing told it the address had moved.
+  // Only the location is re-read — a full loadData() on every focus would refetch
+  // the whole dashboard and re-run the daily check-in prompt.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', async () => {
+      try {
+        const uid = await getStoredUserId();
+        if (!uid) return;
+        const patData = await api(`/api/v1/patients/${uid}`).catch(() => null);
+        if (patData) setLocationProfile((prev) => mergeLocationProfile(prev, patData));
+      } catch (_) {}
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -135,7 +186,19 @@ const MedicalHomeScreen = ({ navigation }) => {
           if (patData.photoURL) setUserPhotoURL(patData.photoURL);
           setLocationProfile((prev) => mergeLocationProfile(prev, patData));
           setPatientStatus(patData.status || 'active');
-          setHasLoggedVitals(!!patData.vitals?.latest);
+          // The backend keeps the last reading on the profile as `vitalsLatestJson`
+          // (a JSON string). `vitals.latest` is the old Firestore shape and has
+          // never existed server-side, so this was always false and the logged
+          // state never appeared.
+          const rawVitals = patData.vitalsLatestJson;
+          let parsedVitals = null;
+          try {
+            parsedVitals = typeof rawVitals === 'string' && rawVitals.trim()
+              ? JSON.parse(rawVitals)
+              : (rawVitals && typeof rawVitals === 'object' ? rawVitals : null);
+          } catch (_) { parsedVitals = null; }
+          setLatestVitals(parsedVitals);
+          setHasLoggedVitals(!!parsedVitals);
         }
 
         const [appts, rxs] = await Promise.all([
@@ -147,8 +210,16 @@ const MedicalHomeScreen = ({ navigation }) => {
 
         const feelings = await api(`/api/v1/patients/${clientId}/daily-feelings`).catch(() => []) || [];
         if (feelings.length > 0) {
-          setLatestFeeling(feelings.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0]);
+          const sorted = [...feelings].sort((a, b) => (dateMillis(b.createdAt) || 0) - (dateMillis(a.createdAt) || 0));
+          setLatestFeeling(sorted[0]);
+          // The dashboard card shows a short run of recent check-ins; the web
+          // dashboard has always charted these and mobile showed nothing at all.
+          setFeelingHistory(sorted.slice(0, 5));
         }
+        // The server is the authority on whether a check-in already exists. The
+        // AsyncStorage stamp below is only a fast path, and is empty after a
+        // reinstall or on a second device.
+        const lastCheckInAt = feelings.reduce((max, f) => Math.max(max, dateMillis(f.createdAt) || 0), 0);
 
         // A patient is "assigned" to a doctor through an appointment OR a
         // prescription. Prefer the most recent appointment's doctor; otherwise fall
@@ -181,10 +252,18 @@ const MedicalHomeScreen = ({ navigation }) => {
         setShowIntakeBtn(!intakeData && !intakeDone);
       }
 
-      // Check daily feeling (show if > 24 hours since last submission)
+      // Daily check-in prompt. It used to consult only the AsyncStorage stamp,
+      // which is written on SUBMIT alone — so dismissing the modal recorded
+      // nothing and it popped up again every single time the patient came back
+      // to this screen. Two things now suppress it: a check-in logged within
+      // the last day (read from the server, so it survives a reinstall), and a
+      // dismissal, which snoozes for a few hours rather than forever.
       try {
-        const lastFeeling = await AsyncStorage.getItem('lastDailyFeeling');
-        if (!lastFeeling || Date.now() - parseInt(lastFeeling) > 24 * 60 * 60 * 1000) {
+        const stamp = parseInt(await AsyncStorage.getItem(feelingStampKey(clientId))) || 0;
+        const snoozedUntil = parseInt(await AsyncStorage.getItem(feelingSnoozeKey(clientId))) || 0;
+        const lastLogged = Math.max(lastCheckInAt, stamp);
+        const now = Date.now();
+        if (now - lastLogged > FEELING_PROMPT_INTERVAL_MS && now > snoozedUntil) {
           // Delay 2s so screen loads first
           setTimeout(() => setShowFeelingModal(true), 2000);
         }
@@ -210,6 +289,17 @@ const MedicalHomeScreen = ({ navigation }) => {
     finally { setSubmittingIntake(false); }
   };
 
+  // Closing the check-in without submitting has to be recorded, or the prompt
+  // cannot tell "already asked and declined" from "never asked today" and
+  // re-opens the moment the patient navigates back here.
+  const dismissFeelingModal = async () => {
+    setShowFeelingModal(false);
+    try {
+      const uid = await getStoredUserId();
+      if (uid) await AsyncStorage.setItem(feelingSnoozeKey(uid), String(Date.now() + FEELING_SNOOZE_MS));
+    } catch (_) {}
+  };
+
   const submitFeeling = async () => {
     if (!feelingForm.mood) { Alert.alert('Required', 'Please select how you are feeling.'); return; }
     setSubmittingFeeling(true);
@@ -219,8 +309,18 @@ const MedicalHomeScreen = ({ navigation }) => {
         method: 'POST',
         body: { patientId: uid, mood: feelingForm.mood, painLevel: parseInt(feelingForm.painLevel) || 0, symptoms: feelingForm.symptoms.split(',').map(s => s.trim()).filter(Boolean), medications: feelingForm.medications, notes: feelingForm.notes },
       });
-      await AsyncStorage.setItem('lastDailyFeeling', String(Date.now()));
+      await AsyncStorage.setItem(feelingStampKey(uid), String(Date.now()));
+      await AsyncStorage.removeItem(feelingSnoozeKey(uid));
       // Update latestFeeling so next open is pre-filled with what was just submitted
+      const justLogged = {
+        mood: feelingForm.mood,
+        painLevel: parseInt(feelingForm.painLevel) || 0,
+        symptoms: feelingForm.symptoms.split(',').map(x => x.trim()).filter(Boolean),
+        medications: feelingForm.medications,
+        notes: feelingForm.notes,
+        createdAt: new Date().toISOString(),
+      };
+      setFeelingHistory(prev => [justLogged, ...prev].slice(0, 5));
       setLatestFeeling({
         mood: feelingForm.mood,
         painLevel: parseInt(feelingForm.painLevel) || 0,
@@ -235,6 +335,12 @@ const MedicalHomeScreen = ({ navigation }) => {
     finally { setSubmittingFeeling(false); }
   };
 
+  const openVitals = (mode) => {
+    setVitalsMode(mode);
+    setVitalsForm(latestVitals ? { ...EMPTY_VITALS, ...latestVitals } : { ...EMPTY_VITALS });
+    setShowVitalsModal(true);
+  };
+
   const submitVitals = async () => {
     const hasData = Object.entries(vitalsForm).some(([k, v]) => k !== 'tempUnit' && v.trim() !== '');
     if (!hasData) { Alert.alert('Required', 'Please enter at least one vital sign.'); return; }
@@ -244,6 +350,7 @@ const MedicalHomeScreen = ({ navigation }) => {
       const payload = { bpSystolic: vitalsForm.bpSystolic.trim(), bpDiastolic: vitalsForm.bpDiastolic.trim(), heartRate: vitalsForm.heartRate.trim(), respiratoryRate: vitalsForm.respiratoryRate.trim(), spo2: vitalsForm.spo2.trim(), temperature: vitalsForm.temperature.trim(), tempUnit: vitalsForm.tempUnit };
       await api(`/api/v1/patients/${uid}/vitals`, { method: 'POST', body: payload });
       setHasLoggedVitals(true);
+      setLatestVitals({ ...payload, recordedAt: new Date().toISOString() });
       setShowVitalsModal(false);
       setVitalsForm({ ...EMPTY_VITALS });
       Alert.alert('Saved', 'Your vitals have been recorded and shared with your doctor.');
@@ -401,6 +508,9 @@ const MedicalHomeScreen = ({ navigation }) => {
         </View>
       </View>
       <LocationSummaryCardMobile profile={locationProfile} onEdit={() => navigation.navigate('MedicalSettings')} />
+      {/* Conditions at that same saved location — it re-reads whenever the
+          coordinates change, so updating the location updates the weather. */}
+      <WeatherCardMobile profile={locationProfile} />
 
       {/* Find Doctor CTA Banner */}
       {!primaryDoctor && !newBookingDoctor && (
@@ -417,6 +527,36 @@ const MedicalHomeScreen = ({ navigation }) => {
             <Text style={styles.fdbSub}>Tap to search our network of licensed physicians →</Text>
           </View>
         </TouchableOpacity>
+      )}
+
+      {/* Daily check-in history. Mobile could log a check-in but never showed one
+          back, so a patient had no way to see what they had recorded — the web
+          dashboard has charted these all along. */}
+      {feelingHistory.length > 0 && (
+        <View style={styles.checkInCard}>
+          <View style={styles.checkInHeader}>
+            <Ionicons name="happy-outline" size={18} color="#2563eb" />
+            <Text style={styles.checkInTitle}>Daily Check-Ins</Text>
+            <TouchableOpacity onPress={openDailyCheckIn} activeOpacity={0.8}>
+              <Text style={styles.checkInAction}>Log today</Text>
+            </TouchableOpacity>
+          </View>
+          {feelingHistory.map((f, i) => (
+            <View key={f.id || i} style={[styles.checkInRow, i === feelingHistory.length - 1 && { borderBottomWidth: 0 }]}>
+              <View style={[styles.checkInMoodChip, { backgroundColor: MOOD_TINT[f.mood] || '#e2e8f0' }]}>
+                <Text style={styles.checkInMoodText}>{f.mood || '—'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.checkInMeta}>
+                  Pain {f.painLevel != null ? f.painLevel : '—'}/10
+                  {Array.isArray(f.symptoms) && f.symptoms.length ? ` \u00b7 ${f.symptoms.join(', ')}` : ''}
+                </Text>
+                {f.notes ? <Text style={styles.checkInNotes} numberOfLines={1}>{f.notes}</Text> : null}
+              </View>
+              <Text style={styles.checkInDate}>{formatDate(f.createdAt)}</Text>
+            </View>
+          ))}
+        </View>
       )}
 
       {/* Vitals row — big button (first time only) + always-visible "+" quick log button */}
@@ -437,8 +577,18 @@ const MedicalHomeScreen = ({ navigation }) => {
             <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 13, fontWeight: '700', color: '#15803d' }}>Vitals logged</Text>
-              <Text style={{ fontSize: 11, color: '#86efac', marginTop: 1 }}>Tap + to update your readings</Text>
+              <Text style={{ fontSize: 11, color: '#4d9c68', marginTop: 1 }} numberOfLines={1}>
+                {summariseVitals(latestVitals) || 'Tap view to see your readings'}
+              </Text>
             </View>
+            {/* View reads the most recent entry back; Edit opens it prefilled so
+                saving updates it rather than starting from blank. */}
+            <TouchableOpacity style={styles.vitalsMiniBtn} onPress={() => openVitals('view')} activeOpacity={0.8}>
+              <Text style={styles.vitalsMiniBtnText}>View</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.vitalsMiniBtn, styles.vitalsMiniBtnSolid]} onPress={() => openVitals('edit')} activeOpacity={0.8}>
+              <Text style={[styles.vitalsMiniBtnText, { color: '#fff' }]}>Edit</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -933,7 +1083,7 @@ const MedicalHomeScreen = ({ navigation }) => {
     </Modal>
 
     {/* Daily Feeling Modal */}
-    <Modal visible={showFeelingModal} transparent animationType="slide" onRequestClose={() => setShowFeelingModal(false)}>
+    <Modal visible={showFeelingModal} transparent animationType="slide" onRequestClose={dismissFeelingModal}>
       <KeyboardAvoidingView
         style={styles.modalOverlay}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -944,7 +1094,7 @@ const MedicalHomeScreen = ({ navigation }) => {
           <View style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
             <Ionicons name="happy-outline" size={20} color={MedicalColors.primary} />
             <Text style={styles.modalTitle}>Daily Check-In</Text>
-            <TouchableOpacity onPress={() => setShowFeelingModal(false)} style={{ marginLeft: 'auto' }}>
+            <TouchableOpacity onPress={dismissFeelingModal} style={{ marginLeft: 'auto' }}>
               <Ionicons name="close" size={22} color="#64748b" />
             </TouchableOpacity>
           </View>
@@ -996,7 +1146,7 @@ const MedicalHomeScreen = ({ navigation }) => {
 
           {/* Fixed action buttons */}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-            <TouchableOpacity style={[styles.modalSkipBtn]} onPress={() => setShowFeelingModal(false)}>
+            <TouchableOpacity style={[styles.modalSkipBtn]} onPress={dismissFeelingModal}>
               <Text style={styles.modalSkipText}>Skip for Now</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1512,6 +1662,32 @@ const styles = StyleSheet.create({
   },
   vitalsBtnTitle: { fontSize: 14, fontWeight: '700', color: '#fff' },
   vitalsBtnSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+
+  /* View / Edit on the "vitals logged" card */
+  vitalsMiniBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    borderWidth: 1.5, borderColor: '#16a34a', backgroundColor: '#fff',
+  },
+  vitalsMiniBtnSolid: { backgroundColor: '#16a34a' },
+  vitalsMiniBtnText: { fontSize: 11, fontWeight: '700', color: '#16a34a' },
+
+  /* Daily check-in history card */
+  checkInCard: {
+    backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0',
+    marginHorizontal: 16, marginBottom: 12, paddingHorizontal: 14, paddingVertical: 12,
+  },
+  checkInHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  checkInTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  checkInAction: { fontSize: 12, fontWeight: '700', color: '#2563eb' },
+  checkInRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+  },
+  checkInMoodChip: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, minWidth: 54, alignItems: 'center' },
+  checkInMoodText: { fontSize: 11, fontWeight: '800', color: '#0f172a' },
+  checkInMeta: { fontSize: 12, color: '#475569' },
+  checkInNotes: { fontSize: 11, color: '#94a3b8', marginTop: 1 },
+  checkInDate: { fontSize: 11, color: '#94a3b8' },
   intakeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 12,

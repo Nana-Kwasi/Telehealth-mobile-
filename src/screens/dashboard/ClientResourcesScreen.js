@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
-import { getNoteTitle, getNotePreview } from '../../utils/noteDisplayUtils';
+import { getNoteTitle, getNotePreview, getNoteSections } from '../../utils/noteDisplayUtils';
 import { hydrateResource } from '../../services/therapistResourcesService';
 import ResourceMedia from '../../components/common/ResourceMedia';
 import { downloadNotePdf, downloadResourcePdf } from '../../utils/brandedPdf';
@@ -80,13 +80,16 @@ const ClientResourcesScreen = ({ navigation }) => {
         // Only books were ever fetched, so nothing a therapist created on the
         // Resources screen reached the client at all. Both are scoped by clientId,
         // which returns shared-with-all plus assigned-to-me.
-        const [libraryData, bookData] = await Promise.all([
+        const [libraryData] = await Promise.all([
           api(`/api/v1/resources?clientId=${assignedClientId}`).catch(() => []),
-          api(`/api/v1/therapy-books?clientId=${assignedClientId}`).catch(() => []),
         ]);
         const library = (Array.isArray(libraryData) ? libraryData : []).map(hydrateResource);
-        const books = (Array.isArray(bookData) ? bookData : []).map(b => ({ ...b, type: 'resource' }));
-        setResources([...library.map(r => ({ ...r, type: 'resource' })), ...books]);
+        // Books are NOT added here. They are loaded below as notes
+        // (type:'note', noteType:'therapyBook'), and the Resources tab matches
+        // type:'resource' while Notes matches type:'note' — so adding them in both
+        // places listed every therapy book twice, once under each tab. The web
+        // client shelf keeps books under notes only; this now matches.
+        setResources(library.map(r => ({ ...r, type: 'resource' })));
       } catch { console.log('Resources query failed'); }
 
       try {
@@ -125,7 +128,15 @@ const ClientResourcesScreen = ({ navigation }) => {
       try {
         const notesData = await api(`/api/v1/clinical-notes?clientId=${assignedClientId}&visibleOnly=true`);
         const booksData = await api(`/api/v1/therapy-books?clientId=${assignedClientId}`);
-        const notes = (Array.isArray(notesData) ? notesData : []).map(n => ({ ...n, type: 'note', noteType: 'clinical' }));
+        // Keep the note's own template type ('soap' / 'progress' / 'risk' / …).
+        // Overwriting it with the literal 'clinical' meant NOTE_TYPE_LABELS never
+        // matched, so every note — whatever template the therapist chose — was
+        // titled "Clinical note" in the list, the viewer and the PDF.
+        const notes = (Array.isArray(notesData) ? notesData : []).map(n => ({
+          ...n,
+          type: 'note',
+          noteType: n.noteType || 'note',
+        }));
         const books = (Array.isArray(booksData) ? booksData : []).map(b => ({ ...b, type: 'note', noteType: 'therapyBook' }));
         setNotes([...notes, ...books]);
       } catch { console.log('Notes query failed'); }
@@ -526,7 +537,77 @@ const ClientResourcesScreen = ({ navigation }) => {
                   {/* Choice fields get tappable options; everything else a text box.
                       Rendering a text box for a dropdown asked the client to guess
                       the therapist's options. */}
-                  {['select', 'radio', 'multiple-choice'].includes(field.type)
+                  {/* Every builder type gets its matching control. `date`,
+                      `checkbox` and `rating` used to fall through to a plain text
+                      box, so a client had to type "yes" for a checkbox and guess a
+                      number for a rating. */}
+                  {/* A checkbox field carries the therapist's own list of boxes;
+                      worksheets authored before that have none and stay the single
+                      Yes/No tick they were written as. */}
+                  {field.type === 'checkbox'
+                    && Array.isArray(field.options)
+                    && field.options.filter(Boolean).length > 0 ? (
+                    <View style={styles.checkboxGroup}>
+                      {field.options.filter(Boolean).map((opt) => {
+                        const set = String(worksheetResponses[index] || '').split('|').filter(Boolean);
+                        const picked = set.includes(opt);
+                        return (
+                          <TouchableOpacity
+                            key={opt}
+                            style={styles.checkboxRow}
+                            activeOpacity={0.7}
+                            onPress={() => setWorksheetResponses((prev) => {
+                              const cur = String(prev[index] || '').split('|').filter(Boolean);
+                              const next = cur.includes(opt)
+                                ? cur.filter((v) => v !== opt)
+                                : [...cur, opt];
+                              return { ...prev, [index]: next.join('|') };
+                            })}
+                          >
+                            <Ionicons
+                              name={picked ? 'checkbox' : 'square-outline'}
+                              size={22}
+                              color={picked ? Colors.primary : '#94a3b8'}
+                            />
+                            <Text style={styles.checkboxLabel}>{opt}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : field.type === 'checkbox' ? (
+                    <TouchableOpacity
+                      style={styles.checkboxRow}
+                      activeOpacity={0.7}
+                      onPress={() => setWorksheetResponses((prev) => ({
+                        ...prev,
+                        [index]: String(prev[index]) === 'true' ? 'false' : 'true',
+                      }))}
+                    >
+                      <Ionicons
+                        name={String(worksheetResponses[index]) === 'true' ? 'checkbox' : 'square-outline'}
+                        size={22}
+                        color={String(worksheetResponses[index]) === 'true' ? Colors.primary : '#94a3b8'}
+                      />
+                      <Text style={styles.checkboxLabel}>
+                        {String(worksheetResponses[index]) === 'true' ? 'Yes' : 'No'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : field.type === 'rating' ? (
+                    <View style={styles.ratingWrap}>
+                      {Array.from({ length: Number(field.max) || 10 }, (_, i) => String(i + 1)).map((n) => {
+                        const picked = String(worksheetResponses[index]) === n;
+                        return (
+                          <TouchableOpacity
+                            key={n}
+                            style={[styles.ratingDot, picked && styles.ratingDotActive]}
+                            onPress={() => setWorksheetResponses((prev) => ({ ...prev, [index]: n }))}
+                          >
+                            <Text style={[styles.ratingDotText, picked && styles.ratingDotTextActive]}>{n}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : ['select', 'radio', 'multiple-choice'].includes(field.type)
                     && Array.isArray(field.options) && field.options.length > 0 ? (
                     <View style={styles.optionWrap}>
                       {field.options.filter(Boolean).map((opt) => {
@@ -558,7 +639,11 @@ const ClientResourcesScreen = ({ navigation }) => {
                   ) : (
                     <TextInput
                       style={styles.fieldInput}
-                      placeholder={field.type === 'number' ? 'Enter a number…' : 'Your answer...'}
+                      placeholder={
+                        field.type === 'number' ? 'Enter a number…'
+                          : field.type === 'date' ? 'YYYY-MM-DD'
+                            : 'Your answer...'
+                      }
                       placeholderTextColor={Colors.textSecondary}
                       value={worksheetResponses[index] || ''}
                       keyboardType={field.type === 'number' ? 'numeric' : 'default'}
@@ -662,14 +747,37 @@ const ClientResourcesScreen = ({ navigation }) => {
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {selectedNote?.bookTitle || selectedNote?.title || 'Note'}
+                {/* Name the note by the template the therapist chose ("Progress
+                    note", "SOAP note", …) rather than a bare "Note". Books keep
+                    their own title. */}
+                {selectedNote?.noteType === 'therapyBook'
+                  ? (selectedNote?.bookTitle || selectedNote?.title || 'Therapy book')
+                  : getNoteTitle(selectedNote || {})}
               </Text>
               <TouchableOpacity onPress={() => setShowNoteModal(false)}>
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalContent}>
-              {selectedNote?.description && (
+              {/* Render exactly what the PDF renders. This modal used to show a
+                  few hand-picked keys (description / noteContent / content), so a
+                  note whose fields live in structuredData displayed a single line
+                  while the downloaded copy listed every field properly. */}
+              {(() => {
+                const secs = getNoteSections(selectedNote || {});
+                if (!secs.length) return null;
+                return (
+                  <View style={{ gap: 14 }}>
+                    {secs.map((sec) => (
+                      <View key={sec.key}>
+                        <Text style={styles.noteFieldLabel}>{sec.label}</Text>
+                        <Text style={styles.noteFieldValue}>{sec.value}</Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+              {false && selectedNote?.description && (
                 <Text style={styles.noteDescription}>
                   {selectedNote.description}
                 </Text>
@@ -684,11 +792,69 @@ const ClientResourcesScreen = ({ navigation }) => {
                   {selectedNote.chapters}
                 </Text>
               )}
-              {selectedNote?.content && (
-                <Text style={styles.noteContent}>
-                  {selectedNote.content}
-                </Text>
-              )}
+              {/* `content` is the readable body. A book's author / audience /
+                  chapters etc. live in metadataJson and are rendered as labelled
+                  fields below — dumping the JSON here showed readers a wall of
+                  braces and quotes instead of a book. Any legacy row whose content
+                  is still a JSON object is routed the same way rather than printed
+                  raw. */}
+              {(() => {
+                const raw = selectedNote?.content;
+                const looksJson = typeof raw === 'string' && raw.trim().startsWith('{') && raw.trim().endsWith('}');
+                if (raw && !looksJson) {
+                  return <Text style={styles.noteContent}>{raw}</Text>;
+                }
+                return null;
+              })()}
+              {(() => {
+                const source = selectedNote?.metadataJson
+                  || (typeof selectedNote?.content === 'string'
+                      && selectedNote.content.trim().startsWith('{') ? selectedNote.content : null);
+                if (!source) return null;
+                let meta = null;
+                try { meta = JSON.parse(source); } catch { return null; }
+                if (!meta || typeof meta !== 'object') return null;
+                const LABELS = {
+                  author: 'Author', targetAudience: 'Audience', difficultyLevel: 'Level',
+                  estimatedReadingTime: 'Reading time', tableOfContents: 'Contents',
+                  chapters: 'Chapters', keyTopics: 'Key topics', exercises: 'Exercises',
+                  resources: 'Resources', bibliography: 'Bibliography',
+                };
+                const rows = Object.entries(LABELS)
+                  .filter(([k]) => meta[k] !== undefined && meta[k] !== null && String(meta[k]).trim() !== '')
+                  .map(([k, label]) => (
+                    <View key={k} style={styles.bookMetaRow}>
+                      <Text style={styles.bookMetaLabel}>{label}</Text>
+                      <Text style={styles.bookMetaValue}>{String(meta[k])}</Text>
+                    </View>
+                  ));
+                return rows.length ? <View style={styles.bookMetaWrap}>{rows}</View> : null;
+              })()}
+              {/* Some older notes were saved with the whole note document in
+                  `content`, leaving nothing readable once the raw JSON is filtered
+                  out. Say so instead of showing an empty sheet. */}
+              {(() => {
+                const hasDescription = !!selectedNote?.description;
+                const hasNoteContent = !!selectedNote?.noteContent;
+                const raw = selectedNote?.content;
+                const readable = typeof raw === 'string'
+                  && raw.trim() !== ''
+                  && !(raw.trim().startsWith('{') && raw.trim().endsWith('}'));
+                const hasMeta = (() => {
+                  const src = selectedNote?.metadataJson;
+                  if (!src) return false;
+                  try {
+                    const m = JSON.parse(src);
+                    return m && typeof m === 'object' && Object.keys(m).length > 0;
+                  } catch { return false; }
+                })();
+                if (hasDescription || hasNoteContent || readable || hasMeta) return null;
+                return (
+                  <Text style={styles.noteEmptyHint}>
+                    This note has no readable content. Ask your therapist to re-save it.
+                  </Text>
+                );
+              })()}
             </ScrollView>
           </View>
         </View>
@@ -935,6 +1101,17 @@ const styles = StyleSheet.create({
     borderColor: '#bbf7d0',
   },
   completedNoteText: { flex: 1, fontSize: 13, color: '#15803d', fontWeight: '600', lineHeight: 18 },
+  checkboxGroup: { gap: 2 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  checkboxLabel: { fontSize: 15, color: '#0f172a', fontWeight: '600' },
+  ratingWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  ratingDot: {
+    width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: '#e2e8f0',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
+  },
+  ratingDotActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  ratingDotText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  ratingDotTextActive: { color: '#fff' },
   optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   optionChip: {
     paddingVertical: 9,
@@ -987,6 +1164,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 24,
   },
+  noteFieldLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
+  noteFieldValue: { fontSize: 15, color: '#0f172a', lineHeight: 22 },
+  noteEmptyHint: { fontSize: 13, color: '#94a3b8', lineHeight: 19, fontStyle: 'italic' },
+  bookMetaWrap: { marginTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12, gap: 10 },
+  bookMetaRow: { gap: 2 },
+  bookMetaLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 },
+  bookMetaValue: { fontSize: 14, color: '#0f172a', lineHeight: 20 },
   noteContent: {
     fontSize: 16,
     color: Colors.text,

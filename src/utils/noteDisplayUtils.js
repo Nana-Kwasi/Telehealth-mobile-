@@ -84,6 +84,10 @@ const CONTENT_FIELD_ORDER = [
 ];
 
 const SKIP_KEYS = new Set([
+  // Raw serialised blobs — their contents are expanded into individual fields by
+  // withStructuredFields, so printing the string as well is duplicate noise.
+  'metadataJson',
+  'structuredData',
   'id',
   'clientId',
   'clientName',
@@ -134,6 +138,11 @@ function fieldValue(val) {
 export function getNoteTitle(note, kind = 'clinical') {
   if (!note) return 'Note';
   if (kind === 'therapy') return 'Therapy note';
+  // A therapy book is identified by its own title; every book otherwise rendered
+  // under the same generic "Clinical note" heading.
+  if (note.noteType === 'therapyBook') {
+    return note.title || note.bookTitle || 'Therapy book';
+  }
   return NOTE_TYPE_LABELS[note.noteType] || 'Clinical note';
 }
 
@@ -160,7 +169,12 @@ function withStructuredFields(note) {
   // instead of its chapters.
   const structured = parseMaybeJson(note.structuredData);
   const bookContent = note.noteType === 'therapyBook' ? parseMaybeJson(note.content) : null;
-  const merged = { ...(structured || {}), ...(bookContent || {}) };
+  // A book's author/audience/chapters/… now live in metadataJson (they used to be
+  // crammed into `content`). Expand it the same way, otherwise the catch-all pass
+  // in getNoteSections prints the raw string as a "METADATA JSON" field — which is
+  // exactly what turned up in downloaded PDFs.
+  const bookMeta = parseMaybeJson(note.metadataJson);
+  const merged = { ...(structured || {}), ...(bookContent || {}), ...(bookMeta || {}) };
   if (Object.keys(merged).length === 0) return note;
   // The note's own fields win — an explicit edit beats the stored blob.
   return { ...merged, ...note, __hasStructured: true };
@@ -181,6 +195,8 @@ export function getNoteSections(rawNote) {
     if (key === 'content' && note.__hasStructured) { seen.add(key); return; }
     const val = fieldValue(note[key]);
     if (!val) return;
+    const t = String(val).trim();
+    if (t.startsWith('{') && t.endsWith('}')) { seen.add(key); return; }
     sections.push({ key, label: formatFieldLabel(key), value: val });
     seen.add(key);
   });
@@ -189,6 +205,11 @@ export function getNoteSections(rawNote) {
     const val = fieldValue(raw);
     if (!val) return;
     if (key.endsWith('At') || key.endsWith('Id') || key.startsWith('_')) return;
+    // Never print a raw JSON object as a field. Some existing rows had the whole
+    // note document written into `content` / `structuredData`, which surfaced as
+    // {"therapistId":"…","therapistName":"…"} in the card preview and the viewer.
+    const trimmed = String(val).trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) return;
     sections.push({ key, label: formatFieldLabel(key), value: val });
   });
   return sections;

@@ -173,7 +173,12 @@ export async function createTherapistNote(form, profile) {
         therapistId: profile?.id || profile?.uid,
         title: form.bookTitle || 'Untitled Book',
         description: form.description || '',
-        content: JSON.stringify({
+        // The book's readable body. The rich fields below used to be serialised
+        // into `content`, and the client's note viewer renders content verbatim —
+        // so readers were shown a wall of raw JSON instead of the book. They now
+        // travel in metadataJson and are rendered as labelled fields.
+        content: form.content || form.bookContent || null,
+        metadataJson: JSON.stringify({
           author: form.author,
           targetAudience: form.targetAudience,
           difficultyLevel: form.difficultyLevel,

@@ -35,6 +35,9 @@ import {
   getWorksheetFieldTypeLabel,
   worksheetFieldTypeNeedsOptions,
   normalizeWorksheetFieldType,
+  minWorksheetOptions,
+  DEFAULT_RATING_MAX,
+  RATING_MAX_CHOICES,
   emptyResourceForm,
   emptyWorksheetForm,
   subscribeTherapistResources,
@@ -1210,7 +1213,13 @@ export default function TherapistResourcesScreen({ profile }) {
 
                   {worksheetFieldTypeNeedsOptions(field.type) ? (
                     <View style={styles.optionsBox}>
-                      <Text style={styles.fieldLabel}>Options</Text>
+                      <Text style={styles.fieldLabel}>
+                        {field.type === 'checkbox'
+                          ? 'Tick boxes the client will see'
+                          : field.type === 'multiple-choice'
+                            ? 'Options the client can pick several of'
+                            : 'Options'}
+                      </Text>
                       {(field.options || ['']).map((option, optIndex) => (
                         <View key={optIndex} style={styles.optionRow}>
                           <TextInput
@@ -1222,8 +1231,8 @@ export default function TherapistResourcesScreen({ profile }) {
                           />
                           <TouchableOpacity
                             onPress={() => removeFieldOption(index, optIndex)}
-                            disabled={(field.options || []).length <= 1}
-                            style={{ opacity: (field.options || []).length <= 1 ? 0.4 : 1 }}
+                            disabled={(field.options || []).length <= minWorksheetOptions(field.type)}
+                            style={{ opacity: (field.options || []).length <= minWorksheetOptions(field.type) ? 0.4 : 1 }}
                           >
                             <Ionicons name="close-circle" size={24} color={TherapistColors.error} />
                           </TouchableOpacity>
@@ -1237,17 +1246,36 @@ export default function TherapistResourcesScreen({ profile }) {
 
                   {field.type === 'rating' ? (
                     <View style={styles.ratingPreview}>
-                      <Text style={styles.fieldLabel}>Rating scale</Text>
+                      <Text style={styles.fieldLabel}>Highest score on the scale</Text>
+                      <View style={styles.scaleChoiceRow}>
+                        {RATING_MAX_CHOICES.map((n) => {
+                          const active = (Number(field.max) || DEFAULT_RATING_MAX) === n;
+                          return (
+                            <TouchableOpacity
+                              key={n}
+                              style={[styles.scaleChoice, active && styles.scaleChoiceActive]}
+                              onPress={() => updateWorksheetField(index, { max: n })}
+                            >
+                              <Text style={[styles.scaleChoiceText, active && styles.scaleChoiceTextActive]}>
+                                1–{n}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
                       <View style={styles.ratingRow}>
                         <Text style={styles.ratingEnd}>1</Text>
                         <View style={styles.ratingDots}>
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                          {Array.from(
+                            { length: Number(field.max) || DEFAULT_RATING_MAX },
+                            (_, i) => i + 1,
+                          ).map((num) => (
                             <View key={num} style={styles.ratingDot}>
                               <Text style={styles.ratingDotText}>{num}</Text>
                             </View>
                           ))}
                         </View>
-                        <Text style={styles.ratingEnd}>10</Text>
+                        <Text style={styles.ratingEnd}>{Number(field.max) || DEFAULT_RATING_MAX}</Text>
                       </View>
                     </View>
                   ) : null}
@@ -1615,6 +1643,18 @@ const styles = StyleSheet.create({
   addOptionBtn: { paddingVertical: 8 },
   addOptionText: { fontSize: 14, fontWeight: '600', color: TherapistColors.primary },
   ratingPreview: { marginTop: 8 },
+  scaleChoiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6, marginBottom: 10 },
+  scaleChoice: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#fff',
+  },
+  scaleChoiceActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
+  scaleChoiceText: { fontSize: 13, fontWeight: '600', color: TherapistColors.textSecondary },
+  scaleChoiceTextActive: { color: '#fff' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ratingEnd: { fontSize: 12, fontWeight: '600', color: TherapistColors.textSecondary },
   ratingDots: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'center' },

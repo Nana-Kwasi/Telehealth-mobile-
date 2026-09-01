@@ -96,23 +96,41 @@ export const WORKSHEET_CATEGORIES = {
 
 export const WORKSHEET_FIELD_TYPES = [
   { id: 'text', label: 'Text' }, { id: 'textarea', label: 'Long Text' }, { id: 'number', label: 'Number' },
-  { id: 'date', label: 'Date' }, { id: 'select', label: 'Dropdown' }, { id: 'checkbox', label: 'Checkbox' },
-  { id: 'radio', label: 'Radio Buttons' }, { id: 'rating', label: 'Rating (1-10)' }, { id: 'multiple-choice', label: 'Multiple Choice' },
+  { id: 'date', label: 'Date' }, { id: 'select', label: 'Dropdown' }, { id: 'checkbox', label: 'Checkboxes' },
+  { id: 'radio', label: 'Radio Buttons' }, { id: 'rating', label: 'Rating Scale' }, { id: 'multiple-choice', label: 'Multiple Choice' },
 ];
 
 export function getWorksheetFieldTypeLabel(type) {
   return WORKSHEET_FIELD_TYPES.find((t) => t.id === type)?.label || type || 'Text';
 }
 
+// Checkbox counts as a choice type: a tick box with no wording on it is nothing
+// the client can answer, so the therapist has to be able to type the boxes.
 export function worksheetFieldTypeNeedsOptions(type) {
-  return type === 'select' || type === 'radio' || type === 'multiple-choice';
+  return type === 'select' || type === 'radio' || type === 'multiple-choice' || type === 'checkbox';
 }
+
+// A lone tick ("I agree") is a legitimate checkbox; the other choice types need
+// two entries before they are a choice at all.
+export function minWorksheetOptions(type) {
+  return type === 'checkbox' ? 1 : 2;
+}
+
+export const DEFAULT_RATING_MAX = 10;
+export const RATING_MAX_CHOICES = [3, 4, 5, 7, 10];
 
 export function normalizeWorksheetFieldType(field, nextType) {
   const next = { ...field, type: nextType };
   if (worksheetFieldTypeNeedsOptions(nextType)) {
-    next.options = field.options?.length ? [...field.options] : [''];
+    next.options = field.options?.length
+      ? [...field.options]
+      : Array(minWorksheetOptions(nextType)).fill('');
+  } else {
+    next.options = [];
   }
+  // The scale belongs to a rating and nothing else.
+  if (nextType === 'rating') next.max = Number(field.max) || DEFAULT_RATING_MAX;
+  else delete next.max;
   return next;
 }
 

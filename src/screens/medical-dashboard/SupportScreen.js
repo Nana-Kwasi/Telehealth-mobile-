@@ -22,6 +22,37 @@ const SupportScreen = () => {
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [emailing, setEmailing] = useState(false);
+
+  /**
+   * Send this straight to the administrators' inboxes rather than only filing a
+   * ticket. Same content either way — the difference is that a human is emailed
+   * now instead of the message waiting to be noticed in a queue.
+   */
+  const handleEmailAdmin = async () => {
+    if (!selectedType) { Alert.alert('Required', 'Please select an issue type.'); return; }
+    if (!description.trim()) { Alert.alert('Required', 'Please describe your issue.'); return; }
+    setEmailing(true);
+    try {
+      // The endpoint reads identity from the auth token, so no ids are sent.
+      await api('/api/v1/support/contact-admin', {
+        method: 'POST',
+        body: {
+          subject: subject.trim() || ISSUE_TYPES.find(t => t.key === selectedType)?.label,
+          message: description.trim(),
+          category: selectedType,
+          priority: 'normal',
+        },
+      });
+      setSubmitted(true);
+      Alert.alert('Sent', 'Your message has been emailed to our administrators. You will get a copy by email.');
+    } catch (err) {
+      console.error('Error emailing admin:', err);
+      Alert.alert('Error', 'Could not send the email. Please try again.');
+    } finally {
+      setEmailing(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!selectedType) { Alert.alert('Required', 'Please select an issue type.'); return; }
@@ -144,6 +175,27 @@ const SupportScreen = () => {
         )}
       </TouchableOpacity>
 
+      {/* Second route to the same people: files the ticket AND emails the
+          administrators now, for anyone who would rather reach a person than
+          wait on a queue. */}
+      <TouchableOpacity
+        style={[styles.emailAdminBtn, (emailing || !selectedType) && { opacity: 0.6 }]}
+        onPress={handleEmailAdmin}
+        disabled={emailing || !selectedType}
+      >
+        {emailing ? (
+          <ActivityIndicator color="#2563eb" size="small" />
+        ) : (
+          <>
+            <Ionicons name="mail-outline" size={18} color="#2563eb" />
+            <Text style={styles.emailAdminBtnText}>Email an Administrator</Text>
+          </>
+        )}
+      </TouchableOpacity>
+      <Text style={styles.emailAdminHint}>
+        Sends your message to our admin team by email. You will receive a copy.
+      </Text>
+
       <View style={{ height: 32 }} />
     </ScrollView>
   );
@@ -194,6 +246,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: MedicalColors.primary, borderRadius: 12,
     padding: 16, marginTop: 8,
+  },
+  emailAdminBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 10, marginHorizontal: 16, paddingVertical: 14,
+    borderRadius: 12, borderWidth: 1.5, borderColor: '#bfdbfe', backgroundColor: '#eff6ff',
+  },
+  emailAdminBtnText: { fontSize: 15, fontWeight: '700', color: '#2563eb' },
+  emailAdminHint: {
+    fontSize: 11, color: '#94a3b8', textAlign: 'center',
+    marginTop: 6, marginHorizontal: 24, lineHeight: 16,
   },
   submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

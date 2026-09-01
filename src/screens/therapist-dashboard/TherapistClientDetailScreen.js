@@ -289,7 +289,9 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
     try {
       const newGoal = await api('/api/v1/therapy-management/goals', {
         method: 'POST',
-        body: { ...goalForm, clientId, therapistId: currentUserId },
+        // The API requires `goalTitle`; this form (like the web one) collects it as
+        // `title`, so every submission was rejected until it was mapped.
+        body: { ...goalForm, goalTitle: goalForm.title.trim(), clientId, therapistId: currentUserId },
       });
       setGoals((prev) => [newGoal || { id: Date.now().toString(), ...goalForm }, ...prev]);
       setGoalForm({ title: '', description: '', targetDate: '', priority: 'medium', status: 'active' });
@@ -334,7 +336,10 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
   const sc = statusColor(client.status);
   const moodFromNotes = therapyNotes.map((n) => Number(n.mood)).filter((m) => !Number.isNaN(m) && m > 0);
   const moodValues = [
-    ...moodEntries.map((e) => Number(e.mood || e.moodValue || e.value)).filter((m) => !Number.isNaN(m) && m > 0),
+    // Same trap as the cards: `mood` is the label, not the score.
+    ...moodEntries
+      .map((e) => Number(e.moodValue ?? e.moodScore ?? e.value ?? e.rating))
+      .filter((m) => !Number.isNaN(m) && m > 0),
     ...moodFromNotes,
   ];
   const avgMood = moodValues.length ? (moodValues.reduce((a, b) => a + b, 0) / moodValues.length).toFixed(1) : null;
@@ -534,9 +539,17 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
               <Text style={styles.emptyHint}>No mood entries found.</Text>
             ) : (
               moodEntries.map((entry) => {
-                const moodVal = Number(entry.mood || entry.moodValue || entry.value) || 0;
+                // `mood` holds the LABEL ("Sad", "😔"), not a number — and it is
+                // truthy, so it won this || chain and Number("Sad") gave NaN → 0.
+                // Every card therefore read "Unknown" and "0/10" even though the
+                // entry had a real score. Take the numeric field first.
+                const moodVal = Number(
+                  entry.moodValue ?? entry.moodScore ?? entry.value ?? entry.rating,
+                ) || 0;
                 const emoji = MOOD_EMOJI[moodVal] || '😐';
-                const label = MOOD_LABEL[moodVal] || entry.label || 'Unknown';
+                const rawMood = typeof entry.mood === 'string' ? entry.mood.trim() : '';
+                const wordMood = /[a-z]/i.test(rawMood) ? rawMood : '';
+                const label = wordMood || MOOD_LABEL[moodVal] || entry.label || 'Unknown';
                 const pct = Math.round((moodVal / 10) * 100);
                 const barColor = moodVal >= 7 ? '#10b981' : moodVal >= 5 ? '#f59e0b' : '#ef4444';
                 return (
@@ -579,6 +592,32 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
               <View style={styles.goalForm}>
                 <TextInput style={styles.input} placeholder="Goal title *" value={goalForm.title} onChangeText={(t) => setGoalForm((p) => ({ ...p, title: t }))} />
                 <TextInput style={[styles.input, styles.textArea]} placeholder="Description" multiline value={goalForm.description} onChangeText={(t) => setGoalForm((p) => ({ ...p, description: t }))} />
+                {/* Target date and priority bring this form to parity with the web
+                    therapist dashboard, which collected both while mobile did not. */}
+                <TextInput
+                  style={styles.input}
+                  placeholder="Target date (YYYY-MM-DD)"
+                  value={goalForm.targetDate}
+                  onChangeText={(t) => setGoalForm((p) => ({ ...p, targetDate: t }))}
+                  autoCapitalize="none"
+                />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {['high', 'medium', 'low'].map((level) => {
+                    const active = (goalForm.priority || 'medium') === level;
+                    return (
+                      <TouchableOpacity
+                        key={level}
+                        onPress={() => setGoalForm((p) => ({ ...p, priority: level }))}
+                        style={[styles.priorityChip, active && styles.priorityChipActive]}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.priorityChipText, active && styles.priorityChipTextActive]}>
+                          {level.charAt(0).toUpperCase() + level.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
                 <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveGoal} disabled={savingGoal}>
                   <Text style={styles.primaryBtnText}>{savingGoal ? 'Saving…' : 'Save goal'}</Text>
                 </TouchableOpacity>
@@ -736,6 +775,13 @@ const styles = StyleSheet.create({
   moodJournal: { fontSize: 13, color: '#475569', marginTop: 8, lineHeight: 20 },
   goalSub: { fontSize: 12, color: TherapistColors.textLight },
   goalForm: { marginBottom: 12, gap: 8 },
+  priorityChip: {
+    flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1,
+    borderColor: '#e2e8f0', backgroundColor: '#fff', alignItems: 'center',
+  },
+  priorityChipActive: { borderColor: TherapistColors.primary, backgroundColor: '#eef2ff' },
+  priorityChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  priorityChipTextActive: { color: TherapistColors.primary, fontWeight: '700' },
   input: { backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, fontSize: 14, color: TherapistColors.text },
   textArea: { minHeight: 90, textAlignVertical: 'top' },
   goalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 12, backgroundColor: '#f8fafc', borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: '#e2e8f0' },

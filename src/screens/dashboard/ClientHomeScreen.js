@@ -18,8 +18,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchClientData, getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
 import { api } from '../../services/apiClient';
 import { Colors } from '../../constants/colors';
+import { buildProgressMetrics, overallProgressScore } from '../../utils/clientDashboardMetrics';
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import WeatherCardMobile from '../../components/WeatherCardMobile';
 import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
 
 const { width } = Dimensions.get('window');
@@ -86,10 +88,13 @@ function calculateTherapyProgress(therapyNotes) {
 }
 
 const CRISIS_HOTLINES = [
-  { name: '988 Suicide & Crisis Lifeline', desc: 'Call or text 988 — 24/7', tel: '988', icon: 'call-outline' },
-  { name: 'Crisis Text Line', desc: 'Text HOME to 741741', sms: '741741', body: 'HOME', icon: 'chatbubble-outline' },
-  { name: 'Emergency Services', desc: 'Call 911 immediately', tel: '911', icon: 'warning-outline' },
-  { name: 'Trevor Project (LGBTQ+)', desc: '1-866-488-7386', tel: '18664887386', icon: 'heart-outline' },
+  // Ghana national crisis and emergency lines — the previous list was US-only
+  // (988 / 741741 / 911) and unreachable from Ghana.
+  { name: 'National Emergency — 112', desc: 'Police, ambulance & fire · 24/7 toll-free', tel: '112', icon: 'warning-outline' },
+  { name: 'Mental Health Authority Helpline', desc: '0509 405 480 · 24/7 crisis counselling', tel: '+233509405480', icon: 'call-outline' },
+  { name: 'Suicide Prevention (Ghana)', desc: '0244 846 701 · trained volunteers', tel: '+233244846701', icon: 'heart-outline' },
+  { name: 'National Ambulance — 193', desc: 'Ambulance dispatch, nationwide', tel: '193', icon: 'medkit-outline' },
+  { name: 'Accra Psychiatric Hospital', desc: '030 266 6987 · emergency psychiatric care', tel: '+233302666987', icon: 'business-outline' },
 ];
 
 const MOOD_OPTIONS = [
@@ -109,6 +114,8 @@ const ClientHomeScreen = ({ navigation }) => {
   const [locationProfile, setLocationProfile] = useState(null);
   const [therapistData, setTherapistData] = useState(null);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
+  const [clientGoals, setClientGoals] = useState([]);
+  const [progressMetrics, setProgressMetrics] = useState([]);
   const [progressScore, setProgressScore] = useState(0);
   const [nextSession, setNextSession] = useState(null);
   const [scheduledDates, setScheduledDates] = useState(new Set());
@@ -134,6 +141,7 @@ const ClientHomeScreen = ({ navigation }) => {
 
   // Mood distribution (pie chart)
   const [moodDistribution, setMoodDistribution] = useState([]);
+  const [moodEntries, setMoodEntries] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,19 +215,32 @@ const ClientHomeScreen = ({ navigation }) => {
         console.error('Error fetching therapy notes:', e);
       }
 
-      const progressData = calculateTherapyProgress(notes);
-      let progressPct = progressData.overallProgress;
-      if (client?.status === 'discharged') progressPct = Math.min(100, progressPct);
-      else progressPct = Math.min(95, progressPct);
-      setProgressScore(progressPct);
-
       const allCallsData = await api(`/api/v1/scheduled-calls?clientId=${clientId}`).catch(() => []);
       const allCalls = Array.isArray(allCallsData) ? allCallsData : [];
       setAllScheduledCalls(allCalls);
       const completedCount = allCalls.filter(c => (c.status || '').toLowerCase() === 'completed').length;
       const upcomingCount = allCalls.filter(c => ['scheduled', 'pending', 'confirmed'].includes((c.status || '').toLowerCase())).length;
-      setSessionsCompleted(notes.length > 0 ? notes.length : completedCount);
+      // Sessions COMPLETED, not notes written. Counting notes made this tile read 1
+      // while the web dashboard read 0 for the same client — a therapist writing two
+      // notes about one session is not two sessions.
+      setSessionsCompleted(completedCount);
       setUpcomingCount(upcomingCount);
+
+      // Treatment goals — the client home screen showed none at all.
+      const goalsData = await api(`/api/v1/therapy-management/goals?clientId=${clientId}`).catch(() => []);
+      const goals = Array.isArray(goalsData) ? goalsData : [];
+      setClientGoals(goals);
+
+      // One shared metric model with the web dashboard, so the two cannot drift.
+      const moodRows = await api(`/api/v1/therapy-engagement/clients/${clientId}/moods`).catch(() => []);
+      const metrics = buildProgressMetrics({
+        moodEntries: Array.isArray(moodRows) ? moodRows : [],
+        notes,
+        goals,
+        sessions: allCalls,
+      });
+      setProgressMetrics(metrics);
+      setProgressScore(overallProgressScore(metrics));
 
       const datesSet = new Set();
       const now = new Date();
@@ -374,6 +395,9 @@ const ClientHomeScreen = ({ navigation }) => {
     try {
       const moodData = await api(`/api/v1/therapy-engagement/clients/${clientId}/moods`);
       const moodList = Array.isArray(moodData) ? moodData : [];
+      // Keep the raw rows too — the progress metrics need the 1-10 readings, not
+      // just the chart's per-label counts.
+      setMoodEntries(moodList);
       const counts = {};
       moodList.forEach(d => {
         const label = (d.notes || '').split(':')[0] || 'Unknown';
@@ -448,6 +472,9 @@ const ClientHomeScreen = ({ navigation }) => {
         profile={locationProfile || clientData}
         onEdit={() => navigation.navigate('Settings')}
       />
+      {/* Conditions at that same saved location — it follows the coordinates,
+          so updating the location updates the weather. */}
+      <WeatherCardMobile profile={locationProfile || clientData} />
 
       {clientData?.coupleId ? (
         <TouchableOpacity
@@ -611,12 +638,54 @@ const ClientHomeScreen = ({ navigation }) => {
       {/* Progress bar (same % as therapist dashboard) */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your progress</Text>
-        <View style={styles.progressBarWrap}>
-          <View style={[styles.progressBarTrack, { width: '100%' }]}>
-            <View style={[styles.progressBarFill, { width: `${progressScore}%` }]} />
-          </View>
-          <Text style={styles.progressBarLabel}>{progressScore}% — matches your therapist&apos;s view</Text>
-        </View>
+        {/* Same four metrics, same maths, as the web dashboard — see
+            utils/clientDashboardMetrics.js. A metric with nothing recorded shows
+            "—" and says why, rather than a 0% bar that reads as a real score. */}
+        {progressMetrics.map((m) => {
+          const hasValue = typeof m.value === 'number';
+          return (
+            <View key={m.key} style={styles.metricRow}>
+              <View style={styles.metricHeader}>
+                <Text style={styles.metricLabel}>{m.label}</Text>
+                <Text style={styles.metricValue}>{hasValue ? `${m.value}%` : '—'}</Text>
+              </View>
+              <View style={styles.progressBarTrack}>
+                <View style={[styles.progressBarFill, { width: `${hasValue ? m.value : 0}%` }]} />
+              </View>
+              <Text style={styles.metricDetail}>{m.detail}</Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Treatment goals — the client home screen showed none at all, even though
+          the therapist sets them and the client's own dashboard tile counts them. */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Your goals</Text>
+        {clientGoals.length === 0 ? (
+          <Text style={styles.emptyHint}>Your therapist has not set any goals yet.</Text>
+        ) : (
+          clientGoals.map((g) => {
+            const done = String(g.status || '').toLowerCase() === 'completed' || Number(g.progress) >= 100;
+            return (
+              <View key={g.id} style={styles.goalRow}>
+                <Ionicons
+                  name={done ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={20}
+                  color={done ? '#10b981' : '#cbd5e1'}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.goalRowTitle, done && styles.goalRowTitleDone]}>
+                    {g.title || g.goalTitle}
+                  </Text>
+                  {g.description ? <Text style={styles.goalRowDesc}>{g.description}</Text> : null}
+                  {g.targetDate ? <Text style={styles.goalRowMeta}>Target {g.targetDate}</Text> : null}
+                </View>
+                <Text style={styles.goalRowPct}>{Number(g.progress) || 0}%</Text>
+              </View>
+            );
+          })
+        )}
       </View>
 
       {/* Live calendar - days with sessions marked */}
@@ -963,6 +1032,18 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: 16,
   },
+  metricRow: { marginBottom: 14 },
+  metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  metricLabel: { fontSize: 13, fontWeight: '600', color: '#334155' },
+  metricValue: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
+  metricDetail: { fontSize: 11, color: '#94a3b8', marginTop: 4, lineHeight: 15 },
+  goalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  goalRowTitle: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  goalRowTitleDone: { textDecorationLine: 'line-through', color: '#94a3b8' },
+  goalRowDesc: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  goalRowMeta: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  goalRowPct: { fontSize: 12, fontWeight: '700', color: '#6366f1' },
+  emptyHint: { fontSize: 13, color: '#94a3b8' },
   progressBarWrap: {
     backgroundColor: Colors.surface,
     borderRadius: 12,

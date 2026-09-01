@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
-function pickLocation(profile = {}) {
+// Exported so the weather card resolves the patient's coordinates from exactly
+// the same precedence rules this card displays.
+export function pickLocation(profile = {}) {
   const src = profile || {};
   const locationMeta = src.locationMeta || {};
   // `location` may be a structured object OR a plain address string (staff/doctor

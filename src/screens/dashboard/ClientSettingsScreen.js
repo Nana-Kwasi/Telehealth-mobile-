@@ -62,9 +62,24 @@ const ClientSettingsScreen = ({ navigation }) => {
     try {
       setIsLoading(true);
       const clientId = await AsyncStorage.getItem('th.clientId') || await AsyncStorage.getItem('th.userId');
+      const userId = await AsyncStorage.getItem('th.userId');
       let client = getCachedClientData();
       if (!client) client = await api(`/api/v1/patients/${clientId}`).catch(() => null);
-      setClientData(client);
+
+      // The signup questionnaire is stored on the CLIENT profile (preferencesJson),
+      // not the patient profile this screen loads — so none of the intake answers
+      // (gender, age, therapy type, concerns) ever reached these fields. Merge them
+      // in, letting anything already saved on the profile win.
+      let intake = {};
+      try {
+        const cp = await api(`/api/v1/clients/${userId || clientId}`).catch(() => null);
+        if (cp?.preferencesJson) {
+          const parsed = JSON.parse(cp.preferencesJson);
+          if (parsed && typeof parsed === 'object') intake = parsed;
+        }
+      } catch { /* intake is optional */ }
+
+      setClientData({ ...intake, ...(client || {}) });
     } catch (error) {
       console.error('Error loading client data:', error);
     } finally {
@@ -648,7 +663,7 @@ const ClientSettingsScreen = ({ navigation }) => {
                     style={styles.radioRow}
                     onPress={() => setClientData({ ...clientData, profileVisibility: v })}
                   >
-                    <View style={[styles.radioCircle, clientData?.profileVisibility === v && styles.radioCircleSelected]} />
+                    <View style={[styles.radioCircle, (clientData?.profileVisibility || 'therapist-only') === v && styles.radioCircleSelected]} />
                     <Text style={styles.radioLabel}>{v === 'therapist-only' ? 'Therapist Only (Recommended)' : v.charAt(0).toUpperCase() + v.slice(1)}</Text>
                   </TouchableOpacity>
                 ))}
@@ -667,22 +682,9 @@ const ClientSettingsScreen = ({ navigation }) => {
                 />
               </View>
 
-              <View style={styles.toggleRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleLabel}>Anonymous research data</Text>
-                  <Text style={styles.toggleDesc}>Contribute anonymised data to research</Text>
-                </View>
-                <Switch
-                  value={clientData?.allowAnonymousResearch === true}
-                  onValueChange={(v) => setClientData({ ...clientData, allowAnonymousResearch: v })}
-                  trackColor={{ false: '#d1d5db', true: Colors.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Language</Text>
-                {[['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ar', 'Arabic']].map(([code, name]) => (
+                {[['en', 'English']].map(([code, name]) => (
                   <TouchableOpacity
                     key={code}
                     style={styles.radioRow}
@@ -699,8 +701,7 @@ const ClientSettingsScreen = ({ navigation }) => {
                 onPress={() => handleSavePreferences({
                   profileVisibility: clientData?.profileVisibility || 'therapist-only',
                   shareProgressWithTherapist: clientData?.shareProgressWithTherapist !== false,
-                  allowAnonymousResearch: clientData?.allowAnonymousResearch === true,
-                  language: clientData?.language || 'en',
+                  language: 'en',
                 })}
                 disabled={saving}
               >

@@ -26,6 +26,7 @@ const ClientSupportScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
+  const [emailingAdmin, setEmailingAdmin] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
   const [showIncidentDetails, setShowIncidentDetails] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -74,7 +75,7 @@ const ClientSupportScreen = ({ navigation }) => {
     },
     {
       question: 'What should I do in case of an emergency?',
-      answer: 'If you are experiencing a mental health emergency, please contact your local emergency services (911) or crisis hotline immediately. This platform is not for emergency situations.'
+      answer: 'If you are experiencing a mental health emergency, please call 112 (national emergency) or the Mental Health Authority helpline on 0509 405 480 immediately. This platform is not for emergency situations.'
     },
     {
       question: 'How do I change my password?',
@@ -150,6 +151,35 @@ const ClientSupportScreen = ({ navigation }) => {
     } catch (error) {
       console.error('Error submitting rating:', error);
       Alert.alert('Error', 'Failed to submit rating. Please try again.');
+    }
+  };
+
+  /**
+   * Files the ticket AND emails the administrators now. Identity is read from
+   * the auth token on the backend, so nothing identifying is sent from here.
+   */
+  const handleEmailAdmin = async () => {
+    if (!issueForm.title || !issueForm.description) {
+      Alert.alert('Required', 'Please add a subject and a description first.');
+      return;
+    }
+    setEmailingAdmin(true);
+    try {
+      await api('/api/v1/support/contact-admin', {
+        method: 'POST',
+        body: {
+          subject: issueForm.title,
+          message: issueForm.description,
+          category: 'client_support',
+          priority: issueForm.severity || 'normal',
+        },
+      });
+      Alert.alert('Sent', 'Your message has been emailed to our administrators. You will get a copy by email.');
+      setShowIssueModal(false);
+    } catch {
+      Alert.alert('Error', 'Could not send the email. Please try again.');
+    } finally {
+      setEmailingAdmin(false);
     }
   };
 
@@ -301,9 +331,10 @@ const ClientSupportScreen = ({ navigation }) => {
             </View>
           </View>
           {[
-            { name: '988 Suicide & Crisis Lifeline', desc: 'Call or text 988', url: 'tel:988', color: '#dc2626' },
-            { name: 'Crisis Text Line', desc: 'Text HOME to 741741', url: 'sms:741741?body=HOME', color: '#7c3aed' },
-            { name: 'Emergency Services', desc: 'Call 911', url: 'tel:911', color: '#ea580c' },
+            { name: 'National Emergency — 112', desc: 'Police, ambulance & fire — 24/7', url: 'tel:112', color: '#dc2626' },
+            { name: 'Mental Health Authority Helpline', desc: '0509 405 480 — 24/7 counselling', url: 'tel:+233509405480', color: '#7c3aed' },
+            { name: 'Suicide Prevention (Ghana)', desc: '0244 846 701', url: 'tel:+233244846701', color: '#0ea5e9' },
+            { name: 'National Ambulance — 193', desc: 'Ambulance dispatch', url: 'tel:193', color: '#ea580c' },
             { name: 'NAMI Helpline', desc: '1-800-950-6264', url: 'tel:18009506264', color: '#16a34a' },
           ].map((h, i) => (
             <TouchableOpacity key={i} style={styles.crisisHotlineRow} onPress={() => Linking.openURL(h.url)}>
@@ -315,7 +346,7 @@ const ClientSupportScreen = ({ navigation }) => {
               <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
             </TouchableOpacity>
           ))}
-          <Text style={styles.crisisSafetyNote}>This platform is not for emergencies. Call 911 if in danger.</Text>
+          <Text style={styles.crisisSafetyNote}>This platform is not for emergencies. Call 112 if in danger.</Text>
         </View>
 
         {/* Quick Actions */}
@@ -633,6 +664,18 @@ const ClientSupportScreen = ({ navigation }) => {
                 disabled={!issueForm.title || !issueForm.description}
               >
                 <Text style={styles.submitButtonText}>Submit Ticket</Text>
+              </TouchableOpacity>
+
+              {/* Second route to the same people, for anyone who would rather
+                  reach a person than wait on a queue. */}
+              <TouchableOpacity
+                style={[styles.emailAdminButton, (emailingAdmin || !issueForm.title || !issueForm.description) && { opacity: 0.6 }]}
+                onPress={handleEmailAdmin}
+                disabled={emailingAdmin || !issueForm.title || !issueForm.description}
+              >
+                <Text style={styles.emailAdminButtonText}>
+                  {emailingAdmin ? 'Sending…' : 'Email an Administrator'}
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -1081,6 +1124,11 @@ const styles = StyleSheet.create({
   submitButtonDisabled: {
     opacity: 0.6,
   },
+  emailAdminButton: {
+    marginTop: 10, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#bfdbfe', backgroundColor: '#eff6ff',
+  },
+  emailAdminButtonText: { fontSize: 15, fontWeight: '700', color: '#2563eb' },
   submitButtonText: {
     color: Colors.surface,
     fontSize: 16,

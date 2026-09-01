@@ -1,6 +1,46 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-export const API_BASE = 'http://172.20.10.4:8085'; // Mac local IP on current network
+// The backend runs on the development machine, whose LAN address changes every
+// time it rejoins a network — a personal hotspot hands out a different
+// 172.20.10.x lease on each connect. A hardcoded literal here meant every
+// reconnect broke the whole app with "Network request timed out" until someone
+// edited this line by hand. Derive the host instead from whatever machine Metro
+// is already serving this bundle from: by definition that is the same machine.
+const API_PORT = 8085;
+
+// Used only when no dev-server host can be read — a release build or a
+// standalone binary. Point this at the deployed backend when there is one.
+const FALLBACK_HOST = '172.20.10.5';
+
+/** The "host:port" Expo recorded for the dev server, across SDK/manifest shapes. */
+function devServerHostUri() {
+  return (
+    Constants.expoConfig?.hostUri
+    || Constants.expoGoConfig?.debuggerHost
+    || Constants.manifest2?.extra?.expoClient?.hostUri
+    || ''
+  );
+}
+
+function resolveApiHost() {
+  const host = String(devServerHostUri()).split('/')[0].split(':')[0];
+  if (!host) return FALLBACK_HOST;
+  // An Android emulator's own loopback is the emulator, not the Mac — it reaches
+  // the host machine only through 10.0.2.2.
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+  }
+  return host;
+}
+
+// EXPO_PUBLIC_API_BASE wins when set, so a build can be aimed at staging or
+// production without touching this file.
+export const API_BASE =
+  process.env.EXPO_PUBLIC_API_BASE || `http://${resolveApiHost()}:${API_PORT}`;
+
+if (__DEV__) console.log('[apiClient] API_BASE =', API_BASE);
 
 export const STORAGE_KEYS = {
   token: 'th.token',

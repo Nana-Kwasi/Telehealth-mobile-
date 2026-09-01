@@ -140,6 +140,32 @@ const SignUpScreen = ({ route, navigation }) => {
           method: 'PATCH',
           body: { fullName: name, email: email.toLowerCase(), status: 'pending' },
         }).catch(() => {});
+
+        // Persist the intake questionnaire. `clientData` was only ever used to
+        // prefill the name/email/phone inputs, so every answer the visitor gave —
+        // therapy type, gender, age, concerns, PHQ-9 — was thrown away at signup and
+        // the client's Settings screen had nothing to show. The client profile row
+        // stores it in preferencesJson (PATCH upserts, POST is the create fallback).
+        if (clientData && typeof clientData === 'object') {
+          const intakeBody = {
+            phone: phone?.trim() || clientData.phone || null,
+            preferencesJson: JSON.stringify({
+              ...clientData,
+              name,
+              email: email.toLowerCase(),
+              completedAt: clientData.completedAt || new Date().toISOString(),
+            }),
+            status: 'active',
+          };
+          try {
+            await api(`/api/v1/clients/${userId}`, { method: 'PATCH', body: intakeBody });
+          } catch {
+            await api('/api/v1/clients', {
+              method: 'POST',
+              body: { clientId: userId, ...intakeBody },
+            }).catch(() => {});
+          }
+        }
       }
 
       if (isCouple && coupleId) {

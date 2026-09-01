@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, storeSession, clearSession, STORAGE_KEYS, getStoredToken, getStoredUserId } from './apiClient';
+import { registerForPushNotifications } from './notificationService';
 
 // ─── Role mapping: backend enum → mobile string ───────────────────────────────
 function mapRole(backendRole) {
@@ -136,6 +137,11 @@ export async function signInWithEmailOrUsername(identifier, password) {
 
   // Detect & publish current location right after login (best-effort).
   import('./liveLocation').then((m) => m.refreshCurrentLocation({ force: true })).catch(() => {});
+
+  // Register this device for push now that we have a session. Deliberately not
+  // awaited: a permission prompt or a slow Expo round trip must not hold up the
+  // login, and a device that declines simply never gets pushes.
+  registerForPushNotifications().catch(() => {});
 
   return { role: effectiveRole, profile: resolvedProfile };
 }

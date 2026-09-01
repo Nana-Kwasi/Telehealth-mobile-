@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { listenToAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+import { getCallWindow } from '../../utils/callWindow';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -319,7 +320,17 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
       </View>
 
       <View style={styles.apptBtnRow}>
-        {item.status === 'confirmed' && (
+        {/* Joinable only inside the scheduled window. Offering "Join" on an
+            appointment days away gives the patient nothing to join. */}
+        {item.status === 'confirmed' && !getCallWindow(item).canStart && (
+          <View style={[styles.joinBtn, { backgroundColor: '#f1f5f9' }]}>
+            <Ionicons name="time-outline" size={14} color="#64748b" />
+            <Text style={[styles.joinBtnText, { color: '#64748b' }]}>
+              {getCallWindow(item).state === 'ended' ? 'Window closed' : `Opens ${getCallWindow(item).waitLabel}`}
+            </Text>
+          </View>
+        )}
+        {item.status === 'confirmed' && getCallWindow(item).canStart && (
           <TouchableOpacity
             style={styles.joinBtn}
             onPress={() => navigation.navigate('MedicalVideo')}
@@ -650,7 +661,15 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
                   </View>
                   {a.reason ? <Text style={styles.modalReason}>"{a.reason}"</Text> : null}
                   <View style={styles.modalCardActions}>
-                    {a.status === 'confirmed' && (
+                    {a.status === 'confirmed' && !getCallWindow(a).canStart && (
+                      <View style={[styles.joinBtnFull, { backgroundColor: '#f1f5f9' }]}>
+                        <Ionicons name="time-outline" size={15} color="#64748b" />
+                        <Text style={[styles.joinBtnText, { color: '#64748b' }]}>
+                          {getCallWindow(a).state === 'ended' ? 'Window closed' : `Opens ${getCallWindow(a).waitLabel}`}
+                        </Text>
+                      </View>
+                    )}
+                    {a.status === 'confirmed' && getCallWindow(a).canStart && (
                       <TouchableOpacity
                         style={styles.joinBtnFull}
                         onPress={() => { setModalDateAppts(null); navigation.navigate('MedicalVideo'); }}

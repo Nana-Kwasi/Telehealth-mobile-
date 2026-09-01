@@ -7,8 +7,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
+import { getCallWindow } from '../../utils/callWindow';
 
-const TODAY = new Date().toISOString().split('T')[0];
+/** Consultation types this screen can place a call for. */
+const CALL_TYPES = ['video', 'audio'];
+
+/**
+ * Today, in local time and recomputed on demand. toISOString() is UTC, and a
+ * module-level constant never rolls over on an app left open past midnight.
+ */
+function todayLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 const FILTERS = ['Today', 'Upcoming', 'Past', 'All'];
 
 const CALL_STATUS = {
@@ -45,14 +56,19 @@ export default function DoctorVideoScreen() {
         ...a,
         clientName: (a.clientId && nameMap[a.clientId]) ? nameMap[a.clientId] : (a.clientName || 'Patient'),
       }));
-      const video = all.filter(a => {
-        const t = (a.consultationType || a.type || '').toLowerCase();
-        return t === 'video';
-      });
+      // Audio consults belong here too — this is the only screen a doctor can
+      // place a call from, so filtering to `video` alone hid them entirely and
+      // "Today" read empty while an appointment sat in the calendar. An untyped
+      // row defaults to video rather than being dropped, which is what the
+      // strict equality above did to every appointment with no type recorded.
+      const video = all.filter(a => CALL_TYPES.includes((a.consultationType || a.type || 'video').toLowerCase()));
 
-      const todayCount = video.filter(a => a.date === TODAY).length;
+      const todayCount = video.filter(a => a.date === todayLocal()).length;
       const inProg = video.filter(a => a.callStatus === 'in_progress').length;
-      const upcoming = video.filter(a => a.date > TODAY && a.status !== 'cancelled').length;
+      // "Upcoming" counts today onward, not strictly-future. With `>` an
+      // appointment scheduled for later today was in neither Today's count nor
+      // Upcoming on the tab, so the tab read empty while the calendar had one.
+      const upcoming = video.filter(a => a.date >= todayLocal() && !['cancelled', 'completed'].includes(a.status)).length;
 
       setStats({ today: todayCount, inProgress: inProg, upcoming });
       setAppointments(video.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
@@ -118,9 +134,9 @@ export default function DoctorVideoScreen() {
 
   const getFiltered = () => {
     let list = appointments;
-    if (filter === 'Today') list = list.filter(a => a.date === TODAY);
-    else if (filter === 'Upcoming') list = list.filter(a => a.date > TODAY && a.status !== 'cancelled');
-    else if (filter === 'Past') list = list.filter(a => a.date < TODAY || a.status === 'completed');
+    if (filter === 'Today') list = list.filter(a => a.date === todayLocal());
+    else if (filter === 'Upcoming') list = list.filter(a => a.date >= todayLocal() && !['cancelled', 'completed'].includes(a.status));
+    else if (filter === 'Past') list = list.filter(a => a.date < todayLocal() || a.status === 'completed');
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -141,6 +157,10 @@ export default function DoctorVideoScreen() {
   const renderItem = ({ item }) => {
     const cs = getCallStatusInfo(item);
     const isStarting = starting === item.id;
+    // A consultation cannot be started before its scheduled time — same 15-min
+    // early / 30-min grace window therapy already uses.
+    const callWindow = getCallWindow(item);
+    const isAudio = (item.consultationType || item.type || 'video').toLowerCase() === 'audio';
     return (
       <View style={styles.apptCard}>
         <View style={styles.apptInfo}>
@@ -171,7 +191,7 @@ export default function DoctorVideoScreen() {
                     <Text style={[styles.callBtnText, { color: '#be123c' }]}>End</Text>
                   </TouchableOpacity>
                 </>
-              ) : (
+              ) : callWindow.canStart ? (
                 <TouchableOpacity
                   style={[styles.callBtn, styles.startBtn, isStarting && { opacity: 0.6 }]}
                   onPress={() => startCall(item)}
@@ -180,11 +200,20 @@ export default function DoctorVideoScreen() {
                   {isStarting
                     ? <ActivityIndicator size="small" color="#fff" />
                     : <>
-                        <Ionicons name="videocam-outline" size={14} color="#fff" />
-                        <Text style={[styles.callBtnText, { color: '#fff' }]}>Start</Text>
+                        <Ionicons name={isAudio ? 'call-outline' : 'videocam-outline'} size={14} color="#fff" />
+                        <Text style={[styles.callBtnText, { color: '#fff' }]}>{isAudio ? 'Start Audio' : 'Start'}</Text>
                       </>
                   }
                 </TouchableOpacity>
+              ) : (
+                /* Before the window opens there is nothing to start — show when
+                   it will open instead of a button that must not be pressed. */
+                <View style={[styles.callBtn, styles.callBtnWaiting]}>
+                  <Ionicons name="time-outline" size={14} color="#64748b" />
+                  <Text style={[styles.callBtnText, { color: '#64748b' }]}>
+                    {callWindow.state === 'ended' ? 'Ended' : `Opens ${callWindow.waitLabel}`}
+                  </Text>
+                </View>
               )}
             </View>
           )}
@@ -244,7 +273,7 @@ export default function DoctorVideoScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="videocam-outline" size={48} color="#cbd5e1" />
-              <Text style={styles.emptyText}>No video appointments {filter !== 'All' ? `for ${filter.toLowerCase()}` : ''}</Text>
+              <Text style={styles.emptyText}>No consultations {filter !== 'All' ? `for ${filter.toLowerCase()}` : ''}</Text>
             </View>
           }
         />
@@ -264,6 +293,7 @@ const styles = StyleSheet.create({
   },
   statValue: { fontSize: 22, fontWeight: '800' },
   statLabel: { fontSize: 10, color: '#64748b', marginTop: 2, textAlign: 'center' },
+  callBtnWaiting: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
   filterRow: { flexDirection: 'row', paddingHorizontal: 14, gap: 8, marginBottom: 8 },
   filterTab: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,

@@ -20,6 +20,7 @@ import { calculateClientProgress, progressLabel } from '../../utils/clientProgre
 import { TherapistColors } from '../../constants/colors';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import WeatherCardMobile from '../../components/WeatherCardMobile';
 import TherapistScheduleCallModal from '../../components/therapist/TherapistScheduleCallModal';
 import { loadTherapistCalendarClients } from '../../services/therapistCalendarService';
 import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
@@ -113,6 +114,7 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [calDate, setCalDate] = useState(new Date());
   const [monthAppointmentKeys, setMonthAppointmentKeys] = useState(new Set());
+  const [completingId, setCompletingId] = useState(null);
   const [activitiesExpanded, setActivitiesExpanded] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleModalDate, setScheduleModalDate] = useState(null);
@@ -375,6 +377,37 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  // Mark a session complete. Nothing in the platform ever moved a scheduled call
+  // out of 'scheduled'/'in_progress', so Completion Rate here and "Sessions
+  // Completed" on the client dashboard sat at 0 permanently. The backend PATCH
+  // already accepts the status and enforces therapist/client ownership.
+  const markSessionComplete = async (appt) => {
+    if (!appt?.id || completingId) return;
+    setCompletingId(appt.id);
+    try {
+      const uid = await AsyncStorage.getItem('th.userId');
+      await api(`/api/v1/scheduled-calls/${appt.id}`, {
+        method: 'PATCH',
+        body: { status: 'completed', updatedBy: uid || null },
+      });
+      const applyDone = (list) => list.map(a => (a.id === appt.id ? { ...a, status: 'completed' } : a));
+      setTodayAppointments(applyDone);
+      setUpcomingAppointments(applyDone);
+      setKpis(prev => {
+        const done = Math.round((prev.completionRate / 100) * prev.totalSessions) + 1;
+        return {
+          ...prev,
+          completionRate: prev.totalSessions > 0 ? Math.round((done / prev.totalSessions) * 100) : 0,
+        };
+      });
+    } catch (e) {
+      console.error('Could not mark session complete:', e);
+      Alert.alert('Error', 'Could not mark this session complete. Please try again.');
+    } finally {
+      setCompletingId(null);
+    }
+  };
+
   const getSessionStatus = (appt) => {
     if (appt.status === 'completed') return 'completed';
     const dt = appt.scheduledTime?.toDate ? appt.scheduledTime.toDate() : new Date(appt.scheduledTime);
@@ -535,6 +568,7 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
         profile={locationProfile || mergeLocationProfile(profile, therapistProfile)}
         onEdit={() => navigation.navigate('TherapistSettings')}
       />
+      <WeatherCardMobile profile={locationProfile || mergeLocationProfile(profile, therapistProfile)} />
 
       <ScrollView
         horizontal
@@ -597,11 +631,31 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
                     {appt.sessionType || appt.callType || 'Individual'} · {appt.duration || 50}min
                   </Text>
                 </View>
-                <Ionicons
-                  name={status === 'completed' ? 'checkmark-circle' : 'time-outline'}
-                  size={20}
-                  color={status === 'completed' ? TherapistColors.success : TherapistColors.primary}
-                />
+                {status === 'scheduled' ? (
+                  // Only once the session time has passed — a future session has
+                  // nothing to complete.
+                  <TouchableOpacity
+                    onPress={() => markSessionComplete(appt)}
+                    disabled={completingId === appt.id}
+                    style={styles.markCompleteBtn}
+                    activeOpacity={0.8}
+                  >
+                    {completingId === appt.id ? (
+                      <ActivityIndicator size="small" color="#047857" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle-outline" size={14} color="#047857" />
+                        <Text style={styles.markCompleteTxt}>Complete</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                ) : (
+                  <Ionicons
+                    name={status === 'completed' ? 'checkmark-circle' : 'time-outline'}
+                    size={20}
+                    color={status === 'completed' ? TherapistColors.success : TherapistColors.primary}
+                  />
+                )}
               </View>
             );
           })
@@ -980,6 +1034,20 @@ const styles = StyleSheet.create({
   apptDateLbl: { fontSize: 10, color: TherapistColors.textLight, marginTop: 2 },
   apptInfo: { flex: 1 },
   apptClientName: { fontSize: 14, fontWeight: '600', color: TherapistColors.text },
+  markCompleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    backgroundColor: '#ecfdf5',
+    minWidth: 92,
+    justifyContent: 'center',
+  },
+  markCompleteTxt: { fontSize: 12, fontWeight: '700', color: '#047857' },
   apptType: { fontSize: 12, color: TherapistColors.textLight, marginTop: 2 },
   calHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   calMonth: { fontSize: 15, fontWeight: '700', color: TherapistColors.text },

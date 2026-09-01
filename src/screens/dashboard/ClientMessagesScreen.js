@@ -13,7 +13,7 @@ import { api } from '../../services/apiClient';
 import { getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
 import { Colors } from '../../constants/colors';
 import ChatThreadView from '../../components/chat/ChatThreadView';
-import { setPresenceOnline, setPresenceOffline, formatLastSeen } from '../../utils/chatUtils';
+import { setPresenceOnline, setPresenceOffline, formatLastSeen, sendThreadMessage } from '../../utils/chatUtils';
 
 
 /** Threads expose participantA/participantB (not a participantIds array). */
@@ -118,22 +118,12 @@ const ClientMessagesScreen = ({ navigation }) => {
       }
     }
     if (!thread?.id) throw new Error('Could not open the conversation.');
-    // The endpoint stores `body`/`messageType`; ChatThreadView hands us the
-    // Firestore-era `text`/`type` (plus mediaUrl for voice notes and files). Map
-    // them explicitly — posting the raw payload left `body` null, which failed the
-    // NOT NULL column and surfaced as "Request conflicts with existing data."
-    const messageType = payload.type || payload.messageType || 'text';
-    const body =
-      (payload.text && payload.text.trim())
-      || payload.body
-      || payload.mediaUrl
-      || payload.fileUrl
-      || '';
-    if (!body) throw new Error('Nothing to send.');
-    await api(`/api/v1/care/chats/threads/${thread.id}/messages`, {
-      method: 'POST',
-      body: { senderId: clientId, messageType, body },
-    });
+    // Use the shared sender the therapist screens already use. This screen had its
+    // own inline copy that posted only {senderId, messageType, body}, so a file's
+    // URL landed in `body` and attachment_json stayed NULL — the receiver got no
+    // name, type or size, and the therapist's web chat fell through to its generic
+    // "Attachment" label. sendThreadMessage forwards the metadata.
+    await sendThreadMessage(thread.id, clientId, payload);
   };
 
   if (loading) {

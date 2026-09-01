@@ -133,6 +133,7 @@ import ScanOrdersScreen from '../screens/scan-dashboard/ScanOrdersScreen';
 import ScanVerifyScreen from '../screens/scan-dashboard/ScanVerifyScreen';
 import ScanResultsScreen from '../screens/scan-dashboard/ScanResultsScreen';
 import EntityLocationSettingsScreen from '../screens/common/EntityLocationSettingsScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 
 // Drawer content components
 import CustomDrawerContent from '../components/CustomDrawerContent';
@@ -546,6 +547,7 @@ const TherapistDrawerNavigator = ({ profile }) => {
       <TherapistDrawer.Screen name="TherapistResources" options={{ title: 'Resources' }}>
         {(props) => <TherapistResourcesScreen {...props} profile={profile} />}
       </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
       <TherapistDrawer.Screen name="TherapistSettings"  component={TherapistSettingsScreen}  options={{ title: 'Settings' }} />
     </TherapistDrawer.Navigator>
   );
@@ -594,6 +596,7 @@ const TherapyDrawerNavigator = ({ profile }) => {
       <TherapyDrawer.Screen name="Schedule" component={ClientScheduleScreen} />
       <TherapyDrawer.Screen name="Resources" component={ClientResourcesScreen} />
       <TherapyDrawer.Screen name="Billing" component={ClientBillingScreen} />
+      <TherapyDrawer.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
       <TherapyDrawer.Screen name="Settings" component={ClientSettingsScreen} />
       <TherapyDrawer.Screen name="Support" component={ClientSupportScreen} />
     </TherapyDrawer.Navigator>
@@ -623,6 +626,7 @@ const MedicalDrawerNavigator = ({ profile }) => {
       <MedicalDrawer.Screen name="MedicalPrescriptions" component={MedicalPrescriptionsScreen} options={{ title: 'Prescriptions' }} />
       <MedicalDrawer.Screen name="MedicalDiagnostic"    component={MedicalDiagnosticScreen}    options={{ title: 'Lab & Scan Orders' }} />
       <MedicalDrawer.Screen name="MedicalBilling"       component={MedicalBillingScreen}       options={{ title: 'Billing' }} />
+      <MedicalDrawer.Screen name="MedicalNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
       <MedicalDrawer.Screen name="MedicalSettings"      component={MedicalSettingsScreen}      options={{ title: 'My Profile' }} />
     </MedicalDrawer.Navigator>
   );
