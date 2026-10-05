@@ -16,6 +16,7 @@ import {
   fetchDoctorReviews,
 } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+import { resolveFileUrl } from '../../utils/mediaUrl';
 
 const { width } = Dimensions.get('window');
 
@@ -90,7 +91,7 @@ const DoctorProfileScreen = ({ route, navigation }) => {
           <View style={styles.headerBg} />
           <View style={styles.headerContent}>
             {doctor.photoURL ? (
-              <Image source={{ uri: doctor.photoURL }} style={styles.avatar} />
+              <Image source={{ uri: resolveFileUrl(doctor.photoURL)}} style={styles.avatar} />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>{(doctor.name || 'D')[0].toUpperCase()}</Text>

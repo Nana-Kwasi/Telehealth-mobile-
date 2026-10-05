@@ -11,9 +11,12 @@ import {
   TextInput,
   Dimensions,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { api, getStoredUserId } from '../../services/apiClient';
+import { api, getStoredUserId, getStoredEmail } from '../../services/apiClient';
+import { payForBooking } from '../../services/paystack';
 import { listenToAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 import { getCallWindow } from '../../utils/callWindow';
@@ -28,7 +31,7 @@ function getStatusColor(status) {
     case 'confirmed': return '#16a34a';
     case 'pending':   return '#d97706';
     case 'cancelled': return '#dc2626';
-    case 'completed': return '#6b7280';
+    case 'completed': return '#44474f';
     default:          return '#94a3b8';
   }
 }
@@ -221,6 +224,26 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
       // consultation type into the notes (the appointment row has no type column).
       const scheduledAt = `${scheduleDay}T${(sForm.time || '09:00')}:00`;
       const notes = [sForm.type ? `[${sForm.type}]` : '', sForm.reason || ''].filter(Boolean).join(' ').trim();
+      // ── Pay before the appointment exists ────────────────────────────────
+      // Medical consultations were booked without ever touching a gateway. The
+      // fee comes from the selected doctor; a doctor with no fee set skips the
+      // charge rather than blocking the booking.
+      const chosen = myDoctors.find((d) => d.id === sForm.doctorId);
+      const fee = Number(chosen?.consultationFee ?? 0);
+      const payerEmail = await getStoredEmail();
+      const paid = await payForBooking({
+        email: payerEmail,
+        amount: fee,
+        purpose: 'medical',
+        metadata: { doctorId: sForm.doctorId, patientId: uid },
+      });
+
+      if (!paid.ok) {
+        setSError(paid.reason || 'Payment was not completed.');
+        setSSaving(false);
+        return;
+      }
+
       await api('/api/v1/medical/appointments', {
         method: 'POST',
         body: {
@@ -228,6 +251,8 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
           patientId: uid,
           scheduledAt,
           notes,
+          paymentReference: paid.reference,
+          consultationFee: paid.amount,
         },
       });
       setScheduleDay(null);
@@ -446,7 +471,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
 
           {/* Legend */}
           <View style={styles.calLegend}>
-            {[['#16a34a','#f0fdf4','Confirmed'],['#d97706','#fffbeb','Pending'],['#6b7280','#f8fafc','Completed']].map(([c, bg, l]) => (
+            {[['#16a34a','#f0fdf4','Confirmed'],['#d97706','#fffbeb','Pending'],['#44474f','#f8fafc','Completed']].map(([c, bg, l]) => (
               <View key={l} style={styles.legendItem}>
                 <View style={[styles.legendSwatch, { backgroundColor: bg, borderColor: c + '66' }]} />
                 <Text style={styles.legendText}>{l}</Text>
@@ -498,7 +523,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
                 const isBusy = busyCount > 0;
 
                 let cellBg = isPast ? '#f8fafc' : '#f0fdf4'; // default green = free
-                let textColor = isPast ? '#94a3b8' : '#15803d';
+                let textColor = isPast ? '#94a3b8' : '#0f5628';
                 if (isBusy) { cellBg = '#fff7ed'; textColor = '#c2410c'; }
                 if (isPast) { cellBg = '#f8fafc'; textColor = '#94a3b8'; }
 
@@ -629,7 +654,10 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
         animationType="slide"
         onRequestClose={() => setModalDateAppts(null)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             {/* Header */}
             <View style={styles.modalHeaderGrad}>
@@ -707,7 +735,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ══ SCHEDULE NEW APPOINTMENT MODAL ══ */}
@@ -717,7 +745,10 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
         animationType="slide"
         onRequestClose={() => { setScheduleDay(null); setSError(''); setConflict(null); }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={[styles.modal, { maxHeight: '90%' }]}>
             {/* Header */}
             <View style={styles.modalHeaderGrad}>
@@ -874,7 +905,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ══ DOCTOR CALENDAR OVERLAY MODAL ══ */}
@@ -884,7 +915,10 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
         animationType="fade"
         onRequestClose={() => setShowDocCal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={[styles.modal, { maxHeight: '80%' }]}>
             <View style={[styles.modalHeaderGrad, { backgroundColor: '#1e40af' }]}>
               <View style={{ flex: 1 }}>
@@ -907,7 +941,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ══ RESCHEDULE MODAL ══ */}
@@ -917,7 +951,10 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
         animationType="slide"
         onRequestClose={() => setRescheduleAppt(null)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={[styles.modal, { maxHeight: '60%' }]}>
             <View style={[styles.modalHeaderGrad, { backgroundColor: '#7c3aed' }]}>
               <View style={{ flex: 1 }}>
@@ -980,7 +1017,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

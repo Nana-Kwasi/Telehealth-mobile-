@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
@@ -48,6 +49,9 @@ export const STORAGE_KEYS = {
   userId: 'th.userId',
   role: 'th.role',
   nurseId: 'th.nurseId',
+  // Paystack needs a real email for every charge and receipt. Nothing else
+  // stored here yields one, and there is no /me endpoint to ask.
+  email: 'th.email',
 };
 
 export async function getStoredToken() {
@@ -66,18 +70,31 @@ export async function getStoredNurseId() {
   return AsyncStorage.getItem(STORAGE_KEYS.nurseId);
 }
 
-export async function storeSession({ token, refreshToken, userId, role }) {
+export async function getStoredEmail() {
+  return AsyncStorage.getItem(STORAGE_KEYS.email);
+}
+
+export async function storeSession({ token, refreshToken, userId, role, email }) {
   const pairs = [
     [STORAGE_KEYS.token, token],
     [STORAGE_KEYS.userId, String(userId)],
     [STORAGE_KEYS.role, String(role)],
   ];
   if (refreshToken) pairs.push([STORAGE_KEYS.refreshToken, refreshToken]);
+  if (email) pairs.push([STORAGE_KEYS.email, String(email)]);
   await AsyncStorage.multiSet(pairs);
 }
 
+const PERSISTED_LOCAL_KEYS = new Set([
+  'nessa.biometric.enabled',
+  'nessa.biometric.email',
+  'nessa.biometric.refreshToken',
+]);
+
 export async function clearSession() {
-  await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
+  const keys = Object.values(STORAGE_KEYS);
+  const removable = keys.filter((key) => !PERSISTED_LOCAL_KEYS.has(key));
+  if (removable.length) await AsyncStorage.multiRemove(removable);
 }
 
 async function attemptTokenRefresh() {
@@ -118,7 +135,22 @@ export async function api(path, { method = 'GET', body, authenticated = true, _r
   if (res.status === 401 && _retry && authenticated) {
     const newToken = await attemptTokenRefresh();
     if (newToken) return api(path, { method, body, authenticated, _retry: false });
-    throw new Error('Session expired. Please sign in again.');
+
+    // The refresh failed, so the session is genuinely dead. Every screen used
+    // to catch this and console.error its own copy — "Error fetching patient
+    // appointments: Session expired" — while the user sat on a dashboard that
+    // silently loaded nothing and was never asked to sign in again.
+    //
+    // Clear it once, here, and tell the navigator. Screens keep getting a
+    // rejected promise so their own loading states unwind, but the error is
+    // marked so they can skip showing a technical alert for something the app
+    // is already handling.
+    await clearSession();
+    DeviceEventEmitter.emit('sessionExpired');
+
+    const err = new Error('Your session has ended. Please sign in again.');
+    err.sessionExpired = true;
+    throw err;
   }
 
   if (res.status === 204 || res.headers.get('content-length') === '0') return null;
@@ -136,7 +168,7 @@ export async function api(path, { method = 'GET', body, authenticated = true, _r
   return text ? JSON.parse(text) : null;
 }
 
-export async function uploadFile(path, fileUri, mimeType = 'image/jpeg') {
+export async function uploadFile(path, fileUri, mimeType = 'image/jpeg', { withMeta = false } = {}) {
   const token = await getStoredToken();
   const ownerId = await getStoredUserId();
 
@@ -176,7 +208,21 @@ export async function uploadFile(path, fileUri, mimeType = 'image/jpeg') {
     body: { fileId: session?.fileId, publicUrl: session?.publicUrl },
   }).catch(() => {});
 
-  // 4 — Return the token-signed url, made absolute so <Image>/download work.
+  // 4 — Return the token-signed url.
+  //
+  // Absolute for the CALLER (<Image> and the audio player need a full url), but
+  // note that whatever gets STORED with the message will contain this host. A
+  // host is only valid on the network it was captured on: an attachment
+  // uploaded from a laptop hotspot (172.20.x.x) is unreachable from the same
+  // account on LTE, which is why a voice note played in the simulator and not
+  // on a real phone.
+  //
+  // The reader side therefore re-points /api/ urls at the CURRENT API base —
+  // see utils/therapistClientChat.resolveMediaHost. That is what makes old
+  // attachments keep working; this line only has to be correct for right now.
   const url = session?.publicUrl || '';
-  return url && url.startsWith('/') ? `${API_BASE}${url}` : url;
+  const absolute = url && url.startsWith('/') ? `${API_BASE}${url}` : url;
+  // `withMeta` is for callers that need the file id too (document
+  // classification works on the stored file). Everyone else keeps the URL.
+  return withMeta ? { url: absolute, fileId: session?.fileId } : absolute;
 }

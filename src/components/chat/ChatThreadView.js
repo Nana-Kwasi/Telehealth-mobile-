@@ -580,7 +580,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fdf4',
     paddingVertical: 6,
   },
-  uploadingText: { fontSize: 13, color: '#15803d', fontWeight: '600' },
+  uploadingText: { fontSize: 13, color: '#0f5628', fontWeight: '600' },
   recordingBar: {
     flexDirection: 'row',
     alignItems: 'center',

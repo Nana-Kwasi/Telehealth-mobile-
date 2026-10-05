@@ -96,7 +96,12 @@ export default function NurseVisitReportScreen({ navigation, route }) {
 
   if (!booking) {
     return (
-      <ScrollView style={hc.screen}>
+      <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={hc.screen}>
         <Text style={hc.sub}>Loading…</Text>
       </ScrollView>
     );

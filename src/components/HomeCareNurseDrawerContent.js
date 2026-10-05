@@ -25,7 +25,6 @@ export default function HomeCareNurseDrawerContent({ navigation, profile, state 
   const handleLogout = async () => {
     try {
       await performLogout();
-      await AsyncStorage.clear();
       navigation.getParent()?.replace('Intent');
     } catch (e) {
       console.error(e);
@@ -175,7 +174,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 6,
   },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  badgeText: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
   activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#5eead4' },
   footer: { padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' },
   trustRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingHorizontal: 4 },

@@ -87,7 +87,12 @@ export default function PharmacyReportsScreen({ profile, isBranch = false }) {
   const rxCounts = metrics?.rxCounts || {};
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Text style={styles.title}>Reports</Text>
       <Text style={styles.sub}>
         {isBranch ? 'This branch’s dispensing activity' : 'Dispensing activity across your pharmacy'}

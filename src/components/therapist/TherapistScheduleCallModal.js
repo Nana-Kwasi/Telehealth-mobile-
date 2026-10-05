@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Platform,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -19,6 +20,7 @@ import {
   loadTherapistCalendarClients,
   scheduleTherapistCalendarCall,
 } from '../../services/therapistCalendarService';
+import { GlassScrim, GlassSheetSurface } from '../GlassSheet';
 
 const DURATIONS = ['15', '30', '45', '60', '90'];
 
@@ -132,8 +134,12 @@ export default function TherapistScheduleCallModal({
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
+        <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <GlassScrim />
+          <GlassSheetSurface style={styles.sheet}>
             {schedulePicker ? (
               <InlineDateTimePicker
                 title={schedulePicker === 'date' ? 'Session date' : 'Session time'}
@@ -236,12 +242,18 @@ export default function TherapistScheduleCallModal({
             </View>
               </>
             )}
-          </View>
-        </View>
+          </GlassSheetSurface>
+        </KeyboardAvoidingView>
       </Modal>
 
       {Platform.OS === 'android' && schedulePicker ? (
         <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
           value={scheduleDateTime}
           mode={schedulePicker}
           display="default"
@@ -289,6 +301,12 @@ function InlineDateTimePicker({ title, value, mode, minimumDate, onConfirm, onCa
         </TouchableOpacity>
       </View>
       <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
         value={draft}
         mode={mode}
         display={Platform.OS === 'ios' ? 'spinner' : 'default'}
@@ -305,24 +323,23 @@ function InlineDateTimePicker({ title, value, mode, minimumDate, onConfirm, onCa
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: 28,
     maxHeight: '88%',
   },
-  title: { fontSize: 18, fontWeight: '800', color: '#0f172a', marginBottom: 12 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#64748b', marginBottom: 6, marginTop: 4 },
+  title: { fontSize: 18, fontWeight: '800', color: '#0d0d0d', marginBottom: 12 },
+  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#0d0d0d', marginBottom: 6, marginTop: 4 },
   clientChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     marginRight: 8,
   },
   clientChipActive: { backgroundColor: TherapistColors.primary },
-  clientChipText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  clientChipText: { fontSize: 13, fontWeight: '600', color: '#0d0d0d' },
   clientChipTextActive: { color: '#fff' },
   dateRow: {
     flexDirection: 'row',
@@ -333,48 +350,51 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
   },
   dateRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dateRowLabel: { fontSize: 14, fontWeight: '600', color: '#334155' },
-  dateRowValue: { fontSize: 14, color: '#64748b' },
+  dateRowLabel: { fontSize: 14, fontWeight: '600', color: '#0d0d0d' },
+  dateRowValue: { fontSize: 14, color: '#0d0d0d' },
   durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   durationChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.72)',
   },
   durationChipActive: { backgroundColor: TherapistColors.primary },
-  durationChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  durationChipText: { fontSize: 13, fontWeight: '600', color: '#0d0d0d' },
   durationChipTextActive: { color: '#fff' },
   notesInput: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(16,16,16,0.16)',
     borderRadius: 10,
     padding: 12,
     minHeight: 72,
     fontSize: 14,
-    color: '#0f172a',
+    color: '#0d0d0d',
     textAlignVertical: 'top',
     marginBottom: 12,
+    backgroundColor: '#ffffff',
   },
   actions: { flexDirection: 'row', gap: 10, marginTop: 8 },
   cancelBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#f1f5f9',
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
   },
-  cancelBtnText: { fontWeight: '700', color: '#64748b' },
+  cancelBtnText: { fontWeight: '700', color: '#0d0d0d' },
   saveBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     backgroundColor: TherapistColors.primary,
     alignItems: 'center',
   },
   saveBtnText: { fontWeight: '700', color: '#fff' },
   btnDisabled: { opacity: 0.6 },
-  emptyClients: { textAlign: 'center', color: '#64748b', marginVertical: 20, fontSize: 14 },
+  emptyClients: { textAlign: 'center', color: '#0d0d0d', marginVertical: 20, fontSize: 14 },
 });
 
 const pickerStyles = StyleSheet.create({
@@ -388,8 +408,8 @@ const pickerStyles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  title: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  cancelText: { fontSize: 15, color: '#64748b', fontWeight: '600' },
+  title: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  cancelText: { fontSize: 15, color: '#0d0d0d', fontWeight: '600' },
   doneText: { fontSize: 15, color: TherapistColors.primary, fontWeight: '700' },
   picker: { height: 216 },
 });

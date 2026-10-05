@@ -21,10 +21,18 @@ import {
   isCoupleIntakeDoneLocally,
 } from '../../services/coupleTherapyService';
 import { useCoupleSignOutHeader } from '../../hooks/useCoupleSignOutHeader';
+import { api } from '../../services/apiClient';
+import { updateFlow } from '../../services/medpsychFlow';
+import { COUPLE_STORAGE_KEYS } from '../../constants/coupleTherapyConfig';
 
 export default function CoupleWaitingPartnerScreen({ navigation, route }) {
   useCoupleSignOutHeader(navigation);
   const coupleId = route.params?.coupleId;
+  // DRAFT MODE: the sign-up has not been paid for, so there is no couple record
+  // to poll — only the draft, keyed by the invite token.
+  const [draftToken, setDraftToken] = useState(route.params?.draftToken || null);
+  const [draft, setDraft] = useState(null);
+  const isDraft = Boolean(draftToken) && !coupleId;
   const [couple, setCouple] = useState(null);
   const [otherPartnerName, setOtherPartnerName] = useState('');
   const [inviteUrl, setInviteUrl] = useState(route.params?.inviteUrl || '');
@@ -33,6 +41,24 @@ export default function CoupleWaitingPartnerScreen({ navigation, route }) {
   const [syncWarning, setSyncWarning] = useState('');
 
   const refresh = useCallback(async () => {
+    if (isDraft) {
+      setLoading(true);
+      setSyncWarning('');
+      try {
+        const d = await api(
+          `/api/v1/couples/drafts?token=${encodeURIComponent(draftToken)}`,
+          { authenticated: false },
+        );
+        setDraft(d);
+        if (d?.partnerBName) setOtherPartnerName(d.partnerBName);
+      } catch (e) {
+        setSyncWarning(e.message || 'Could not check your partner\'s progress.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!coupleId) return;
     setLoading(true);
     setSyncWarning('');
@@ -81,7 +107,17 @@ export default function CoupleWaitingPartnerScreen({ navigation, route }) {
     } finally {
       setLoading(false);
     }
-  }, [coupleId, navigation]);
+  }, [coupleId, navigation, isDraft, draftToken]);
+
+  // Cold start (app reopened mid sign-up): the token is the only thing that
+  // identifies this couple, and it lives in storage.
+  React.useEffect(() => {
+    if (draftToken || coupleId) return;
+    (async () => {
+      const t = await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.inviteToken);
+      if (t) setDraftToken(t);
+    })();
+  }, [draftToken, coupleId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -109,7 +145,7 @@ export default function CoupleWaitingPartnerScreen({ navigation, route }) {
     await Share.share({ message: `Join me for couple therapy on NessaHub: ${inviteUrl}` });
   };
 
-  if (loading && !couple) {
+  if (loading && !couple && !draft) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={Colors.primary} size="large" />
@@ -117,8 +153,11 @@ export default function CoupleWaitingPartnerScreen({ navigation, route }) {
     );
   }
 
-  const bDone = couple?.partnerB?.intakeComplete;
-  const partnerBName = otherPartnerName || couple?.partnerB?.name || 'your partner';
+  const bDone = isDraft ? Boolean(draft?.partnerBIntakeComplete) : couple?.partnerB?.intakeComplete;
+  const partnerBName =
+    otherPartnerName || (isDraft ? draft?.partnerBName : couple?.partnerB?.name) || 'your partner';
+  const bAccepted = isDraft ? Boolean(draft?.partnerBAccepted) : true;
+  const readyToPay = isDraft ? Boolean(draft?.readyToPay) : false;
 
   return (
     <View style={styles.container}>
@@ -140,8 +179,18 @@ export default function CoupleWaitingPartnerScreen({ navigation, route }) {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Status</Text>
         <Text style={styles.statusRow}>You: ✓ Intake complete</Text>
-        <Text style={styles.statusRow}>{partnerBName}: {bDone ? '✓ Complete' : '⏳ Pending'}</Text>
-        <Text style={styles.hint}>Couple status: {couple?.status || COUPLE_STATUSES.AWAITING_PARTNER_B}</Text>
+        {isDraft ? (
+          <Text style={styles.statusRow}>
+            {partnerBName}: {bAccepted ? (bDone ? '✓ Complete' : '⏳ Intake in progress') : '⏳ Has not accepted yet'}
+          </Text>
+        ) : (
+          <Text style={styles.statusRow}>{partnerBName}: {bDone ? '✓ Complete' : '⏳ Pending'}</Text>
+        )}
+        <Text style={styles.hint}>
+          {isDraft
+            ? 'No accounts are created until you book and pay for your first session.'
+            : `Couple status: ${couple?.status || COUPLE_STATUSES.AWAITING_PARTNER_B}`}
+        </Text>
       </View>
 
       {inviteUrl ? (
@@ -159,12 +208,41 @@ export default function CoupleWaitingPartnerScreen({ navigation, route }) {
         </View>
       ) : null}
 
-      <TouchableOpacity
-        style={styles.primaryBtn}
-        onPress={() => navigation.replace('CoupleDashboard', { coupleId })}
-      >
-        <Text style={styles.primaryBtnText}>Open couple dashboard</Text>
-      </TouchableOpacity>
+      {isDraft ? (
+        // Choosing a therapist leads straight to checkout, and the commit is
+        // refused unless BOTH partners are done — so the button stays shut
+        // until the server says it will go through. Otherwise the card gets
+        // charged for a booking that cannot be created.
+        <TouchableOpacity
+          style={[styles.primaryBtn, !readyToPay && { opacity: 0.5 }]}
+          disabled={!readyToPay}
+          onPress={async () => {
+            // Same handoff as the end of the intake: the booking funnel reads
+            // the medpsych flow, and the password stays on the draft.
+            await updateFlow({
+              serviceType: 'medpsych',
+              therapyType: 'couples',
+              step: 'therapist',
+              details: {
+                fullName: (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.myPartnerName)) || '',
+                email: (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.myRegistrationEmail)) || '',
+              },
+            });
+            navigation.replace('MedPsychPsychiatrists', { draftToken });
+          }}
+        >
+          <Text style={styles.primaryBtnText}>
+            {readyToPay ? 'Choose your therapist' : `Waiting for ${partnerBName}`}
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() => navigation.replace('CoupleDashboard', { coupleId })}
+        >
+          <Text style={styles.primaryBtnText}>Open couple dashboard</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

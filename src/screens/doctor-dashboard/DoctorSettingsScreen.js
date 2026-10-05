@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, ActivityIndicator, Alert, Switch,
-  Image, DeviceEventEmitter,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  Switch,
+  Image,
+  DeviceEventEmitter,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { api, getStoredUserId, uploadFile } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
+import { resolveFileUrl } from '../../utils/mediaUrl';
+import SecuritySettingsSection from '../../components/SecuritySettingsSection';
 
 const TABS = ['Profile', 'Availability'];
 
@@ -308,11 +320,15 @@ export default function DoctorSettingsScreen() {
       {/* Profile Tab */}
       {tab === 'Profile' && (
         <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Shared with every role. 2FA and biometric sign-in existed
+            only in the medical patient screen, so a clinician could not
+            reach either. */}
+        <SecuritySettingsSection accent={DoctorColors.primary} />
           {/* Header */}
           <View style={styles.profileHeader}>
             <View style={styles.avatarWrapper}>
               {photoURL ? (
-                <Image source={{ uri: photoURL }} style={styles.avatarLargeImg} />
+                <Image source={{ uri: resolveFileUrl(photoURL)}} style={styles.avatarLargeImg} />
               ) : (
                 <View style={styles.avatarLarge}>
                   <Text style={styles.avatarText}>{(form.name || 'D')[0].toUpperCase()}</Text>
@@ -405,7 +421,10 @@ export default function DoctorSettingsScreen() {
 
           {/* Password Modal */}
           {showPwdModal && (
-            <View style={styles.pwdOverlay}>
+            <KeyboardAvoidingView
+        style={styles.pwdOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
               <View style={styles.pwdCard}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
                   <Ionicons name="lock-closed" size={20} color={DoctorColors.primary} />
@@ -439,7 +458,7 @@ export default function DoctorSettingsScreen() {
                   {changingPwd ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>Update Password</Text>}
                 </TouchableOpacity>
               </View>
-            </View>
+            </KeyboardAvoidingView>
           )}
         </ScrollView>
       )}
@@ -557,7 +576,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fdf4', padding: 10, paddingHorizontal: 16,
     borderBottomWidth: 1, borderBottomColor: '#bbf7d0',
   },
-  successText: { fontSize: 13, color: '#15803d', fontWeight: '600' },
+  successText: { fontSize: 13, color: '#0f5628', fontWeight: '600' },
   scrollContent: { padding: 20, paddingBottom: 40 },
   profileHeader: {
     alignItems: 'center', marginBottom: 24,

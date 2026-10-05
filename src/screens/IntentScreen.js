@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,12 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
+import TherapyTypeModal from '../components/TherapyTypeModal';
 
 const INTENT_OPTIONS = [
   {
     key: 'therapy',
-    title: 'Therapy',
+    title: 'Psychiatry',
     sub: 'Mental health',
     emoji: '🧠',
     styleKey: 'pillTherapy',
@@ -25,16 +26,74 @@ const INTENT_OPTIONS = [
     emoji: '🩺',
     styleKey: 'pillMedical',
   },
+  // Home Care is parked, not removed — the module, its navigator and its
+  // screens are untouched, so restoring this entry brings it straight back.
+  // {
+  //   key: 'homecare',
+  //   title: 'Home-Care',
+  //   sub: 'At-home support',
+  //   emoji: '🏠',
+  //   styleKey: 'pillHomeCare',
+  // },
   {
-    key: 'homecare',
-    title: 'Home-Care',
-    sub: 'At-home support',
-    emoji: '🏠',
+    key: 'medpsych',
+    title: 'Psychology & Counseling',
+    sub: 'Talking therapy',
+    emoji: '🩹',
+    styleKey: 'pillHomeCare',
+  },
+  {
+    // For someone ALREADY under care elsewhere who wants an independent view on
+    // one decision. Separate from the line above because the intake differs —
+    // a short case questionnaire rather than the full programme one — and so
+    // does the dashboard they land on.
+    key: 'second_opinion',
+    title: 'Second Opinion',
+    sub: 'Review my current care',
+    emoji: '🔍',
     styleKey: 'pillHomeCare',
   },
 ];
 
 const IntentScreen = ({ navigation }) => {
+  // Psychology & Counseling asks WHICH kind of therapy before the sign-up
+  // form, then hands off to the flow that already handles it.
+  const [showTypeModal, setShowTypeModal] = useState(false);
+
+  const startCounselling = async (therapyType) => {
+    setShowTypeModal(false);
+
+    // Persist the choice the same way WelcomeScreen does, so every downstream
+    // screen reads one value from one place. Clearing the stale per-flow keys
+    // first matters: a half-finished teen or couple attempt leaves parent,
+    // child and invite records behind, and picking a different type afterwards
+    // would carry them into the new one.
+    try {
+      await AsyncStorage.multiRemove([
+        'th.parentInfo', 'th.childInfo', 'th.parentConsent',
+        'th.coupleId', 'th.couplePartnerRole', 'th.coupleInviteToken',
+      ]);
+      await AsyncStorage.setItem('th.onboard', JSON.stringify({
+        therapyType, startedAt: new Date().toISOString(),
+      }));
+    } catch (_) {}
+
+    // Teen and couples have their own established journeys — parent/guardian
+    // consent, and partner invitation. They are reused as they are rather than
+    // rebuilt inside this flow.
+    if (therapyType === 'teen') {
+      navigation.navigate('ParentGuardianInfo');
+      return;
+    }
+    if (therapyType === 'couples') {
+      navigation.navigate('CoupleInitiation');
+      return;
+    }
+
+    // Individual keeps the cached, pay-before-anything-is-written flow.
+    navigation.navigate('MedPsychSignUp', { service: 'medpsych', therapyType });
+  };
+
   const handleSelect = async (intent) => {
     try {
       await AsyncStorage.setItem('userIntent', intent);
@@ -50,6 +109,16 @@ const IntentScreen = ({ navigation }) => {
     }
     if (intent === 'homecare') {
       navigation.navigate('HomeCareFlow', { screen: 'HomeCareHome' });
+      return;
+    }
+    if (intent === 'medpsych') {
+      setShowTypeModal(true);
+      return;
+    }
+    if (intent === 'second_opinion') {
+      // Same policy gate — the consents are identical — carrying its own
+      // service type so the gate knows which intake to ask for afterwards.
+      navigation.navigate('MedPsychSignUp', { service: 'second_opinion' });
     }
   };
 
@@ -96,6 +165,12 @@ const IntentScreen = ({ navigation }) => {
           <Text style={styles.loginBtnText}>Already have an account? Sign in</Text>
         </TouchableOpacity>
       </View>
+      <TherapyTypeModal
+        visible={showTypeModal}
+        onClose={() => setShowTypeModal(false)}
+        onSelect={startCounselling}
+      />
+
     </ImageBackground>
   );
 };

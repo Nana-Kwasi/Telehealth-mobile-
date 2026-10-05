@@ -10,6 +10,8 @@ import { MedicalColors } from '../../constants/colors';
 import UserAvatar from '../../components/common/UserAvatar';
 import { pickAndUploadAvatar, avatarUrlOf } from '../../utils/profileImage';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
+import { wipeLocalData } from '../../services/authService';
+import { enableBiometricLogin, disableBiometricLogin, biometricCapability } from '../../services/biometricAuth';
 
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -163,6 +165,21 @@ export default function MedicalSettingsScreen({ navigation }) {
   };
 
   // ── Security & Privacy ─────────────────────────────────────────────────────
+  /**
+   * The authoritative 2FA state, from the auth service.
+   *
+   * The profile blob can disagree with it — an account whose 2FA was turned on
+   * from another device, or before this toggle was wired — and the blob is not
+   * what login consults.
+   */
+  useEffect(() => {
+    let live = true;
+    api('/api/v1/auth/2fa')
+      .then((r) => { if (live && r) setSecurity(prev => ({ ...prev, twoFAEnabled: !!r.enabled })); })
+      .catch(() => { /* leave whatever the profile had */ });
+    return () => { live = false; };
+  }, []);
+
   const saveSecurity = async (newSec, newPriv) => {
     setSavingSecurity(true);
     try {
@@ -173,14 +190,58 @@ export default function MedicalSettingsScreen({ navigation }) {
   };
 
   const toggleSecurity = async (key) => {
-    const updated = { ...security, [key]: !security[key] };
+    const nextValue = !security[key];
+    const updated = { ...security, [key]: nextValue };
     setSecurity(updated);
+
+    if (key === 'biometricEnabled') {
+      try {
+        const capability = await biometricCapability();
+        if (!capability.available) {
+          setSecurity(prev => ({ ...prev, [key]: false }));
+          Alert.alert('Biometric Login', 'This device does not support Face ID or fingerprint sign-in.');
+          return;
+        }
+
+        const refreshToken = await AsyncStorage.getItem('th.refreshToken');
+        if (nextValue) {
+          if (!refreshToken) {
+            setSecurity(prev => ({ ...prev, [key]: false }));
+            Alert.alert('Biometric Login', 'Please sign in once with your password before enabling biometric login.');
+            return;
+          }
+          await enableBiometricLogin(refreshToken, await AsyncStorage.getItem('th.email'));
+        } else {
+          await disableBiometricLogin();
+        }
+      } catch (err) {
+        setSecurity(prev => ({ ...prev, [key]: !nextValue }));
+        Alert.alert('Biometric Login', 'Could not update biometric sign-in. Please try again.');
+        return;
+      }
+    }
+
+    // 2FA lives on `users.two_factor_enabled`, which is what the login path
+    // reads. Writing it only into the patient profile blob — as this did —
+    // meant the switch moved and sign-in was completely unaffected.
+    if (key === 'twoFAEnabled') {
+      try {
+        await api('/api/v1/auth/2fa', { method: 'PUT', body: { enabled: nextValue } });
+      } catch (err) {
+        setSecurity(prev => ({ ...prev, [key]: !nextValue }));
+        Alert.alert('Two-factor authentication',
+          'Could not update two-factor authentication. Please try again.');
+        return;
+      }
+    }
+
     await saveSecurity(updated, null);
-    if (key === 'biometricEnabled' && !security[key]) {
+    if (key === 'biometricEnabled' && nextValue) {
       Alert.alert('Biometric Login', 'Biometric login preference saved. On next launch, you\'ll be prompted to authenticate with Face ID / Fingerprint if your device supports it.');
     }
-    if (key === 'twoFAEnabled' && !security[key]) {
-      Alert.alert('Two-Factor Authentication', '2FA has been enabled. A verification code will be sent to your registered phone number when signing in.');
+    if (key === 'twoFAEnabled' && nextValue) {
+      Alert.alert('Two-factor authentication on',
+        'From now on, signing in will ask for a 6-digit code sent to your email address.');
     }
   };
 
@@ -205,7 +266,6 @@ export default function MedicalSettingsScreen({ navigation }) {
         text: 'Sign Out All', style: 'destructive', onPress: async () => {
           api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
           await clearSession();
-          await AsyncStorage.clear();
           navigation.getParent()?.replace('Intent');
         }
       }
@@ -240,7 +300,6 @@ export default function MedicalSettingsScreen({ navigation }) {
     try {
       await api('/api/v1/auth/account/delete', { method: 'POST', body: { password: deletePwd } });
       await clearSession();
-      await AsyncStorage.clear();
       navigation.getParent()?.replace('Intent');
     } catch (err) {
       Alert.alert('Error', err.message?.includes('password') ? 'Incorrect password.' : 'Could not delete account. Please try again.');
@@ -316,7 +375,7 @@ export default function MedicalSettingsScreen({ navigation }) {
   const handleLogout = async () => {
     Alert.alert('Log Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => { api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); await clearSession(); await AsyncStorage.clear(); navigation.getParent()?.replace('Intent'); } }
+      { text: 'Log Out', style: 'destructive', onPress: async () => { api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); await clearSession(); await wipeLocalData(); navigation.getParent()?.replace('Intent'); } }
     ]);
   };
 
@@ -328,7 +387,12 @@ export default function MedicalSettingsScreen({ navigation }) {
   return (
     <View style={s.root}>
       {/* Tab bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
+      <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
         {TABS.map(t => (
           <TouchableOpacity key={t.key} style={[s.tab, activeTab === t.key && (t.danger ? s.tabActiveDanger : s.tabActive)]} onPress={() => setActiveTab(t.key)}>
             <Ionicons name={t.icon} size={16} color={activeTab === t.key ? (t.danger ? '#dc2626' : MedicalColors.primary) : '#94a3b8'} />
@@ -464,7 +528,7 @@ export default function MedicalSettingsScreen({ navigation }) {
             <View style={s.card}>
               <Text style={s.cardTitle}>Authentication</Text>
               {[
-                { key: 'twoFAEnabled', icon: 'phone-portrait-outline', label: 'Two-Factor Authentication (2FA)', desc: 'Require a code sent to your phone when logging in', color: '#2563eb' },
+                { key: 'twoFAEnabled', icon: 'mail-unread-outline', label: 'Two-factor authentication', desc: 'Require a code emailed to you when signing in', color: '#2563eb' },
                 { key: 'biometricEnabled', icon: 'finger-print-outline', label: 'Biometric Login', desc: 'Use Face ID or Fingerprint to sign in on this device', color: '#7c3aed' },
               ].map(({ key, icon, label, desc, color }) => (
                 <View key={key} style={s.toggleRow}>

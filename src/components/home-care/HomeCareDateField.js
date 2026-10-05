@@ -53,6 +53,12 @@ export default function HomeCareDateField({
       </TouchableOpacity>
       {open ? (
         <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
           value={pickerValue}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}

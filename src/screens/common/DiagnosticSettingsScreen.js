@@ -83,7 +83,12 @@ export default function DiagnosticSettingsScreen({ profile, type = 'lab', isBran
   if (loading) return <View style={styles.centered}><ActivityIndicator color={accent} size="large" /></View>;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.sub}>
         {isBranch ? 'Branch' : type === 'lab' ? 'Laboratory' : 'Scan centre'} preferences

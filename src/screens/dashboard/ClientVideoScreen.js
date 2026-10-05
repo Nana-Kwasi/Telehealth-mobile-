@@ -10,15 +10,33 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
 import { Ionicons } from '@expo/vector-icons';
+import ClinicianStatusBadge from '../../components/ClinicianStatusBadge';
+import { callState, callTimeLabel, CALL_STATE_COLORS } from '../../utils/callState';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
-import { Colors } from '../../constants/colors';
+import { TherapyColors as Colors } from '../../constants/colors';
+
+
+/** Open the shared call screen as this user (signed in, current HTTPS address). */
+async function openCallAs(navigation, roomName, otherName, otherId) {
+  let me = 'Patient';
+  try {
+    const p = JSON.parse((await AsyncStorage.getItem('userProfile')) || '{}');
+    me = p.fullName || p.name || p.email || me;
+  } catch { /* default name */ }
+  navigation.navigate('VideoCallSession', {
+    roomName, participantName: me,
+    callInfo: { roomName, targetPerson: otherName, displayNames: otherId ? { [otherId]: otherName } : {} },
+  });
+}
 
 const ClientVideoScreen = ({ navigation }) => {
   const [clientData, setClientData] = useState(null);
@@ -201,13 +219,10 @@ const ClientVideoScreen = ({ navigation }) => {
     }
   };
 
-  const canJoinCall = (session) => {
-    if (session.status !== 'scheduled') return false;
-    const sessionTime = session.scheduledTime?.toDate ? session.scheduledTime.toDate() : new Date(session.scheduledTime);
-    const now = new Date();
-    const diffMinutes = (sessionTime - now) / (1000 * 60);
-    return diffMinutes <= 15 && diffMinutes >= -30; // Can join 15 min before to 30 min after
-  };
+  // One rule, shared with the badge and with every other video screen. This
+  // used to keep its own 15/30-minute copy, so the button and the label could
+  // disagree about whether the same call was live.
+  const canJoinCall = (session) => callState(session.scheduledTime, session.status).joinable;
 
   if (isLoading) {
     return (
@@ -241,6 +256,7 @@ const ClientVideoScreen = ({ navigation }) => {
               <Text style={styles.therapistType}>
                 {therapistData.type || 'Therapist'} • {therapistData.specialties?.[0] || 'Mental Health'}
               </Text>
+              <ClinicianStatusBadge status={therapistData} />
             </View>
           </View>
         ) : (
@@ -289,14 +305,16 @@ const ClientVideoScreen = ({ navigation }) => {
                       <Text style={styles.sessionDate}>{sessionTime.date}</Text>
                       <Text style={styles.sessionTime}>{sessionTime.time}</Text>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(session.status)}20` }]}>
+                    {/* Was the raw `status` field, so a session two weeks
+                        past still read "scheduled". This reflects the clock. */}
+                    <View style={[styles.statusBadge, { backgroundColor: CALL_STATE_COLORS[callState(session.scheduledTime, session.status).tone].bg }]}>
                       <Ionicons
                         name={getStatusIcon(session.status)}
                         size={16}
                         color={getStatusColor(session.status)}
                       />
-                      <Text style={[styles.statusText, { color: getStatusColor(session.status) }]}>
-                        {session.status}
+                      <Text style={[styles.statusText, { color: CALL_STATE_COLORS[callState(session.scheduledTime, session.status).tone].fg }]}>
+                        {callState(session.scheduledTime, session.status).label}
                       </Text>
                     </View>
                   </View>
@@ -313,7 +331,10 @@ const ClientVideoScreen = ({ navigation }) => {
                       <TouchableOpacity
                         style={styles.joinButton}
                         onPress={() => {
-                          Alert.alert('Join Call', 'Video call functionality will be implemented with Twilio integration.');
+                          // Was a placeholder alert: clients could not join any call from the app.
+                          const room = session.roomName || session.room_name;
+                          if (!room) { Alert.alert('Not ready yet', 'Your therapist has not opened this session yet. Try again in a moment.'); return; }
+                          openCallAs(navigation, room, session.therapistName, session.therapistId);
                         }}
                       >
                         <Ionicons name="videocam" size={16} color={Colors.surface} />
@@ -335,7 +356,10 @@ const ClientVideoScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowScheduleForm(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Schedule Video Call</Text>
@@ -394,6 +418,12 @@ const ClientVideoScreen = ({ navigation }) => {
                   </View>
                   {showDatePicker && (
                     <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
                       value={scheduleForm.date ? new Date(scheduleForm.date) : new Date()}
                       mode="date"
                       display="default"
@@ -424,6 +454,12 @@ const ClientVideoScreen = ({ navigation }) => {
                   </TouchableOpacity>
                   {showTimePicker && (
                     <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
                       value={scheduleForm.time ? new Date(`2000-01-01T${scheduleForm.time}`) : new Date()}
                       mode="time"
                       display="default"
@@ -500,7 +536,7 @@ const ClientVideoScreen = ({ navigation }) => {
               </View>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Therapist Calendar Modal */}
@@ -510,7 +546,10 @@ const ClientVideoScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => { setShowTherapistCalendar(false); setShowScheduleForm(true); }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.calendarModal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Therapist Availability</Text>
@@ -589,7 +628,7 @@ const ClientVideoScreen = ({ navigation }) => {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -705,7 +744,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   scheduleButtonText: {
     color: Colors.surface,
@@ -790,7 +829,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 999,
     gap: 6,
   },
   joinButtonText: {
@@ -869,6 +908,9 @@ const styles = StyleSheet.create({
   dateInputContainer: {
     flexDirection: 'row',
     gap: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   dateInput: {
     flex: 1,
@@ -884,6 +926,9 @@ const styles = StyleSheet.create({
   dateInputText: {
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   viewCalendarButton: {
     flexDirection: 'row',
@@ -891,8 +936,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#8b5cf6',
     paddingHorizontal: 12,
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 999,
     gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
   },
   viewCalendarText: {
     color: Colors.surface,
@@ -912,6 +959,9 @@ const styles = StyleSheet.create({
   timeInputText: {
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   durationContainer: {
     flexDirection: 'row',
@@ -920,7 +970,7 @@ const styles = StyleSheet.create({
   durationButton: {
     flex: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 2,
     borderColor: Colors.border,
     alignItems: 'center',
@@ -946,13 +996,16 @@ const styles = StyleSheet.create({
     color: Colors.text,
     minHeight: 100,
     textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
   },
   submitButton: {
     backgroundColor: '#b794f6',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
   },
   submitButtonDisabled: {
     opacity: 0.6,
@@ -1017,7 +1070,7 @@ const styles = StyleSheet.create({
     padding: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'transparent',
   },
   availableDay: {
     backgroundColor: '#d1fae5',
@@ -1089,7 +1142,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   guideGreen: {
-    color: '#10b981',
+    color: '#2f7d5f',
     fontWeight: '700',
   },
 });

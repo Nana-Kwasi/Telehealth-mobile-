@@ -1,7 +1,19 @@
 import React, { useState, useCallback, useLayoutEffect, useMemo,useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Modal, ScrollView, TextInput, Alert, RefreshControl, Linking,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  TextInput,
+  Alert,
+  RefreshControl,
+  Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -270,7 +282,10 @@ export default function DoctorDiagnosticResultsScreen() {
       )}
 
       <Modal visible={!!selected && selected.kind !== 'draft'} transparent animationType="slide">
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
@@ -354,7 +369,7 @@ export default function DoctorDiagnosticResultsScreen() {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

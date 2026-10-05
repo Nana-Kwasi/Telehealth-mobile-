@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/apiClient';
 import { MedicalColors } from '../constants/colors';
 import { signOut } from '../services/authService';
+import { resolveFileUrl } from '../utils/mediaUrl';
 
 const MedicalDrawerContent = ({ navigation, profile }) => {
   const [hasPrimaryDoctor, setHasPrimaryDoctor] = useState(false);
@@ -29,10 +30,13 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
   }, [profile?.id]);
   const handleLogout = async () => {
     try {
-      await AsyncStorage.clear();
-      navigation.getParent()?.replace('Intent');
     } catch (error) {
-      console.error('Logout error:', error);
+      // Never block sign-out on a cleanup failure. The session token is
+      // already gone by this point, so stranding the user on the dashboard
+      // is strictly worse than a failed tidy-up.
+      console.warn('Logout cleanup failed (continuing):', error?.message);
+    } finally {
+      navigation.getParent()?.replace('Intent');
     }
   };
 
@@ -46,6 +50,11 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
     { name: 'MedicalDiagnostic', icon: 'flask-outline', label: 'Lab & Scan Orders' },
     { name: 'MedicalHistory', icon: 'folder-outline', label: 'Medical History' },
     { name: 'MedicalBilling', icon: 'card-outline', label: 'Billing' },
+    { name: 'MedicalCare', icon: 'medkit-outline', label: 'My Care' },
+    { name: 'MedicalCarePlan', icon: 'clipboard-outline', label: 'My Care Plan' },
+    { name: 'MedicalRecords', icon: 'search-outline', label: 'My Records' },
+    { name: 'MedicalWellness', icon: 'leaf-outline', label: 'Wellness' },
+    { name: 'MedicalAiAssistant', icon: 'sparkles-outline', label: 'NessaHub Assistant' },
     { name: 'MedicalSettings', icon: 'person-outline', label: 'My Profile' },
   ];
 
@@ -64,7 +73,7 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
         </View>
         <View style={styles.userInfo}>
           {profile?.photoURL ? (
-            <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
+            <Image source={{ uri: resolveFileUrl(profile.photoURL)}} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>

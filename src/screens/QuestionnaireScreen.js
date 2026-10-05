@@ -24,12 +24,29 @@ import {
   getQuestionnaireAgeOptions,
   validateQuestionnaireAge,
 } from '../constants/therapyAgeValidation';
+import { updateFlow as updateMedPsychFlow } from '../services/medpsychFlow';
 
 const STORAGE_KEY = 'th.onboard';
 
 const QuestionnaireScreen = ({ route, navigation }) => {
-  const { therapyType } = route.params || {};
+  const { therapyType, flow: entryFlow } = route.params || {};
+  // Psychology & Counseling reuses this questionnaire. In that mode nothing is
+  // written: the answers are cached with the rest of the flow and committed
+  // only after payment, so an abandoned sign-up leaves nothing behind. Sharing
+  // the screen keeps the two intakes from drifting apart.
+  const medpsychMode = entryFlow === 'medpsych';
+
+  // The type was chosen before sign-up. Seeding it here stops the questionnaire
+  // asking a second time, and stops a different answer overwriting the choice
+  // the rest of the flow has already acted on.
+  const presetTherapyType = route?.params?.therapyType || null;
   const [data, setData] = useState({ therapyType });
+
+  // Applied once, after the initial state, so a preset choice wins over any
+  // stale value restored from a previous attempt.
+  useEffect(() => {
+    if (presetTherapyType) setData((d) => ({ ...d, therapyType: presetTherapyType }));
+  }, [presetTherapyType]);
   const [currentStepIndex, setCurrentStepIndex] = useState(() => {
     // If therapy type picked on welcome, start at step 1 (skip country if therapyType exists)
     return therapyType ? 1 : 0;
@@ -77,11 +94,18 @@ const QuestionnaireScreen = ({ route, navigation }) => {
   };
 
   const activeSteps = useMemo(() => {
+    // Psychology & Counseling already took consent at its policy gate — one
+    // tick per document, timestamped, written to policy_acceptances_v2. Asking
+    // again here reads as though the first set did not register, which is worse
+    // than redundant on a consent screen. The standard sign-up has no earlier
+    // gate, so it keeps this step.
+    if (medpsychMode) return steps;
+
     if (needsIndividualQuestionnaireConsent(data.therapyType)) {
       return [...steps, INDIVIDUAL_CONSENT_STEP];
     }
     return steps;
-  }, [data.therapyType]);
+  }, [data.therapyType, medpsychMode]);
 
   const isTeen = data.therapyType === 'teen';
   const currentStep = activeSteps[currentStepIndex];
@@ -186,6 +210,24 @@ const QuestionnaireScreen = ({ route, navigation }) => {
       // Clear any stale clientId so SignUp writes under the freshly-created user id.
       await AsyncStorage.removeItem('th.clientId');
 
+      if (medpsychMode) {
+        const phq9 = {};
+        for (let i = 1; i <= 9; i += 1) {
+          if (data[`phq9_${i}`] !== undefined) phq9[`phq9_${i}`] = data[`phq9_${i}`];
+        }
+        // The teen path carries parent/guardian and consent details gathered
+        // before this point. They travel with the intake so the committed
+        // account has the consent on file — an under-18 account must never
+        // exist without it.
+        await updateMedPsychFlow({
+          intake: { ...data, phq9 },
+          therapyType: data.therapyType || presetTherapyType || 'individual',
+          step: 'therapist',
+        });
+        navigation.navigate('MedPsychPsychiatrists');
+        return;
+      }
+
       navigation.navigate('SignUp', { clientData });
     } catch (error) {
       console.error('Error submitting questionnaire:', error);
@@ -235,7 +277,12 @@ const QuestionnaireScreen = ({ route, navigation }) => {
             {field.label}
             {isFieldComplete(field) && <Text style={styles.checkmark}> ✓</Text>}
           </Text>
-          <ScrollView 
+          <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" 
             horizontal 
             showsHorizontalScrollIndicator={false} 
             style={styles.optionsContainer}

@@ -12,6 +12,7 @@ import {
   TextInput,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,6 +71,8 @@ export default function TherapistScheduleScreen({ profile }) {
   const [savingSchedule, setSavingSchedule] = useState(false);
 
   const [reportType, setReportType] = useState('client-progress');
+  // Which report row is open in the detail sheet, or null.
+  const [detailRow, setDetailRow] = useState(null);
   const [reportStart, setReportStart] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -310,13 +313,13 @@ export default function TherapistScheduleScreen({ profile }) {
 
       <View style={styles.calCard}>
         <View style={styles.calHeader}>
-          <TouchableOpacity onPress={() => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>
+          <TouchableOpacity onPress={() => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))} style={styles.calNavBtn} hitSlop={10}>
             <Ionicons name="chevron-back" size={22} color="#64748b" />
           </TouchableOpacity>
-          <Text style={styles.calMonth}>
+          <Text style={styles.calMonth} numberOfLines={1}>
             {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
           </Text>
-          <TouchableOpacity onPress={() => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>
+          <TouchableOpacity onPress={() => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))} style={styles.calNavBtn} hitSlop={10}>
             <Ionicons name="chevron-forward" size={22} color="#64748b" />
           </TouchableOpacity>
         </View>
@@ -357,7 +360,8 @@ export default function TherapistScheduleScreen({ profile }) {
                 <Text
                   style={[
                     styles.calDayNum,
-                    (isToday(date) || isSelected(date)) && styles.calDayNumActive,
+                    isToday(date) && styles.calDayNumActive,
+                    isSelected(date) && !isToday(date) && styles.calDayNumSelected,
                     otherMonth && styles.calDayNumMuted,
                   ]}
                 >
@@ -540,25 +544,77 @@ export default function TherapistScheduleScreen({ profile }) {
             )}
           </View>
 
+          {/* Rows open a detail sheet. They used to be inert text with the
+              whole record squeezed onto one line, so a long client name pushed
+              the numbers out of sight with no way to read them. */}
           {reportData.clientProgress?.map((c) => (
-            <View key={c.id} style={styles.reportRow}>
-              <Text style={styles.reportRowTitle}>{c.name}</Text>
-              <Text style={styles.reportRowMeta}>{c.totalSessions} sessions · {c.progress}% · Last {c.lastSession}</Text>
-            </View>
+            <TouchableOpacity
+              key={c.id}
+              style={styles.reportRow}
+              activeOpacity={0.75}
+              onPress={() => setDetailRow({
+                title: c.name,
+                rows: [
+                  ['Sessions', String(c.totalSessions ?? '—')],
+                  ['Progress', c.progress == null ? '—' : `${c.progress}%`],
+                  ['Last session', c.lastSession || 'None yet'],
+                ],
+              })}
+            >
+              <View style={styles.reportRowText}>
+                <Text style={styles.reportRowTitle}>{c.name}</Text>
+                <Text style={styles.reportRowMeta} numberOfLines={1}>
+                  {c.totalSessions} sessions · {c.progress}% · Last {c.lastSession}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#9aa0b2" />
+            </TouchableOpacity>
           ))}
 
           {reportData.notes?.slice(0, 10).map((n) => (
-            <View key={n.id} style={styles.reportRow}>
-              <Text style={styles.reportRowTitle}>{n.clientName}</Text>
-              <Text style={styles.reportRowMeta}>{n.sessionDate} · Mood {n.moodRating}/10</Text>
-            </View>
+            <TouchableOpacity
+              key={n.id}
+              style={styles.reportRow}
+              activeOpacity={0.75}
+              onPress={() => setDetailRow({
+                title: n.clientName,
+                rows: [
+                  ['Session date', n.sessionDate || '—'],
+                  ['Mood', n.moodRating == null ? '—' : `${n.moodRating}/10`],
+                ],
+              })}
+            >
+              <View style={styles.reportRowText}>
+                <Text style={styles.reportRowTitle}>{n.clientName}</Text>
+                <Text style={styles.reportRowMeta} numberOfLines={1}>
+                  {n.sessionDate} · Mood {n.moodRating}/10
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#9aa0b2" />
+            </TouchableOpacity>
           ))}
 
           {reportData.calls?.slice(0, 10).map((c) => (
-            <View key={c.id} style={styles.reportRow}>
-              <Text style={styles.reportRowTitle}>{c.clientName}</Text>
-              <Text style={styles.reportRowMeta}>{c.scheduledTime} · {c.status}</Text>
-            </View>
+            <TouchableOpacity
+              key={c.id}
+              style={styles.reportRow}
+              activeOpacity={0.75}
+              onPress={() => setDetailRow({
+                title: c.clientName,
+                rows: [
+                  ['Scheduled', c.scheduledTime || '—'],
+                  ['Status', c.status || '—'],
+                ],
+              })}
+            >
+              <View style={styles.reportRowText}>
+                <Text style={styles.reportRowTitle}>{c.clientName}</Text>
+                <Text style={styles.reportRowMeta} numberOfLines={1}>
+                  {c.scheduledTime} · {c.status}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#9aa0b2" />
+            </TouchableOpacity>
           ))}
 
           <Text style={styles.pdfHint}>Full PDF export is available on the web calendar.</Text>
@@ -690,7 +746,10 @@ export default function TherapistScheduleScreen({ profile }) {
       </Modal>
 
       <Modal visible={showScheduleModal} animationType="slide" transparent onRequestClose={() => setShowScheduleModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Schedule call</Text>
             <Text style={styles.fieldLabel}>Client</Text>
@@ -785,7 +844,7 @@ export default function TherapistScheduleScreen({ profile }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <DatePickerSheet
@@ -832,6 +891,12 @@ function DatePickerSheet({ visible, title, value, mode, minimumDate, maximumDate
   if (Platform.OS === 'android') {
     return (
       <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
         value={value}
         mode={mode}
         display="default"
@@ -860,6 +925,12 @@ function DatePickerSheet({ visible, title, value, mode, minimumDate, maximumDate
             </TouchableOpacity>
           </View>
           <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
             value={draft}
             mode={mode}
             display="spinner"
@@ -896,7 +967,7 @@ const pickerStyles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.45)' },
   sheet: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: Platform.OS === 'ios' ? 28 : 16,
@@ -919,8 +990,8 @@ const pickerStyles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  title: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  cancelText: { fontSize: 16, color: '#64748b', fontWeight: '600' },
+  title: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  cancelText: { fontSize: 16, color: '#0d0d0d', fontWeight: '600' },
   doneText: { fontSize: 16, color: TherapistColors.primary, fontWeight: '700' },
   picker: { height: 216 },
 });
@@ -930,23 +1001,53 @@ function SummaryCard({ label, value }) {
     <View style={styles.summaryCard}>
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={styles.summaryValue}>{value}</Text>
+      {/* Detail sheet for a report row. */}
+      <Modal
+        visible={!!detailRow}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDetailRow(null)}
+      >
+        <TouchableOpacity
+          style={styles.detailScrim}
+          activeOpacity={1}
+          onPress={() => setDetailRow(null)}
+        >
+          <TouchableOpacity style={styles.detailSheet} activeOpacity={1}>
+            <View style={styles.detailHead}>
+              <Text style={styles.detailTitle}>{detailRow?.title}</Text>
+              <TouchableOpacity onPress={() => setDetailRow(null)} style={styles.detailClose}>
+                <Ionicons name="close" size={18} color="#454b5c" />
+              </TouchableOpacity>
+            </View>
+            {(detailRow?.rows || []).map(([label, value]) => (
+              <View key={label} style={styles.detailLine}>
+                <Text style={styles.detailLabel}>{label}</Text>
+                <Text style={styles.detailValue}>{value}</Text>
+              </View>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
     </View>
   );
 }
 
 function statusStyle(status) {
-  if (status === 'completed') return { bg: '#dcfce7', color: '#16a34a' };
-  if (status === 'cancelled') return { bg: '#fee2e2', color: '#dc2626' };
-  if (status === 'in_progress') return { bg: '#eff6ff', color: '#1d4ed8' };
+  if (status === 'completed') return { bg: '#dcfce7', color: '#2f7d5f' };
+  if (status === 'cancelled') return { bg: '#fee2e2', color: '#8c322d' };
+  if (status === 'in_progress') return { bg: '#eff6ff', color: '#2f5d7d' };
   return { bg: '#eef2ff', color: TherapistColors.primary };
 }
 
 const styles = StyleSheet.create({
+  calNavBtn: { padding: 8, minWidth: 38, alignItems: 'center', justifyContent: 'center' },
   // ── Day detail sheet ──────────────────────────────────────────────────────
   detailBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.45)' },
   detailBackdropTap: { flex: 1 },
   detailSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
@@ -957,39 +1058,39 @@ const styles = StyleSheet.create({
     alignSelf: 'center', width: 40, height: 4, borderRadius: 2,
     backgroundColor: '#cbd5e1', marginBottom: 14,
   },
-  detailDate: { fontSize: 19, fontWeight: '800', color: '#0f172a' },
-  detailCount: { fontSize: 13, color: '#64748b', marginTop: 2, marginBottom: 14 },
+  detailDate: { fontSize: 19, fontWeight: '800', color: '#0d0d0d' },
+  detailCount: { fontSize: 13, color: '#0d0d0d', marginTop: 2, marginBottom: 14 },
   detailCard: {
     borderWidth: 1, borderColor: '#e2e8f0', borderLeftWidth: 4,
     borderLeftColor: TherapistColors.primary, borderRadius: 14,
-    padding: 14, marginBottom: 10, backgroundColor: '#f8fafc',
+    padding: 14, marginBottom: 10, backgroundColor: 'transparent',
   },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  detailTime: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  detailTime: { fontSize: 16, fontWeight: '800', color: '#0d0d0d' },
   detailChip: {
     marginLeft: 'auto', paddingHorizontal: 10, paddingVertical: 3,
     borderRadius: 20, backgroundColor: '#eef2ff',
   },
   detailChipText: { fontSize: 11, fontWeight: '800', color: '#4f46e5', textTransform: 'uppercase' },
-  detailPerson: { fontSize: 14, fontWeight: '600', color: '#334155' },
-  detailMeta: { fontSize: 13, color: '#64748b', textTransform: 'capitalize' },
-  detailNotes: { marginTop: 6, fontSize: 13, color: '#475569', fontStyle: 'italic', lineHeight: 19 },
+  detailPerson: { fontSize: 14, fontWeight: '600', color: '#0d0d0d' },
+  detailMeta: { fontSize: 13, color: '#0d0d0d', textTransform: 'capitalize' },
+  detailNotes: { marginTop: 6, fontSize: 13, color: '#0d0d0d', fontStyle: 'italic', lineHeight: 19 },
   detailActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
   detailSecondary: {
     flex: 1, paddingVertical: 14, borderRadius: 12,
-    alignItems: 'center', backgroundColor: '#f1f5f9',
+    alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.72)',
   },
-  detailSecondaryText: { fontSize: 15, fontWeight: '700', color: '#334155' },
+  detailSecondaryText: { fontSize: 15, fontWeight: '700', color: '#0d0d0d' },
   detailPrimary: {
     flex: 1, flexDirection: 'row', gap: 6, paddingVertical: 14, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center', backgroundColor: TherapistColors.primary,
   },
-  detailPrimaryText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  detailPrimaryText: { fontSize: 15, fontWeight: '700', color: '#ffffff' },
 
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
-  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f1f5f9' },
+  container: { flex: 1, backgroundColor: 'rgba(255,255,255,0.72)' },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.72)' },
   pageHeader: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
-  pageTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
+  pageTitle: { fontSize: 22, fontWeight: '800', color: '#0d0d0d' },
   tabRow: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, gap: 8 },
   tab: {
     flex: 1,
@@ -999,15 +1100,15 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(95,84,214,0.07)',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
   tabActive: { backgroundColor: '#eef2ff', borderColor: TherapistColors.primary },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+  tabText: { fontSize: 14, fontWeight: '600', color: '#0d0d0d' },
   tabTextActive: { color: TherapistColors.primary, fontWeight: '700' },
   scroll: { padding: 16, paddingBottom: 100 },
-  calCard: { backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 16 },
+  calCard: { backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 16 },
   // Pending client requests — amber, so they don't read as confirmed bookings.
   requestsCard: {
     backgroundColor: '#fffbeb',
@@ -1017,30 +1118,42 @@ const styles = StyleSheet.create({
     borderColor: '#fcd34d',
     marginBottom: 16,
   },
-  requestsTitle: { fontSize: 15, fontWeight: '700', color: '#92400e', marginBottom: 10 },
+  requestsTitle: { fontSize: 15, fontWeight: '700', color: '#734e12', marginBottom: 10 },
   requestRow: { borderTopWidth: 1, borderTopColor: '#fde68a', paddingTop: 10, marginTop: 10 },
-  requestWho: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
-  requestWhen: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  requestNotes: { fontSize: 12, color: '#475569', fontStyle: 'italic', marginTop: 4 },
+  requestWho: { fontSize: 15, fontWeight: '700', color: '#0d0d0d' },
+  requestWhen: { fontSize: 12, color: '#0d0d0d', marginTop: 2 },
+  requestNotes: { fontSize: 12, color: '#0d0d0d', fontStyle: 'italic', marginTop: 4 },
   requestActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   acceptBtn: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, borderRadius: 10, backgroundColor: '#059669',
+    paddingVertical: 10, borderRadius: 999, backgroundColor: '#059669',
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
   },
-  acceptText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  acceptText: { color: '#0d0d0d', fontSize: 14, fontWeight: '700' },
   declineBtn: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, borderRadius: 10, backgroundColor: '#fff',
+    paddingVertical: 10, borderRadius: 999, backgroundColor: '#ffffff',
     borderWidth: 1, borderColor: '#fca5a5',
   },
-  declineText: { color: '#dc2626', fontSize: 14, fontWeight: '700' },
+  declineText: { color: '#8c322d', fontSize: 14, fontWeight: '700' },
   btnBusy: { opacity: 0.7 },
   calHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  calMonth: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  todayBtn: { alignSelf: 'center', marginTop: 10, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, backgroundColor: '#eef2ff' },
+  calMonth: { fontSize: 16, fontWeight: '700', color: '#0d0d0d',
+    // Flex between the arrows and truncate. Without this a long month
+    // name grew past its share of the row and sat on top of the
+    // back/forward chevrons, which then could not be tapped.
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 8,
+  },
+  todayBtn: { alignSelf: 'center', marginTop: 10, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 999, backgroundColor: '#eef2ff',
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
+  },
   todayBtnText: { color: TherapistColors.primary, fontWeight: '700', fontSize: 13 },
   dayLabelRow: { flexDirection: 'row', marginTop: 14, marginBottom: 6 },
-  dayLabel: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#94a3b8' },
+  dayLabel: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#3d3d3d' },
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   calDay: {
     width: `${100 / 7}%`,
@@ -1054,9 +1167,13 @@ const styles = StyleSheet.create({
   calDayToday: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
   calDaySelected: { backgroundColor: '#eef2ff', borderColor: TherapistColors.primary },
   calDayOther: { opacity: 0.45 },
-  calDayNum: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
-  calDayNumActive: { color: '#fff' },
-  calDayNumMuted: { color: '#94a3b8' },
+  calDayNum: { fontSize: 13, fontWeight: '700', color: '#0d0d0d' },
+  // White belongs on the pine "today" fill only.
+  calDayNumActive: { color: '#ffffff' },
+  // The selected day is a PALE lavender fill, so its number needs dark ink —
+  // it was sharing calDayNumActive and rendering white on near-white.
+  calDayNumSelected: { color: TherapistColors.primaryDark },
+  calDayNumMuted: { color: '#3d3d3d' },
   calDayCalls: { marginTop: 2, width: '100%' },
   // Appointment chip — same language as the web calendar: tinted block with a
   // coloured left edge, time on top, who it's with underneath.
@@ -1069,20 +1186,20 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     marginBottom: 2,
   },
-  calDayChipWho: { fontSize: 7, color: '#334155', fontWeight: '500' },
+  calDayChipWho: { fontSize: 7, color: '#0d0d0d', fontWeight: '500' },
   calDayCallText: { fontSize: 8, color: TherapistColors.primary, fontWeight: '600' },
-  calDayCallTextActive: { color: '#fff' },
-  calDayMore: { fontSize: 8, color: '#64748b' },
+  calDayCallTextActive: { color: '#0d0d0d' },
+  calDayMore: { fontSize: 8, color: '#0d0d0d' },
   daySection: { marginBottom: 20 },
-  dayTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  dayCount: { fontSize: 12, color: '#64748b', marginTop: 2, marginBottom: 10 },
+  dayTitle: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  dayCount: { fontSize: 12, color: '#0d0d0d', marginTop: 2, marginBottom: 10 },
   emptyDay: { alignItems: 'center', padding: 24, gap: 8 },
-  emptyDayText: { color: '#94a3b8' },
+  emptyDayText: { color: '#3d3d3d' },
   apptCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -1091,30 +1208,30 @@ const styles = StyleSheet.create({
   },
   apptTimeCol: { minWidth: 56, alignItems: 'center' },
   apptTime: { fontSize: 13, fontWeight: '700', color: TherapistColors.primary },
-  apptDur: { fontSize: 10, color: '#94a3b8' },
-  apptClient: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
-  apptNotes: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  apptDur: { fontSize: 10, color: '#3d3d3d' },
+  apptClient: { fontSize: 15, fontWeight: '700', color: '#0d0d0d' },
+  apptNotes: { fontSize: 12, color: '#0d0d0d', marginTop: 2 },
   statusPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
   notesSection: { marginBottom: 24 },
-  notesSectionTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
-  notesEmpty: { fontSize: 13, color: '#94a3b8' },
+  notesSectionTitle: { fontSize: 16, fontWeight: '800', color: '#0d0d0d', marginBottom: 10 },
+  notesEmpty: { fontSize: 13, color: '#3d3d3d' },
   notesScroll: { gap: 10, paddingRight: 8 },
   noteCard: {
     width: 260,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 12,
     padding: 12,
     borderLeftWidth: 4,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  noteClient: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-  noteDate: { fontSize: 11, color: '#64748b', marginTop: 2 },
-  noteMood: { fontSize: 12, color: '#475569', marginTop: 6 },
-  noteFocus: { fontSize: 12, color: '#64748b', marginTop: 6 },
+  noteClient: { fontSize: 14, fontWeight: '700', color: '#0d0d0d' },
+  noteDate: { fontSize: 11, color: '#0d0d0d', marginTop: 2 },
+  noteMood: { fontSize: 12, color: '#0d0d0d', marginTop: 6 },
+  noteFocus: { fontSize: 12, color: '#0d0d0d', marginTop: 6 },
   interventionBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginTop: 8 },
-  interventionText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  interventionText: { fontSize: 10, fontWeight: '700', color: '#0d0d0d' },
   fab: {
     position: 'absolute',
     right: 20,
@@ -1129,25 +1246,25 @@ const styles = StyleSheet.create({
   },
   fabDisabled: { backgroundColor: '#cbd5e1', elevation: 0 },
   reportsWrap: { paddingBottom: 24 },
-  reportsHeading: { fontSize: 18, fontWeight: '800', color: '#0f172a', marginBottom: 12 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#94a3b8', marginBottom: 6, textTransform: 'uppercase' },
+  reportsHeading: { fontSize: 18, fontWeight: '800', color: '#0d0d0d', marginBottom: 12 },
+  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#3d3d3d', marginBottom: 6, textTransform: 'uppercase' },
   reportChip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1,
     borderColor: '#e2e8f0',
     marginRight: 8,
   },
   reportChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
-  reportChipText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  reportChipText: { fontSize: 12, fontWeight: '600', color: '#0d0d0d' },
   reportChipTextActive: { color: '#fff' },
   dateRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     padding: 14,
     borderRadius: 12,
     marginBottom: 8,
@@ -1155,38 +1272,67 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
   },
   dateRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dateRowLabel: { color: '#64748b', fontSize: 14, fontWeight: '500' },
-  dateRowValue: { color: '#0f172a', fontWeight: '700', fontSize: 14 },
+  dateRowLabel: { color: '#0d0d0d', fontSize: 14, fontWeight: '500' },
+  dateRowValue: { color: '#0d0d0d', fontWeight: '700', fontSize: 14 },
   generateBtn: {
     backgroundColor: TherapistColors.primary,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 16,
   },
-  generateBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  generateBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
   btnDisabled: { opacity: 0.6 },
-  reportResult: { backgroundColor: '#fff', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#e2e8f0' },
-  reportTypeTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 12 },
+  reportResult: { backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#e2e8f0' },
+  reportTypeTitle: { fontSize: 16, fontWeight: '800', color: '#0d0d0d', marginBottom: 12 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  summaryCard: { width: '47%', backgroundColor: '#f8fafc', borderRadius: 10, padding: 12 },
-  summaryLabel: { fontSize: 11, color: '#64748b', fontWeight: '600' },
+  summaryCard: { width: '47%', backgroundColor: 'transparent', borderRadius: 10, padding: 12 },
+  summaryLabel: { fontSize: 11, color: '#0d0d0d', fontWeight: '600' },
   summaryValue: { fontSize: 20, fontWeight: '800', color: TherapistColors.primary, marginTop: 4 },
-  reportRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
-  reportRowTitle: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-  reportRowMeta: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  pdfHint: { fontSize: 12, color: '#94a3b8', marginTop: 12, fontStyle: 'italic' },
+  // flex:1 on the text only — on the row it would stretch the chevron.
+  reportRowText: { flex: 1, minWidth: 0 },
+  detailScrim: {
+    flex: 1, backgroundColor: 'rgba(16,22,48,0.45)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  detailSheet: {
+    width: '100%', maxWidth: 380, backgroundColor: '#ffffff',
+    borderRadius: 18, padding: 18,
+  },
+  detailHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  detailTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: '#0f1424' },
+  detailClose: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: '#f1f3f8',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  detailLine: {
+    flexDirection: 'row', justifyContent: 'space-between', gap: 12,
+    paddingVertical: 9, borderTopWidth: 1, borderTopColor: '#f1f3f8',
+  },
+  detailLabel: { fontSize: 13, color: '#656b7d' },
+  detailValue: { fontSize: 13.5, fontWeight: '700', color: '#15173a', flexShrink: 1, textAlign: 'right' },
+
+  reportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  reportRowTitle: { fontSize: 14, fontWeight: '700', color: '#0d0d0d' },
+  reportRowMeta: { fontSize: 12, color: '#0d0d0d', marginTop: 2 },
+  pdfHint: { fontSize: 12, color: '#3d3d3d', marginTop: 12, fontStyle: 'italic' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: Platform.OS === 'ios' ? 32 : 20,
     maxHeight: '90%',
   },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a', marginBottom: 12 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#0d0d0d', marginBottom: 12 },
   clientChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -1194,10 +1340,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     marginRight: 8,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
   },
   clientChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
-  clientChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  clientChipText: { fontSize: 13, fontWeight: '600', color: '#0d0d0d' },
   clientChipTextActive: { color: '#fff' },
   durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   durationChip: {
@@ -1206,24 +1352,25 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
   },
   durationChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
-  durationChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  durationChipText: { fontSize: 13, fontWeight: '600', color: '#0d0d0d' },
   durationChipTextActive: { color: '#fff' },
   notesInput: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(16,16,16,0.16)',
     borderRadius: 12,
     padding: 12,
     minHeight: 72,
     fontSize: 14,
-    color: '#0f172a',
+    color: '#0d0d0d',
     textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
   },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
-  cancelBtnText: { fontWeight: '700', color: '#64748b' },
-  saveBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: TherapistColors.primary, alignItems: 'center' },
+  cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 999, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
+  cancelBtnText: { fontWeight: '700', color: '#0d0d0d' },
+  saveBtn: { flex: 1, paddingVertical: 14, borderRadius: 999, backgroundColor: TherapistColors.primary, alignItems: 'center' },
   saveBtnText: { fontWeight: '700', color: '#fff' },
 });

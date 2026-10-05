@@ -85,7 +85,12 @@ export default function MedicalIntakeScreen({ navigation }) {
         <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Step 1 — Category */}
         {step === 1 && (
@@ -204,7 +209,7 @@ const styles = StyleSheet.create({
   },
   sub: {
     fontSize: 14,
-    color: '#6b7280',
+    color: '#44474f',
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 28,
@@ -272,7 +277,7 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   urgencyLabelSelected: { color: MedicalColors.primary },
-  urgencyDesc: { fontSize: 13, color: '#6b7280' },
+  urgencyDesc: { fontSize: 13, color: '#44474f' },
 
   /* CTA */
   cta: {

@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
+import PracticeAnalyticsCard from '../../components/PracticeAnalyticsCard';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -171,6 +172,10 @@ export default function DoctorAnalyticsScreen() {
       contentContainerStyle={{ padding: 16 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAnalytics(); }} />}
     >
+      {/* Counted server-side against the previous period; the model only
+          writes the paragraph over those figures. */}
+      <PracticeAnalyticsCard accent={DoctorColors.primary} />
+
       {/* KPI Cards */}
       <View style={styles.kpiGrid}>
         <StatCard icon="cash-outline" value={`GHS ${stats.earnings.toLocaleString()}`} label="Total Earnings" color="#10b981" bg="#f0fdf4" />

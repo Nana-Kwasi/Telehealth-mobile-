@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,7 @@ import { TherapistColors } from '../../constants/colors';
 import ChatThreadView from '../../components/chat/ChatThreadView';
 import { setPresenceOnline, setPresenceOffline, formatLastSeen, findOrCreateThread, sendThreadMessage, threadHasParticipant } from '../../utils/chatUtils';
 import TherapistStaffProfileModal from '../../components/therapist/TherapistStaffProfileModal';
+import { resolveFileUrl } from '../../utils/mediaUrl';
 
 export default function TherapistMessagesScreen({ profile }) {
   const [therapists, setTherapists] = useState([]);
@@ -142,7 +144,7 @@ export default function TherapistMessagesScreen({ profile }) {
           <Ionicons name="arrow-back" size={22} color="#0f172a" />
         </TouchableOpacity>
         {selectedTherapist.photoURL ? (
-          <Image source={{ uri: selectedTherapist.photoURL }} style={styles.chatAvatarImg} />
+          <Image source={{ uri: resolveFileUrl(selectedTherapist.photoURL)}} style={styles.chatAvatarImg} />
         ) : (
           <View style={styles.chatAvatar}>
             <Text style={styles.chatAvatarText}>{(selectedTherapist.name || '?')[0].toUpperCase()}</Text>
@@ -150,7 +152,7 @@ export default function TherapistMessagesScreen({ profile }) {
         )}
         <View style={{ flex: 1 }}>
           <Text style={styles.chatName} numberOfLines={1}>{selectedTherapist.name}</Text>
-          <Text style={[styles.chatRole, otherPresence.online && { color: '#22c55e' }]}>
+          <Text style={[styles.chatRole, otherPresence.online && { color: '#2f7d5f' }]}>
             {otherPresence.online ? '● Online' : (formatLastSeen(otherPresence.lastSeen) || selectedTherapist.type || 'Staff')}
           </Text>
         </View>
@@ -191,6 +193,11 @@ export default function TherapistMessagesScreen({ profile }) {
   // ── Staff list ────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
       <View style={styles.listTop}>
         <Text style={styles.listTitle}>Staff messages</Text>
         <View style={styles.tabRow}>
@@ -248,7 +255,7 @@ export default function TherapistMessagesScreen({ profile }) {
               activeOpacity={0.85}
             >
               {therapist.photoURL ? (
-                <Image source={{ uri: therapist.photoURL }} style={styles.staffAvatar} />
+                <Image source={{ uri: resolveFileUrl(therapist.photoURL)}} style={styles.staffAvatar} />
               ) : (
                 <View style={styles.staffAvatarPlaceholder}>
                   <Text style={styles.staffAvatarText}>{(therapist.name || '?')[0].toUpperCase()}</Text>
@@ -290,44 +297,51 @@ export default function TherapistMessagesScreen({ profile }) {
         isAdmin={isAdmin}
         onClose={() => setProfileModal({ visible: false, user: null, mode: 'view' })}
       />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
+  container: { flex: 1, backgroundColor: 'rgba(255,255,255,0.72)' },
   listTop: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
   },
-  listTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a', marginTop: 4, marginBottom: 12 },
+  listTitle: { fontSize: 22, fontWeight: '800', color: '#0d0d0d', marginTop: 4, marginBottom: 12 },
   tabRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f1f5f9' },
+  tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: 'rgba(95,84,214,0.07)' },
   tabActive: { backgroundColor: '#eef2ff' },
-  tabText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  tabText: { fontSize: 13, fontWeight: '600', color: '#0d0d0d' },
   tabTextActive: { color: TherapistColors.primary, fontWeight: '700' },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#f8fafc',
+    // White, not transparent: over the tinted ground a clear field with a
+    // hairline border read as decoration rather than something to type in.
+    backgroundColor: '#ffffff',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  searchInput: { flex: 1, fontSize: 15, color: '#0f172a', paddingVertical: 0 },
+  searchInput: { flex: 1, fontSize: 15, color: '#0d0d0d', paddingVertical: 0,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   staffList: { padding: 16, paddingBottom: 28 },
   staffRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
@@ -344,15 +358,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  staffAvatarText: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  staffName: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
-  staffPreview: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  staffAvatarText: { fontSize: 18, fontWeight: '800', color: '#0d0d0d' },
+  staffName: { fontSize: 15, fontWeight: '700', color: '#0d0d0d' },
+  staffPreview: { fontSize: 12, color: '#3d3d3d', marginTop: 2 },
   moreBtn: { padding: 4 },
   dropdown: {
     position: 'absolute',
     right: 12,
     top: 48,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -364,10 +378,10 @@ const styles = StyleSheet.create({
     }),
   },
   dropdownItem: { paddingHorizontal: 14, paddingVertical: 12 },
-  dropdownText: { fontSize: 14, fontWeight: '600', color: '#334155' },
+  dropdownText: { fontSize: 14, fontWeight: '600', color: '#0d0d0d' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#64748b' },
-  emptySub: { fontSize: 13, color: '#94a3b8' },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  emptySub: { fontSize: 13, color: '#3d3d3d' },
 
   chatHeader: {
     flexDirection: 'row',
@@ -375,7 +389,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
   },
@@ -389,14 +403,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chatAvatarImg: { width: 42, height: 42, borderRadius: 12 },
-  chatAvatarText: { color: '#fff', fontWeight: '800', fontSize: 16 },
-  chatName: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  chatRole: { fontSize: 12, color: '#64748b', marginTop: 1 },
+  chatAvatarText: { color: '#ffffff', fontWeight: '800', fontSize: 16 },
+  chatName: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  chatRole: { fontSize: 12, color: '#0d0d0d', marginTop: 1 },
   chatMessages: { padding: 16, paddingBottom: 8, flexGrow: 1 },
   emptyChat: { alignItems: 'center', paddingTop: 48, gap: 8 },
   emptyChatEmoji: { fontSize: 40 },
-  emptyChatTitle: { fontSize: 16, fontWeight: '700', color: '#64748b' },
-  emptyChatSub: { fontSize: 13, color: '#94a3b8', textAlign: 'center', paddingHorizontal: 24 },
+  emptyChatTitle: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  emptyChatSub: { fontSize: 13, color: '#3d3d3d', textAlign: 'center', paddingHorizontal: 24 },
   msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end', gap: 8, maxWidth: '88%' },
   msgRowMine: { alignSelf: 'flex-end' },
   msgRowOther: { alignSelf: 'flex-start' },
@@ -409,16 +423,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  msgAvatarText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  msgAvatarText: { color: '#0d0d0d', fontSize: 12, fontWeight: '700' },
   msgBubble: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, maxWidth: '100%' },
   msgBubbleMine: { backgroundColor: TherapistColors.primary },
-  msgBubbleOther: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e8ecf2' },
-  msgText: { fontSize: 15, lineHeight: 21, color: '#1e293b' },
-  msgTextMine: { color: '#fff' },
-  msgTime: { fontSize: 10, color: '#94a3b8', marginTop: 4 },
-  msgTimeMine: { color: 'rgba(255,255,255,0.7)' },
+  msgBubbleOther: { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: '#e8ecf2' },
+  msgText: { fontSize: 15, lineHeight: 21, color: '#0d0d0d' },
+  msgTextMine: { color: '#0d0d0d' },
+  msgTime: { fontSize: 10, color: '#3d3d3d', marginTop: 4 },
+  msgTimeMine: { color: '#0d0d0d' },
   msgImage: { width: 200, height: 150, borderRadius: 10 },
-  emojiBar: { maxHeight: 48, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  emojiBar: { maxHeight: 48, backgroundColor: 'rgba(255,255,255,0.72)', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
   emojiBarContent: { paddingHorizontal: 8, paddingVertical: 8, gap: 4 },
   emojiBtn: { paddingHorizontal: 6 },
   emojiChar: { fontSize: 24 },
@@ -427,22 +441,28 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 4,
     padding: 10,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopWidth: 1,
     borderTopColor: '#e2e8f0',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
-  inputIconBtn: { padding: 8, justifyContent: 'center' },
+  inputIconBtn: { padding: 8, justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   recordingBtn: { backgroundColor: '#fef2f2', borderRadius: 8 },
   msgInput: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(16,16,16,0.16)',
     paddingHorizontal: 14,
     paddingVertical: 8,
     fontSize: 15,
-    color: '#0f172a',
+    color: '#0d0d0d',
     maxHeight: 96,
   },
   sendBtn: {

@@ -13,6 +13,8 @@ import {
   Alert,
   ScrollView,
   Switch,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +34,7 @@ import {
 } from '../../services/therapistNotesService';
 import { getNoteTitle, getNoteSections, getNotePreview, NOTE_TYPE_LABELS } from '../../utils/noteDisplayUtils';
 import { api } from '../../services/apiClient';
+import AiNoteDraftMobile from '../../components/AiNoteDraftMobile';
 
 const FIELD_LABELS = {
   subjective: 'Subjective',
@@ -415,6 +418,29 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
             placeholderTextColor={TherapistColors.textLight}
           />
         </View>
+        {/* Fills the four SOAP fields below. Offered only for SOAP, because
+            those are the fields the draft produces — on a discharge summary it
+            would have nowhere to put anything. */}
+        {noteForm.noteType === 'soap' ? (
+          <AiNoteDraftMobile
+            clientId={noteForm.clientId}
+            accent={TherapistColors.primary}
+            onDraft={(d) => setNoteForm((p) => ({
+              ...p,
+              subjective: d.subjective || p.subjective,
+              objective:  d.objective  || p.objective,
+              assessment: d.assessment || p.assessment,
+              plan:       d.plan       || p.plan,
+              aiAssisted: true,
+              aiAuditId:  d.aiAuditId || null,
+              aiDraftSnapshot: {
+                subjective: d.subjective || '', objective: d.objective || '',
+                assessment: d.assessment || '', plan: d.plan || '',
+              },
+            }))}
+          />
+        ) : null}
+
         {template.fields.map((field) => (
           <View key={field} style={styles.formGroup}>
             <Text style={styles.formLabel}>{FIELD_LABELS[field] || field}</Text>
@@ -620,7 +646,10 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
 
       {/* Create / Edit */}
       <Modal visible={showFormModal} transparent animationType="slide" onRequestClose={() => { setShowFormModal(false); resetForm(); }}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
@@ -663,12 +692,15 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* View */}
       <Modal visible={showViewModal} transparent animationType="slide" onRequestClose={() => setShowViewModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
@@ -720,7 +752,7 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
               </ScrollView>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -754,7 +786,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: TherapistColors.primary,
-    backgroundColor: '#f0f7ff',
+    backgroundColor: 'rgba(207,169,97,0.10)',
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 12,
@@ -770,13 +802,13 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 999,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
   },
   headerBtnText: { fontSize: 13, fontWeight: '600', color: TherapistColors.primary },
-  templatesBox: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: TherapistColors.border },
+  templatesBox: { backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: TherapistColors.border },
   templatesTitle: { fontSize: 14, fontWeight: '700', color: TherapistColors.text, marginBottom: 8 },
   templateCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   templateName: { fontSize: 14, fontWeight: '600', color: TherapistColors.text },
@@ -786,14 +818,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginBottom: 10,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
   },
-  searchInput: { flex: 1, fontSize: 14, color: TherapistColors.text },
+  searchInput: { flex: 1, fontSize: 14, color: TherapistColors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   filterRow: { marginBottom: 12 },
   filterContent: { gap: 8, paddingRight: 8 },
   filterChip: {
@@ -802,7 +838,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     marginRight: 8,
   },
   filterChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
@@ -812,7 +848,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '700', color: TherapistColors.text },
   emptySubtitle: { fontSize: 13, color: TherapistColors.textLight, textAlign: 'center', paddingHorizontal: 24 },
   noteCard: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
@@ -820,9 +856,9 @@ const styles = StyleSheet.create({
     borderColor: TherapistColors.border,
   },
   noteCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  typeBadge: { backgroundColor: '#f0f7ff', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  typeBadge: { backgroundColor: 'rgba(207,169,97,0.10)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   typeBadgeText: { fontSize: 11, fontWeight: '700', color: TherapistColors.primary },
-  draftBadge: { fontSize: 11, fontWeight: '600', color: '#d97706' },
+  draftBadge: { fontSize: 11, fontWeight: '600', color: '#734e12' },
   doneBadge: { fontSize: 11, fontWeight: '600', color: TherapistColors.success },
   noteTitle: { fontSize: 15, fontWeight: '700', color: TherapistColors.text, marginBottom: 4 },
   noteDate: { fontSize: 12, color: TherapistColors.textLight, marginBottom: 6 },
@@ -842,7 +878,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%' },
+  modalSheet: { backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%' },
   modalHandle: { width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginTop: 12 },
   modalHeader: {
     flexDirection: 'row',
@@ -856,11 +892,11 @@ const styles = StyleSheet.create({
   modalBody: { padding: 16, paddingBottom: 32 },
   formGroup: { marginBottom: 14 },
   formLabel: { fontSize: 13, fontWeight: '600', color: TherapistColors.textSecondary, marginBottom: 4 },
-  formEmptyHint: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', marginBottom: 6 },
+  formEmptyHint: { fontSize: 12, color: '#3d3d3d', fontStyle: 'italic', marginBottom: 6 },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   checkLabel: { fontSize: 14, color: TherapistColors.text },
   formInput: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
@@ -868,7 +904,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: TherapistColors.text,
   },
-  formInputTall: { minHeight: 88, textAlignVertical: 'top' },
+  formInputTall: { minHeight: 88, textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   chipRow: { marginTop: 4 },
   chip: {
     paddingHorizontal: 13,
@@ -876,7 +916,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     marginRight: 8,
     marginBottom: 4,
   },
@@ -884,7 +924,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: '600', color: TherapistColors.textSecondary },
   chipTextActive: { color: '#fff' },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  saveBtn: { backgroundColor: TherapistColors.primary, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginTop: 8 },
+  saveBtn: { backgroundColor: TherapistColors.primary, borderRadius: 999, paddingVertical: 15, alignItems: 'center', marginTop: 8 },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   viewMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   viewMeta: { fontSize: 13, color: TherapistColors.textLight, flexShrink: 1 },
@@ -894,7 +934,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
-  viewDraftText: { fontSize: 11, fontWeight: '700', color: '#92400e' },
+  viewDraftText: { fontSize: 11, fontWeight: '700', color: '#734e12' },
   viewTherapist: { fontSize: 13, fontWeight: '600', color: TherapistColors.secondary, marginBottom: 12 },
   viewRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f8fafc' },
   viewLabel: { fontSize: 12, fontWeight: '600', color: TherapistColors.textLight, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
@@ -907,7 +947,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 999,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
   },

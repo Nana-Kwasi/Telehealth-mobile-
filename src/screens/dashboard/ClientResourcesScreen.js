@@ -11,6 +11,8 @@ import {
   Alert,
   Linking,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
@@ -20,7 +22,7 @@ import ResourceMedia from '../../components/common/ResourceMedia';
 import { downloadNotePdf, downloadResourcePdf } from '../../utils/brandedPdf';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
-import { Colors } from '../../constants/colors';
+import { TherapyColors as Colors } from '../../constants/colors';
 
 const ClientResourcesScreen = ({ navigation }) => {
   const [resources, setResources] = useState([]);
@@ -511,7 +513,10 @@ const ClientResourcesScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowWorksheetModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
@@ -682,7 +687,7 @@ const ClientResourcesScreen = ({ navigation }) => {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Resource Modal — shows the attachment itself: image, audio player,
@@ -694,7 +699,10 @@ const ClientResourcesScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowResourceModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle} numberOfLines={2}>
@@ -733,7 +741,7 @@ const ClientResourcesScreen = ({ navigation }) => {
               ) : null}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Note Modal */}
@@ -743,7 +751,10 @@ const ClientResourcesScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowNoteModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
@@ -857,7 +868,7 @@ const ClientResourcesScreen = ({ navigation }) => {
               })()}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -894,6 +905,14 @@ const styles = StyleSheet.create({
   searchContainer: {
     padding: 16,
     paddingBottom: 8,
+    // Had neither a background nor a border, so the field was invisible
+    // against the page until you tapped it.
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e4e7ee',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   searchInputContainer: {
     flexDirection: 'row',
@@ -910,6 +929,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   categoriesContainer: {
     flexDirection: 'row',
@@ -924,7 +946,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -1021,9 +1043,9 @@ const styles = StyleSheet.create({
   },
   resourceDownloadBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginTop: 20, paddingVertical: 13, borderRadius: 10, backgroundColor: Colors.primary,
+    marginTop: 20, paddingVertical: 13, borderRadius: 999, backgroundColor: Colors.primary,
   },
-  resourceDownloadText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  resourceDownloadText: { color: '#0d0d0d', fontSize: 14, fontWeight: '700' },
   downloadBtn: {
     marginLeft: 10,
     padding: 4,
@@ -1040,7 +1062,7 @@ const styles = StyleSheet.create({
   },
   completedText: {
     fontSize: 12,
-    color: '#10B981',
+    color: '#2f7d5f',
     fontWeight: '600',
   },
   newBadge: {
@@ -1051,7 +1073,7 @@ const styles = StyleSheet.create({
   },
   newText: {
     fontSize: 12,
-    color: '#F59E0B',
+    color: '#734e12',
     fontWeight: '600',
   },
   modalOverlay: {
@@ -1100,17 +1122,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#bbf7d0',
   },
-  completedNoteText: { flex: 1, fontSize: 13, color: '#15803d', fontWeight: '600', lineHeight: 18 },
+  completedNoteText: { flex: 1, fontSize: 13, color: '#2f7d5f', fontWeight: '600', lineHeight: 18 },
   checkboxGroup: { gap: 2 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  checkboxLabel: { fontSize: 15, color: '#0f172a', fontWeight: '600' },
+  checkboxLabel: { fontSize: 15, color: '#0d0d0d', fontWeight: '600' },
   ratingWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   ratingDot: {
     width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: '#e2e8f0',
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.72)',
   },
   ratingDotActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  ratingDotText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  ratingDotText: { fontSize: 14, fontWeight: '700', color: '#0d0d0d' },
   ratingDotTextActive: { color: '#fff' },
   optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   optionChip: {
@@ -1119,10 +1141,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
   },
   optionChipActive: { borderColor: Colors.primary, backgroundColor: '#eef7f1' },
-  optionChipText: { fontSize: 14, color: '#334155', fontWeight: '600' },
+  optionChipText: { fontSize: 14, color: '#0d0d0d', fontWeight: '600' },
   optionChipTextActive: { color: Colors.primary },
   fieldContainer: {
     marginBottom: 20,
@@ -1142,11 +1164,12 @@ const styles = StyleSheet.create({
     color: Colors.text,
     minHeight: 100,
     textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
   },
   submitButton: {
     backgroundColor: Colors.primary,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     marginTop: 8,
   },
@@ -1164,13 +1187,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 24,
   },
-  noteFieldLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
-  noteFieldValue: { fontSize: 15, color: '#0f172a', lineHeight: 22 },
-  noteEmptyHint: { fontSize: 13, color: '#94a3b8', lineHeight: 19, fontStyle: 'italic' },
+  noteFieldLabel: { fontSize: 11, fontWeight: '700', color: '#3d3d3d', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 },
+  noteFieldValue: { fontSize: 15, color: '#0d0d0d', lineHeight: 22 },
+  noteEmptyHint: { fontSize: 13, color: '#3d3d3d', lineHeight: 19, fontStyle: 'italic' },
   bookMetaWrap: { marginTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12, gap: 10 },
   bookMetaRow: { gap: 2 },
-  bookMetaLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 },
-  bookMetaValue: { fontSize: 14, color: '#0f172a', lineHeight: 20 },
+  bookMetaLabel: { fontSize: 11, fontWeight: '700', color: '#3d3d3d', textTransform: 'uppercase', letterSpacing: 0.4 },
+  bookMetaValue: { fontSize: 14, color: '#0d0d0d', lineHeight: 20 },
   noteContent: {
     fontSize: 16,
     color: Colors.text,

@@ -13,13 +13,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, storeSession } from '../../services/apiClient';
+import { api } from '../../services/apiClient';
 import { Colors } from '../../constants/colors';
 import { RELATIONSHIP_TYPES, COUPLE_STORAGE_KEYS } from '../../constants/coupleTherapyConfig';
 import {
-  createCoupleRegistration,
-  createPartnerClientRecord,
-  linkCouplePartnerAuth,
 } from '../../services/coupleTherapyService';
 import { buildLegalPrivacyFields } from '../../services/privacyConsentService';
 
@@ -77,39 +74,48 @@ export default function CoupleInitiationScreen({ navigation }) {
 
     setLoading(true);
     try {
-      const result = await createCoupleRegistration({
-        relationshipType,
-        partnerA: { name: partnerAName.trim(), email: partnerAEmail.trim().toLowerCase() },
-        partnerB: { name: partnerBName.trim(), email: partnerBEmail.trim().toLowerCase() },
+      // ── Draft, not an account ────────────────────────────────────────────
+      // This used to create the couple record, register partner A, create a
+      // client record and link the auth — all before anyone had paid. An
+      // abandoned sign-up left a real account behind, and the flow disagreed
+      // with the individual and teen paths, which write nothing until payment
+      // succeeds.
+      //
+      // A couple cannot cache on the device the way they do: partner B is on
+      // other hardware and is reached by an invite token, which has to exist
+      // somewhere both can see. So the pending state lives in a server-side
+      // DRAFT that is deliberately not an account — no user row, no profile, no
+      // booking — and everything is created in one transaction once payment is
+      // confirmed. An unpaid draft expires on its own after fourteen days.
+      const draft = await api('/api/v1/couples/drafts', {
+        method: 'POST',
+        authenticated: false,
+        body: {
+          relationshipType,
+          partnerA: { name: partnerAName.trim(), email: partnerAEmail.trim().toLowerCase() },
+          partnerB: { name: partnerBName.trim(), email: partnerBEmail.trim().toLowerCase() },
+          password,
+        },
       });
 
-      const coupleId = result.coupleId;
-      const email = partnerAEmail.trim().toLowerCase();
-      const regData = await api('/api/v1/auth/register', {
-        method: 'POST', authenticated: false,
-        body: { email, password, fullName: partnerAName.trim(), role: 'CLIENT' },
-      });
-      const uid = regData.userId;
-      await storeSession({ token: regData.token, refreshToken: regData.refreshToken, userId: uid, role: 'client' });
-      const clientId = await createPartnerClientRecord(coupleId, 'partnerA', email, partnerAName.trim(), uid);
+      if (!draft?.inviteToken) throw new Error('Could not start the couple sign-up.');
 
-      await linkCouplePartnerAuth(coupleId, 'partnerA', {
-        authUid: uid,
-        clientId,
-        name: partnerAName.trim(),
-      });
-
+      // Only local breadcrumbs — there is no session yet, because there is no
+      // account yet. The token is what identifies this sign-up from here on.
       await AsyncStorage.multiSet([
-        [COUPLE_STORAGE_KEYS.coupleId, coupleId],
+        [COUPLE_STORAGE_KEYS.inviteToken, draft.inviteToken],
         [COUPLE_STORAGE_KEYS.partnerRole, 'partnerA'],
         [COUPLE_STORAGE_KEYS.otherPartnerName, partnerBName.trim()],
-        [COUPLE_STORAGE_KEYS.myRegistrationEmail, email],
+        [COUPLE_STORAGE_KEYS.myRegistrationEmail, partnerAEmail.trim().toLowerCase()],
         [COUPLE_STORAGE_KEYS.myPartnerName, partnerAName.trim()],
-        ['th.clientId', clientId],
-        ['th.onboard', JSON.stringify({ therapyType: 'couples', coupleId, startedAt: new Date().toISOString() })],
+        ['th.onboard', JSON.stringify({
+          therapyType: 'couples',
+          draftToken: draft.inviteToken,
+          startedAt: new Date().toISOString(),
+        })],
       ]);
 
-      navigation.replace('CoupleIntake', { coupleId, partnerRole: 'partnerA' });
+      navigation.replace('CoupleIntake', { draftToken: draft.inviteToken, partnerRole: 'partnerA' });
     } catch (e) {
       console.error(e);
       if (/email.*already|already.*registered/i.test(e.message)) {
@@ -127,8 +133,9 @@ export default function CoupleInitiationScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Couple therapy</Text>
         <Text style={styles.subtitle}>
-          Create your account, then complete your private intake. We will email your partner their own invitation
-          immediately — they never see your answers.
+          Tell us about you both and complete your private intake. We will email your partner
+          their own invitation — they never see your answers. Your accounts are created once
+          your first session is paid for.
         </Text>
 
         <Text style={styles.sectionLabel}>Relationship type</Text>

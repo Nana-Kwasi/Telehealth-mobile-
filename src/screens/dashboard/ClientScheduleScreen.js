@@ -10,13 +10,18 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { callState, callTimeLabel, CALL_STATE_COLORS } from '../../utils/callState';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
-import { Colors } from '../../constants/colors';
+import { TherapyColors as Colors } from '../../constants/colors';
+import { payForBooking } from '../../services/paystack';
+import { therapistFee } from '../../utils/therapistFee';
 
 const { width } = Dimensions.get('window');
 
@@ -47,8 +52,8 @@ const ClientScheduleScreen = ({ navigation }) => {
 
   const appointmentTypes = {
     individual: { name: 'Individual', color: '#3B82F6' },
-    couple: { name: 'Couple', color: '#10B981' },
-    teen: { name: 'Teen', color: '#F59E0B' },
+    couple: { name: 'Couple', color: '#2f7d5f' },
+    teen: { name: 'Teen', color: '#734e12' },
     family: { name: 'Family', color: '#8B5CF6' }
   };
 
@@ -256,6 +261,24 @@ const ClientScheduleScreen = ({ navigation }) => {
         return;
       }
 
+      // ── Pay before the session exists ────────────────────────────────────
+      // The booking used to be created outright, so therapy sessions were
+      // never charged for. A zero/absent rate skips the step rather than
+      // blocking the booking.
+      const fee = therapistFee(therapistData) ?? 0;
+      const paid = await payForBooking({
+        email: clientData.email,
+        amount: fee,
+        purpose: 'therapy_session',
+        metadata: { therapistId: therapistData.id, clientId: clientData.id },
+      });
+
+      if (!paid.ok) {
+        setMessage({ type: 'error', text: paid.reason || 'Payment was not completed.' });
+        setIsSubmitting(false);
+        return;
+      }
+
       await api('/api/v1/scheduled-calls', {
         method: 'POST',
         body: {
@@ -265,6 +288,9 @@ const ClientScheduleScreen = ({ navigation }) => {
           durationMinutes: parseInt(scheduleForm.duration),
           notes: scheduleForm.notes || '',
           status: 'pending',
+          paymentReference: paid.reference,
+          amountPaid: paid.amount,
+          currency: paid.currency,
         },
       });
       
@@ -437,7 +463,11 @@ const ClientScheduleScreen = ({ navigation }) => {
               {(dayDetail?.appointments || []).map((appt) => {
                 const type = appointmentTypes[appt.sessionType] || appointmentTypes.individual;
                 return (
-                  <View key={appt.id} style={[styles.detailCard, { borderLeftColor: type.color }]}>
+                  <View key={appt.id} style={[
+                    styles.detailCard,
+                    { borderLeftColor: type.color },
+                    callState(appt.scheduledTime, appt.status).past && styles.detailCardPast,
+                  ]}>
                     <View style={styles.detailRow}>
                       <Ionicons name="time-outline" size={18} color={Colors.textSecondary} />
                       <Text style={styles.detailTime}>{formatTime(appt.scheduledTime)}</Text>
@@ -455,12 +485,25 @@ const ClientScheduleScreen = ({ navigation }) => {
                         <Text style={styles.detailMeta}>{appt.durationMinutes} minutes</Text>
                       </View>
                     ) : null}
-                    {appt.status ? (
-                      <View style={styles.detailRow}>
-                        <Ionicons name="checkmark-circle-outline" size={18} color={Colors.textSecondary} />
-                        <Text style={styles.detailMeta}>{appt.status}</Text>
-                      </View>
-                    ) : null}
+                    {/* The raw `status` field said "scheduled" for a session
+                        three weeks gone. This reflects the clock. */}
+                    {(() => {
+                      const st = callState(appt.scheduledTime, appt.status);
+                      const tone = CALL_STATE_COLORS[st.tone];
+                      return (
+                        <View style={styles.detailRow}>
+                          <Ionicons
+                            name={st.past ? 'time-outline' : 'checkmark-circle-outline'}
+                            size={18}
+                            color={Colors.textSecondary}
+                          />
+                          <View style={[styles.detailChip, { backgroundColor: tone.bg }]}>
+                            <Text style={[styles.detailChipText, { color: tone.fg }]}>{st.label}</Text>
+                          </View>
+                          <Text style={styles.detailMeta}>{callTimeLabel(appt.scheduledTime)}</Text>
+                        </View>
+                      );
+                    })()}
                     {appt.notes ? (
                       <Text style={styles.detailNotes}>{appt.notes}</Text>
                     ) : null}
@@ -486,7 +529,10 @@ const ClientScheduleScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowScheduleForm(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Schedule Call</Text>
@@ -544,6 +590,12 @@ const ClientScheduleScreen = ({ navigation }) => {
                   </View>
                   {showDatePicker && (
                     <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
                       value={scheduleForm.date ? new Date(scheduleForm.date) : new Date()}
                       mode="date"
                       display="default"
@@ -574,6 +626,12 @@ const ClientScheduleScreen = ({ navigation }) => {
                   </TouchableOpacity>
                   {showTimePicker && (
                     <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
                       value={scheduleForm.time ? new Date(`2000-01-01T${scheduleForm.time}`) : new Date()}
                       mode="time"
                       display="default"
@@ -650,7 +708,7 @@ const ClientScheduleScreen = ({ navigation }) => {
               </View>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Therapist Calendar Modal */}
@@ -660,7 +718,10 @@ const ClientScheduleScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={closeTherapistCalendar}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.calendarModal}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleContainer}>
@@ -759,7 +820,7 @@ const ClientScheduleScreen = ({ navigation }) => {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -770,7 +831,7 @@ const styles = StyleSheet.create({
   detailBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.45)' },
   detailBackdropTap: { flex: 1 },
   detailSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
@@ -785,8 +846,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#cbd5e1',
     marginBottom: 14,
   },
-  detailDate: { fontSize: 19, fontWeight: '800', color: '#0f172a' },
-  detailCount: { fontSize: 13, color: '#64748b', marginTop: 2, marginBottom: 14 },
+  detailDate: { fontSize: 19, fontWeight: '800', color: '#0d0d0d' },
+  detailCount: { fontSize: 13, color: '#0d0d0d', marginTop: 2, marginBottom: 14 },
+  detailCardPast: { opacity: 0.66 },
   detailCard: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -794,18 +856,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
   },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  detailTime: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  detailTime: { fontSize: 16, fontWeight: '800', color: '#0d0d0d' },
   detailChip: { marginLeft: 'auto', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
   detailChipText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  detailPerson: { fontSize: 14, fontWeight: '600', color: '#334155' },
-  detailMeta: { fontSize: 13, color: '#64748b', textTransform: 'capitalize' },
+  detailPerson: { fontSize: 14, fontWeight: '600', color: '#0d0d0d' },
+  detailMeta: { fontSize: 13, color: '#0d0d0d', textTransform: 'capitalize' },
   detailNotes: {
     marginTop: 6,
     fontSize: 13,
-    color: '#475569',
+    color: '#0d0d0d',
     fontStyle: 'italic',
     lineHeight: 19,
   },
@@ -814,9 +876,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.72)',
   },
-  detailCloseText: { fontSize: 15, fontWeight: '700', color: '#334155' },
+  detailCloseText: { fontSize: 15, fontWeight: '700', color: '#0d0d0d' },
 
   container: {
     flex: 1,
@@ -839,7 +901,7 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
     marginLeft: -8,
-    borderRadius: 12,
+    borderRadius: 999,
   },
   monthNavigation: {
     flexDirection: 'row',
@@ -862,7 +924,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   todayButtonText: {
     color: Colors.surface,
@@ -918,7 +980,7 @@ const styles = StyleSheet.create({
   },
   weekdayHeaders: {
     flexDirection: 'row',
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     borderTopLeftRadius: 16,
@@ -954,11 +1016,11 @@ const styles = StyleSheet.create({
     borderRightWidth: 0,
   },
   otherMonthDay: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     opacity: 0.5,
   },
   todayDay: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: 'rgba(207,169,97,0.12)',
   },
   dayNumber: {
     fontSize: 14,
@@ -1117,6 +1179,9 @@ const styles = StyleSheet.create({
   dateInputContainer: {
     flexDirection: 'row',
     gap: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   dateInput: {
     flex: 1,
@@ -1132,6 +1197,9 @@ const styles = StyleSheet.create({
   dateInputText: {
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   viewCalendarButton: {
     flexDirection: 'row',
@@ -1139,8 +1207,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#8b5cf6',
     paddingHorizontal: 12,
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 999,
     gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
   },
   viewCalendarText: {
     color: Colors.surface,
@@ -1160,6 +1230,9 @@ const styles = StyleSheet.create({
   timeInputText: {
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   durationContainer: {
     flexDirection: 'row',
@@ -1168,7 +1241,7 @@ const styles = StyleSheet.create({
   durationButton: {
     flex: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 2,
     borderColor: Colors.border,
     alignItems: 'center',
@@ -1194,13 +1267,16 @@ const styles = StyleSheet.create({
     color: Colors.text,
     minHeight: 100,
     textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
   },
   submitButton: {
     backgroundColor: '#b794f6',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
   },
   submitButtonDisabled: {
     opacity: 0.6,
@@ -1270,7 +1346,7 @@ const styles = StyleSheet.create({
     padding: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'transparent',
   },
   availableDay: {
     backgroundColor: '#d1fae5',
@@ -1349,7 +1425,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   guideGreen: {
-    color: '#10b981',
+    color: '#2f7d5f',
     fontWeight: '700',
   },
 });

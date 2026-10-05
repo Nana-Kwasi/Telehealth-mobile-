@@ -16,7 +16,7 @@ function getInitials(name) {
 }
 
 const STATUS_COLORS = {
-  active:     { bg: '#f0fdf4', text: '#15803d' },
+  active:     { bg: '#f0fdf4', text: '#0f5628' },
   inactive:   { bg: '#fff7ed', text: '#c2410c' },
   discharged: { bg: '#fef2f2', text: '#b91c1c' },
   pending:    { bg: '#fff7ed', text: '#c2410c' },
@@ -162,7 +162,12 @@ export default function DoctorPatientsScreen({ navigation }) {
       </View>
 
       {/* Status Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
+      <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
         {PANEL_TABS.map(tab => {
           const count = tab === 'All' ? patients.length : patients.filter(p => (p.status || 'active') === tab.toLowerCase()).length;
           return (

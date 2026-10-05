@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Modal, Alert, TextInput,
-  KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Modal,
+  Alert,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AppointmentRiskCard from '../../components/AppointmentRiskCard';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
@@ -16,7 +27,7 @@ const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 const STATUS_CONFIG = {
   pending:   { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c', label: 'Pending',   dot: '#f59e0b' },
-  confirmed: { bg: '#f0fdf4', border: '#86efac', text: '#15803d', label: 'Confirmed', dot: '#22c55e' },
+  confirmed: { bg: '#f0fdf4', border: '#86efac', text: '#0f5628', label: 'Confirmed', dot: '#22c55e' },
   completed: { bg: '#f8fafc', border: '#cbd5e1', text: '#475569', label: 'Completed', dot: '#6366f1' },
   cancelled: { bg: '#fff1f2', border: '#fecdd3', text: '#be123c', label: 'Cancelled', dot: '#ef4444' },
 };
@@ -380,6 +391,8 @@ export default function DoctorAppointmentsScreen() {
             data={listFiltered}
             keyExtractor={item => item.id}
             renderItem={({ item }) => renderApptCard(item)}
+            // Header rather than a sibling: the list owns the scroll here.
+            ListHeaderComponent={<AppointmentRiskCard />}
             contentContainerStyle={{ padding: 14, paddingBottom: 80 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} />}
             ListEmptyComponent={
@@ -404,7 +417,10 @@ export default function DoctorAppointmentsScreen() {
         animationType="slide"
         onRequestClose={() => setScheduleDay(null)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
               {scheduleDay ? new Date(scheduleDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : ''}
@@ -417,12 +433,15 @@ export default function DoctorAppointmentsScreen() {
               <Text style={styles.cancelBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Appointment Detail Modal ── */}
       <Modal visible={!!selectedAppt} transparent animationType="slide" onRequestClose={() => setSelectedAppt(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             {selectedAppt && (() => {
               const sc = STATUS_CONFIG[selectedAppt.status] || STATUS_CONFIG.pending;
@@ -455,7 +474,7 @@ export default function DoctorAppointmentsScreen() {
                         <>
                           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f0fdf4', borderColor: '#86efac' }]}
                             onPress={() => updateStatus(selectedAppt.id, 'confirmed', selectedAppt)}>
-                            <Text style={{ color: '#15803d', fontWeight: '700' }}>Confirm</Text>
+                            <Text style={{ color: '#0f5628', fontWeight: '700' }}>Confirm</Text>
                           </TouchableOpacity>
                           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#fff1f2', borderColor: '#fecdd3' }]}
                             onPress={() => updateStatus(selectedAppt.id, 'cancelled', selectedAppt)}>
@@ -475,7 +494,7 @@ export default function DoctorAppointmentsScreen() {
               );
             })()}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Book Appointment Modal ── */}

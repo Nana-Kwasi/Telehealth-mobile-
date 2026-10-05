@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
+import { resolveFileUrl } from '../../utils/mediaUrl';
 
 function getInitials(name) {
   if (!name) return 'D';
@@ -101,7 +102,7 @@ const DoctorDetailScreen = ({ route, navigation }) => {
       <View style={styles.hero}>
         <View style={styles.avatarWrap}>
           {doctor.photoURL ? (
-            <Image source={{ uri: doctor.photoURL }} style={styles.avatar} />
+            <Image source={{ uri: resolveFileUrl(doctor.photoURL)}} style={styles.avatar} />
           ) : (
             <View style={[styles.avatar, styles.avatarFallback]}>
               <Text style={styles.avatarInitials}>{getInitials(doctor.name)}</Text>

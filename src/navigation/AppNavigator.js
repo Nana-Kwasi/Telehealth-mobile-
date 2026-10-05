@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NavigationContainer, useFocusEffect, useNavigation } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { View, ActivityIndicator, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resolveRole } from '../services/authService';
-import { clearSession } from '../services/apiClient';
+import { api, clearSession } from '../services/apiClient';
 import { applyCoupleLandingIfNeeded } from '../services/coupleTherapyService';
 import { PRIVACY_STORAGE_KEY, syncPrivacyConsentToUser } from '../services/privacyConsentService';
+import { ensurePushRegistered, markNotificationRead } from '../services/notificationService';
+import { screenForNotification, stackForIntent } from '../services/pushRouting';
 
 // Onboarding / Auth screens
 import IntroHomeScreen from '../screens/IntroHomeScreen';
@@ -72,6 +75,8 @@ import TherapistClientChatScreen from '../screens/therapist-dashboard/TherapistC
 import TherapistMessagesScreen from '../screens/therapist-dashboard/TherapistMessagesScreen';
 import TherapistVideoScreen from '../screens/therapist-dashboard/TherapistVideoScreen';
 import TherapistVideoCallSessionScreen from '../screens/therapist-dashboard/TherapistVideoCallSessionScreen';
+import VideoCallSessionScreen from '../screens/shared/VideoCallSessionScreen';
+import IncomingCallMobile from '../components/IncomingCallMobile';
 import TherapistScheduleScreen from '../screens/therapist-dashboard/TherapistScheduleScreen';
 import TherapistAppointmentsScreen from '../screens/therapist-dashboard/TherapistAppointmentsScreen';
 import TherapistNotesScreen from '../screens/therapist-dashboard/TherapistNotesScreen';
@@ -79,6 +84,32 @@ import TherapistSettingsScreen from '../screens/therapist-dashboard/TherapistSet
 import TherapistMoodScreen from '../screens/therapist-dashboard/TherapistMoodScreen';
 import TherapistReportIssueScreen from '../screens/therapist-dashboard/TherapistReportIssueScreen';
 import TherapistResourcesScreen from '../screens/therapist-dashboard/TherapistResourcesScreen';
+import ProviderWellnessScreen from '../screens/shared/ProviderWellnessScreen';
+import MyWellnessScreen from '../screens/shared/MyWellnessScreen';
+import MyCarePlanScreen from '../screens/shared/MyCarePlanScreen';
+import RecordExplorerScreen from '../screens/shared/RecordExplorerScreen';
+import CarePlanComposerScreen from '../screens/shared/CarePlanComposerScreen';
+import AdminDocComposerScreen from '../screens/shared/AdminDocComposerScreen';
+import ReferralComposerScreen from '../screens/shared/ReferralComposerScreen';
+import ProviderPricePromotionsScreen from '../screens/shared/ProviderPricePromotionsScreen';
+import NotificationPreferencesScreen from '../screens/shared/NotificationPreferencesScreen';
+// One assistant, not two.
+//
+// The drawer used to open AiAssistantScreen — an older task-picker with no
+// streaming, no voice, no document reading and no booking — while the floating
+// button opened AiChatScreen, which has all of it. Same label, same icon,
+// different features depending on which you tapped. Both now open the chat.
+import AiChatScreen from '../screens/shared/AiChatScreen';
+// Web clinicians had a "Patient briefing" tab; mobile had no equivalent at all,
+// which is the situation the feature is most for — a clinician on a phone
+// between appointments.
+import AiClinicianBriefingScreen from '../screens/shared/AiClinicianBriefingScreen';
+// Check-ins existed on web only. A clinician between appointments is exactly
+// who needs to see whether anyone answered.
+import ClinicianFollowUpsScreen from '../screens/shared/ClinicianFollowUpsScreen';
+import FeedbackResultsScreen from '../screens/shared/FeedbackResultsScreen';
+import ProviderPromotionsScreen from '../screens/shared/ProviderPromotionsScreen';
+import CareCentreScreen from '../screens/shared/CareCentreScreen';
 
 // Doctor dashboard screens
 import DoctorHomeScreen from '../screens/doctor-dashboard/DoctorHomeScreen';
@@ -134,6 +165,15 @@ import ScanVerifyScreen from '../screens/scan-dashboard/ScanVerifyScreen';
 import ScanResultsScreen from '../screens/scan-dashboard/ScanResultsScreen';
 import EntityLocationSettingsScreen from '../screens/common/EntityLocationSettingsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import CoupleAcceptInviteScreen from '../screens/couple/CoupleAcceptInviteScreen';
+import SecondOpinionIntakeScreen from '../screens/second-opinion/SecondOpinionIntakeScreen';
+import SecondOpinionHomeScreen from '../screens/second-opinion/SecondOpinionHomeScreen';
+import BecomeMemberScreen from '../screens/second-opinion/BecomeMemberScreen';
+import NotificationBellButton from '../components/NotificationBellButton';
+import { ZC } from '../constants/zencare';
+import MedPsychSignUpScreen from '../screens/medpsych/MedPsychSignUpScreen';
+import MedPsychPsychiatristsScreen from '../screens/medpsych/MedPsychPsychiatristsScreen';
+import MedPsychBookingScreen from '../screens/medpsych/MedPsychBookingScreen';
 
 // Drawer content components
 import CustomDrawerContent from '../components/CustomDrawerContent';
@@ -222,6 +262,10 @@ const PharmacyDrawerNavigator = ({ profile }) => (
   <PharmacyDrawer.Navigator
     drawerContent={(props) => <PharmacyDrawerContent {...props} profile={profile} isBranch={false} />}
     screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="PharmacyNotifications" />,
       headerStyle: { backgroundColor: PharmacyColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
@@ -261,7 +305,8 @@ const PharmacyDrawerNavigator = ({ profile }) => (
     <PharmacyDrawer.Screen name="PharmacySettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="pharmacies" title="Pharmacy Location Settings" />}
     </PharmacyDrawer.Screen>
-  </PharmacyDrawer.Navigator>
+        <PharmacyDrawer.Screen name="PharmacyNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+</PharmacyDrawer.Navigator>
 );
 
 // ── Branch Drawer ──
@@ -269,6 +314,10 @@ const BranchDrawerNavigator = ({ profile }) => (
   <BranchDrawer.Navigator
     drawerContent={(props) => <PharmacyDrawerContent {...props} profile={profile} isBranch={true} />}
     screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="BranchNotifications" />,
       headerStyle: { backgroundColor: PharmacyColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
@@ -305,7 +354,8 @@ const BranchDrawerNavigator = ({ profile }) => (
     <BranchDrawer.Screen name="BranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="pharmacyBranches" title="Branch Location Settings" />}
     </BranchDrawer.Screen>
-  </BranchDrawer.Navigator>
+        <BranchDrawer.Screen name="BranchNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+</BranchDrawer.Navigator>
 );
 
 // ── Lab Drawer ──
@@ -313,6 +363,10 @@ const LabDrawerNavigator = ({ profile }) => (
   <LabDrawer.Navigator
     drawerContent={(props) => <LabDrawerContent {...props} profile={profile} isBranch={false} />}
     screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="LabNotifications" />,
       headerStyle: { backgroundColor: LabColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
@@ -349,7 +403,8 @@ const LabDrawerNavigator = ({ profile }) => (
     <LabDrawer.Screen name="LabSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="labs" title="Lab Location Settings" />}
     </LabDrawer.Screen>
-  </LabDrawer.Navigator>
+        <LabDrawer.Screen name="LabNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+</LabDrawer.Navigator>
 );
 
 // ── Lab Branch Drawer ──
@@ -357,6 +412,10 @@ const LabBranchDrawerNavigator = ({ profile }) => (
   <LabBranchDrawer.Navigator
     drawerContent={(props) => <LabDrawerContent {...props} profile={profile} isBranch={true} />}
     screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="LabBranchNotifications" />,
       headerStyle: { backgroundColor: LabColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
@@ -387,7 +446,8 @@ const LabBranchDrawerNavigator = ({ profile }) => (
     <LabBranchDrawer.Screen name="LabBranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="labBranches" title="Lab Branch Location Settings" />}
     </LabBranchDrawer.Screen>
-  </LabBranchDrawer.Navigator>
+        <LabBranchDrawer.Screen name="LabBranchNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+</LabBranchDrawer.Navigator>
 );
 
 // ── Scan Drawer ──
@@ -395,6 +455,10 @@ const ScanDrawerNavigator = ({ profile }) => (
   <ScanDrawer.Navigator
     drawerContent={(props) => <ScanDrawerContent {...props} profile={profile} isBranch={false} />}
     screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="ScanNotifications" />,
       headerStyle: { backgroundColor: ScanColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
@@ -431,7 +495,8 @@ const ScanDrawerNavigator = ({ profile }) => (
     <ScanDrawer.Screen name="ScanSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="scanCenters" title="Scan Center Location Settings" />}
     </ScanDrawer.Screen>
-  </ScanDrawer.Navigator>
+        <ScanDrawer.Screen name="ScanNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+</ScanDrawer.Navigator>
 );
 
 // ── Scan Branch Drawer ──
@@ -439,6 +504,10 @@ const ScanBranchDrawerNavigator = ({ profile }) => (
   <ScanBranchDrawer.Navigator
     drawerContent={(props) => <ScanDrawerContent {...props} profile={profile} isBranch={true} />}
     screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="ScanBranchNotifications" />,
       headerStyle: { backgroundColor: ScanColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
@@ -469,7 +538,8 @@ const ScanBranchDrawerNavigator = ({ profile }) => (
     <ScanBranchDrawer.Screen name="ScanBranchSettings" options={{ title: 'Location Settings', drawerItemStyle: { display: 'none' } }}>
       {() => <EntityLocationSettingsScreen profile={profile} collectionName="scanBranches" title="Scan Branch Location Settings" />}
     </ScanBranchDrawer.Screen>
-  </ScanBranchDrawer.Navigator>
+        <ScanBranchDrawer.Screen name="ScanBranchNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+</ScanBranchDrawer.Navigator>
 );
 
 // ── Doctor Drawer ──
@@ -478,6 +548,10 @@ const DoctorDrawerNavigator = ({ profile }) => {
     <DoctorDrawer.Navigator
       drawerContent={(props) => <DoctorDrawerContent {...props} profile={profile} />}
       screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="DoctorNotifications" />,
         headerStyle: { backgroundColor: DoctorColors.primaryDark },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: '700' },
@@ -492,13 +566,39 @@ const DoctorDrawerNavigator = ({ profile }) => {
       <DoctorDrawer.Screen name="DoctorAppointments"       component={DoctorAppointmentsScreen}       options={{ title: 'Appointments' }} />
       <DoctorDrawer.Screen name="DoctorVideo"              component={DoctorVideoScreen}              options={{ title: 'Video Calls' }} />
       <DoctorDrawer.Screen name="DoctorMessages"           component={DoctorMessagesScreen}           options={{ title: 'Messages' }} />
+      <DoctorDrawer.Screen name="DoctorWellness" options={{ title: 'Wellness' }}>
+        {(props) => <ProviderWellnessScreen {...props} audience="my_patients" peopleNoun="patients" />}
+      </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorFeedback" component={FeedbackResultsScreen} options={{ title: 'Patient feedback' }} />
+      <DoctorDrawer.Screen name="DoctorPromotions" component={ProviderPromotionsScreen} options={{ title: 'Promotions' }} />
+      <DoctorDrawer.Screen name="DoctorCheckIns" options={{ title: 'Check-ins' }}>
+        {(props) => <ClinicianFollowUpsScreen {...props} role="DOCTOR" />}
+      </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorBriefing" options={{ title: 'Consultation briefing' }}>
+        {(props) => <AiClinicianBriefingScreen {...props} role="DOCTOR" />}
+      </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorFeeOffers" component={ProviderPricePromotionsScreen} options={{ title: 'Offers on my fee' }} />
+      <DoctorDrawer.Screen name="DoctorAiAssistant" options={{ title: 'NessaHub Clinical Assistant' }}>
+        {(props) => <AiChatScreen {...props} clinician />}
+      </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorNotificationPrefs" component={NotificationPreferencesScreen} options={{ title: 'Notification settings' }} />
       <DoctorDrawer.Screen name="DoctorNotes"              component={DoctorNotesScreen}              options={{ title: 'Notes' }} />
       <DoctorDrawer.Screen name="DoctorPrescriptions"      component={DoctorPrescriptionsScreen}      options={{ title: 'Prescriptions' }} />
+      <DoctorDrawer.Screen name="DoctorCarePlans" options={{ title: 'Care Plans' }}>
+        {(props) => <CarePlanComposerScreen {...props} role="DOCTOR" />}
+      </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorDocuments" options={{ title: 'Documents' }}>
+        {(props) => <AdminDocComposerScreen {...props} role="DOCTOR" />}
+      </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorReferrals" options={{ title: 'Referrals' }}>
+        {(props) => <ReferralComposerScreen {...props} role="DOCTOR" />}
+      </DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorDiagnosticResults"  component={DoctorDiagnosticResultsScreen}  options={{ title: 'Lab & Scan Results' }} />
       <DoctorDrawer.Screen name="DoctorReviews"            component={DoctorReviewsScreen}            options={{ title: 'Reviews' }} />
       <DoctorDrawer.Screen name="DoctorAnalytics"          component={DoctorAnalyticsScreen}          options={{ title: 'Analytics' }} />
       <DoctorDrawer.Screen name="DoctorSettings"           component={DoctorSettingsScreen}           options={{ title: 'Profile & Settings' }} />
-    </DoctorDrawer.Navigator>
+          <DoctorDrawer.Screen name="DoctorNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+</DoctorDrawer.Navigator>
   );
 };
 
@@ -507,13 +607,26 @@ const TherapistDrawerNavigator = ({ profile }) => {
   return (
     <TherapistDrawer.Navigator
       drawerContent={(props) => <TherapistDrawerContent {...props} profile={profile} />}
+      // ZenCare, centrally: theming the navigator converts every header, the
+      // drawer and the card background for every therapy screen inside it at
+      // once. Mobile has no cascade to override with, so this is where the
+      // module-wide look has to be set.
       screenOptions={{
-        headerStyle: { backgroundColor: TherapistColors.primaryDark },
-        headerTintColor: '#fff',
-        headerTitleStyle: { fontWeight: '700' },
-        drawerStyle: { backgroundColor: TherapistColors.surface, width: 280 },
-        drawerActiveTintColor: TherapistColors.primary,
-        drawerInactiveTintColor: TherapistColors.textSecondary,
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="TherapistNotifications" tint={ZC.ink} />,
+        headerStyle: { backgroundColor: ZC.surface },
+        // Dark: the header is white now, so the back arrow and the hamburger
+        // were painting white on white and vanished entirely.
+        headerTintColor: ZC.ink,
+        headerTitleStyle: { fontWeight: '700', color: ZC.ink },
+        drawerStyle: { backgroundColor: ZC.surface, width: 280 },
+        drawerActiveTintColor: ZC.accentDeep,
+        drawerInactiveTintColor: ZC.ink2,
+        drawerActiveBackgroundColor: ZC.accentWash,
+        drawerLabelStyle: { fontWeight: '600' },
+        sceneContainerStyle: { backgroundColor: ZC.bg },
       }}
     >
       <TherapistDrawer.Screen name="TherapistHome" options={{ title: 'Dashboard' }}>
@@ -540,6 +653,15 @@ const TherapistDrawerNavigator = ({ profile }) => {
       <TherapistDrawer.Screen name="TherapistNotes" options={{ title: 'Notes' }}>
         {(props) => <TherapistNotesScreen {...props} profile={profile} />}
       </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistCarePlans" options={{ title: 'Care Plans' }}>
+        {(props) => <CarePlanComposerScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistDocuments" options={{ title: 'Documents' }}>
+        {(props) => <AdminDocComposerScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistReferrals" options={{ title: 'Referrals' }}>
+        {(props) => <ReferralComposerScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistMood"      component={TherapistMoodScreen}      options={{ title: 'Client Moods' }} />
       <TherapistDrawer.Screen name="TherapistReportIssue" options={{ title: 'Report Issue' }}>
         {(props) => <TherapistReportIssueScreen {...props} profile={profile} />}
@@ -547,7 +669,23 @@ const TherapistDrawerNavigator = ({ profile }) => {
       <TherapistDrawer.Screen name="TherapistResources" options={{ title: 'Resources' }}>
         {(props) => <TherapistResourcesScreen {...props} profile={profile} />}
       </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistWellness" options={{ title: 'Wellness' }}>
+        {(props) => <ProviderWellnessScreen {...props} audience="my_clients" peopleNoun="clients" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistFeedback" component={FeedbackResultsScreen} options={{ title: 'Patient feedback' }} />
+      <TherapistDrawer.Screen name="TherapistPromotions" component={ProviderPromotionsScreen} options={{ title: 'Promotions' }} />
+      <TherapistDrawer.Screen name="TherapistCheckIns" options={{ title: 'Check-ins' }}>
+        {(props) => <ClinicianFollowUpsScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistBriefing" options={{ title: 'Consultation briefing' }}>
+        {(props) => <AiClinicianBriefingScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistFeeOffers" component={ProviderPricePromotionsScreen} options={{ title: 'Offers on my fee' }} />
       <TherapistDrawer.Screen name="TherapistNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+      <TherapistDrawer.Screen name="TherapistAiAssistant" options={{ title: 'NessaHub Clinical Assistant' }}>
+        {(props) => <AiChatScreen {...props} clinician />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistNotificationPrefs" component={NotificationPreferencesScreen} options={{ title: 'Notification settings' }} />
       <TherapistDrawer.Screen name="TherapistSettings"  component={TherapistSettingsScreen}  options={{ title: 'Settings' }} />
     </TherapistDrawer.Navigator>
   );
@@ -578,25 +716,82 @@ function TherapyMainCoupleGate({ profile, children }) {
 
 // ── Therapy Drawer ──
 const TherapyDrawerNavigator = ({ profile }) => {
+  // The tier decides which dashboard this drawer serves: a Second Opinion user
+  // must not be shown a programme they have not bought.
+  //
+  // Asked of the SERVER rather than read from the cached profile. A profile
+  // cached before the tier existed — or before an upgrade — would be stale, and
+  // being wrong here means showing someone the wrong product. The cached value
+  // seeds it so the first render is not visibly wrong, then the server settles it.
+  const [tier, setTier] = useState(profile?.membershipTier || profile?.tier || null);
+
+  useEffect(() => {
+    let alive = true;
+    api('/api/v1/medpsych/me')
+      .then((r) => { if (alive && r?.membershipTier) setTier(r.membershipTier); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const isSecondOpinion = tier === 'second_opinion';
+
   return (
     <TherapyDrawer.Navigator
       drawerContent={(props) => <CustomDrawerContent {...props} profile={profile} />}
       screenOptions={{
-        headerStyle: { backgroundColor: Colors.primary },
-        headerTintColor: Colors.surface,
-        headerTitleStyle: { fontWeight: 'bold' },
-        drawerStyle: { backgroundColor: Colors.surface },
-        drawerActiveTintColor: Colors.primary,
-        drawerInactiveTintColor: Colors.textSecondary,
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="Notifications" tint={ZC.ink} />,
+        headerStyle: { backgroundColor: ZC.surface },
+        headerTintColor: ZC.ink,
+        headerTitleStyle: { fontWeight: '700', color: ZC.ink },
+        drawerStyle: { backgroundColor: ZC.surface },
+        drawerActiveTintColor: ZC.accentDeep,
+        drawerInactiveTintColor: ZC.ink2,
+        drawerActiveBackgroundColor: ZC.accentWash,
+        drawerLabelStyle: { fontWeight: '600' },
+        sceneContainerStyle: { backgroundColor: ZC.bg },
       }}
     >
-      <TherapyDrawer.Screen name="Home" component={ClientHomeScreen} />
+      {/* A Second Opinion client bought ONE review, not a programme. They get
+          the case dashboard, and Schedule/Resources are hidden rather than
+          shown empty — those describe ongoing care they do not have. The full
+          drawer returns the moment they convert to membership. */}
+      <TherapyDrawer.Screen
+        name="Home"
+        component={isSecondOpinion ? SecondOpinionHomeScreen : ClientHomeScreen}
+        options={{ title: isSecondOpinion ? 'My case' : 'Home' }}
+      />
       <TherapyDrawer.Screen name="Messages" component={ClientMessagesScreen} />
       <TherapyDrawer.Screen name="Video" component={ClientVideoScreen} />
-      <TherapyDrawer.Screen name="Schedule" component={ClientScheduleScreen} />
-      <TherapyDrawer.Screen name="Resources" component={ClientResourcesScreen} />
+      {isSecondOpinion ? null : (
+        <TherapyDrawer.Screen name="Schedule" component={ClientScheduleScreen} />
+      )}
+      {isSecondOpinion ? null : (
+        <TherapyDrawer.Screen name="Resources" component={ClientResourcesScreen} />
+      )}
+      <TherapyDrawer.Screen
+        name="BecomeMember"
+        component={BecomeMemberScreen}
+        options={{ title: 'Become a member' }}
+      />
       <TherapyDrawer.Screen name="Billing" component={ClientBillingScreen} />
       <TherapyDrawer.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+      <TherapyDrawer.Screen name="TherapyAiAssistant" component={AiChatScreen} options={{ title: 'NessaHub Assistant' }} />
+      <TherapyDrawer.Screen name="TherapyCare" component={CareCentreScreen} options={{ title: 'My Care' }} />
+      {/* The receiving end of the therapist's wellness messages — email-only
+          until now, so there was no way to re-read one. */}
+      <TherapyDrawer.Screen name="TherapyRecords" options={{ title: 'My Records' }}>
+        {(props) => <RecordExplorerScreen {...props} title="My records" />}
+      </TherapyDrawer.Screen>
+      <TherapyDrawer.Screen name="TherapyCarePlan" options={{ title: 'My Care Plan' }}>
+        {(props) => <MyCarePlanScreen {...props} peopleNoun="therapist" />}
+      </TherapyDrawer.Screen>
+      <TherapyDrawer.Screen name="TherapyWellness" options={{ title: 'Wellness' }}>
+        {(props) => <MyWellnessScreen {...props} peopleNoun="therapist" />}
+      </TherapyDrawer.Screen>
+      <TherapyDrawer.Screen name="TherapyNotificationPrefs" component={NotificationPreferencesScreen} options={{ title: 'Notification settings' }} />
       <TherapyDrawer.Screen name="Settings" component={ClientSettingsScreen} />
       <TherapyDrawer.Screen name="Support" component={ClientSupportScreen} />
     </TherapyDrawer.Navigator>
@@ -609,6 +804,10 @@ const MedicalDrawerNavigator = ({ profile }) => {
     <MedicalDrawer.Navigator
       drawerContent={(props) => <MedicalDrawerContent {...props} profile={profile} />}
       screenOptions={{
+        // One line puts the bell on every screen in this navigator. It was
+        // previously unreachable: the screen was registered but nothing
+        // anywhere linked to it.
+        headerRight: () => <NotificationBellButton screen="MedicalNotifications" />,
         headerStyle: { backgroundColor: MedicalColors.primary },
         headerTintColor: MedicalColors.surface,
         headerTitleStyle: { fontWeight: 'bold' },
@@ -627,6 +826,18 @@ const MedicalDrawerNavigator = ({ profile }) => {
       <MedicalDrawer.Screen name="MedicalDiagnostic"    component={MedicalDiagnosticScreen}    options={{ title: 'Lab & Scan Orders' }} />
       <MedicalDrawer.Screen name="MedicalBilling"       component={MedicalBillingScreen}       options={{ title: 'Billing' }} />
       <MedicalDrawer.Screen name="MedicalNotifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+      <MedicalDrawer.Screen name="MedicalAiAssistant" component={AiChatScreen} options={{ title: 'NessaHub Assistant' }} />
+      <MedicalDrawer.Screen name="MedicalCare" component={CareCentreScreen} options={{ title: 'My Care' }} />
+      <MedicalDrawer.Screen name="MedicalRecords" options={{ title: 'My Records' }}>
+        {(props) => <RecordExplorerScreen {...props} title="My records" />}
+      </MedicalDrawer.Screen>
+      <MedicalDrawer.Screen name="MedicalCarePlan" options={{ title: 'My Care Plan' }}>
+        {(props) => <MyCarePlanScreen {...props} peopleNoun="doctor" />}
+      </MedicalDrawer.Screen>
+      <MedicalDrawer.Screen name="MedicalWellness" options={{ title: 'Wellness' }}>
+        {(props) => <MyWellnessScreen {...props} peopleNoun="doctor" />}
+      </MedicalDrawer.Screen>
+      <MedicalDrawer.Screen name="MedicalNotificationPrefs" component={NotificationPreferencesScreen} options={{ title: 'Notification settings' }} />
       <MedicalDrawer.Screen name="MedicalSettings"      component={MedicalSettingsScreen}      options={{ title: 'My Profile' }} />
     </MedicalDrawer.Navigator>
   );
@@ -639,6 +850,9 @@ const AppNavigator = () => {
   const [userIntent, setUserIntent] = useState(null);
   const [profile, setProfile] = useState(null);
   const [userRole, setUserRole] = useState(null);
+
+  // Lets the push-notification tap handler navigate from outside the tree.
+  const navigationRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -696,6 +910,12 @@ const AppNavigator = () => {
         import('../services/liveLocation')
           .then((m) => m.refreshCurrentLocation())
           .catch(() => {});
+
+        // Re-register this device for push. Registration used to run only at
+        // sign-in, and people rarely sign out — so once a token was rotated or
+        // pruned as dead, push stayed broken until the next manual login. This
+        // never prompts: it registers only where permission already exists.
+        ensurePushRegistered().catch(() => {});
       } catch {
         if (!cancelled) { setIsAuthenticated(false); setIsLoading(false); }
       }
@@ -716,6 +936,76 @@ const AppNavigator = () => {
     });
     return () => sub.remove();
   }, []);
+
+  /**
+   * The session died mid-session (refresh token rejected or expired).
+   *
+   * apiClient has already cleared storage; this is the half that gets the
+   * user somewhere they can act. Without it every screen just logged its own
+   * "Session expired" to the console and the person stayed on a dashboard
+   * that quietly loaded nothing.
+   */
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('sessionExpired', () => {
+      setIsAuthenticated(false);
+      setProfile(null);
+      setUserRole(null);
+      setIsLoading(false);
+    });
+    return () => sub.remove();
+  }, []);
+
+  /**
+   * Tapping a push notification.
+   *
+   * The backend ships a `link` with every notification, but it is a web path
+   * because the same notification drives the web bell — nothing here read it,
+   * so a tap merely reopened the app wherever it was last left. This resolves
+   * the link against the signed-in role and navigates, and marks the
+   * notification read, since tapping it IS reading it.
+   *
+   * Two entry points, because they are genuinely different: a cold start
+   * carries the tap in getLastNotificationResponseAsync, while a tap on a
+   * running app arrives through the listener.
+   */
+  const handledResponse = useRef(null);
+
+  const openFromNotification = useCallback((response) => {
+    try {
+      const id = response?.notification?.request?.identifier;
+      // A cold start replays the same response to the listener as well; without
+      // this the user is navigated twice.
+      if (id && handledResponse.current === id) return;
+      if (id) handledResponse.current = id;
+
+      const data = response?.notification?.request?.content?.data || {};
+      if (data.test) return;   // the settings-screen test push goes nowhere
+
+      const screen = screenForNotification(data.link, userIntent);
+      const stack = stackForIntent(userIntent);
+      if (data.notificationId) markNotificationRead(data.notificationId).catch(() => {});
+      if (!screen || !stack || !navigationRef.current?.isReady()) return;
+      // Nested form on purpose: the target lives in a drawer under this stack
+      // screen, and a bare navigate(screen) from the root resolves nothing.
+      navigationRef.current.navigate(stack, { screen });
+    } catch {
+      /* A bad payload must never crash the app on launch. */
+    }
+  }, [userIntent]);
+
+  useEffect(() => {
+    // Only once the role is known — the same link maps to a different screen
+    // for a client and a doctor.
+    if (!isAuthenticated || !userIntent) return undefined;
+
+    let cancelled = false;
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => { if (!cancelled && response) openFromNotification(response); })
+      .catch(() => {});
+
+    const sub = Notifications.addNotificationResponseReceivedListener(openFromNotification);
+    return () => { cancelled = true; sub.remove(); };
+  }, [isAuthenticated, userIntent, openFromNotification]);
 
   const getInitialRoute = () => {
     if (isAuthenticated) {
@@ -752,7 +1042,11 @@ const AppNavigator = () => {
   if (isLoading) return <LoadingScreen />;
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
+      {/* Rings over any screen when a clinician calls. Always mounted: an in-app
+          login doesn't update isAuthenticated/userIntent here, so the component
+          checks the stored session itself and only polls for clients/patients. */}
+      <IncomingCallMobile navigationRef={navigationRef} />
       <DashboardLocationGateMobile role={userRole} profile={profile} userIntent={userIntent} active={isAuthenticated && !isLoading} />
       <ForcedPasswordChangeGateMobile
         active={isAuthenticated && !isLoading}
@@ -799,11 +1093,18 @@ const AppNavigator = () => {
           options={{ title: 'Couple intake', gestureEnabled: true }}
         />
         <Stack.Screen name="CoupleWaitingPartner" component={CoupleWaitingPartnerScreen} options={{ title: 'Couple status' }} />
+        <Stack.Screen name="CoupleAcceptInvite" component={CoupleAcceptInviteScreen} options={{ title: 'Accept invitation' }} />
         <Stack.Screen name="CoupleInviteEntry" component={CoupleInviteEntryScreen} options={{ title: 'Partner invitation' }} />
         <Stack.Screen name="CouplePartnerBWelcome" component={CouplePartnerBWelcomeScreen} options={{ title: 'Join couple therapy' }} />
         <Stack.Screen name="CoupleDashboard" component={CoupleDashboardScreen} options={{ title: 'Couple therapy' }} />
         <Stack.Screen name="TherapistCoupleCase" component={TherapistCoupleCaseScreen} options={{ title: 'Couple case' }} />
 
+        {/* MedPsych: second-opinion psychiatry. Deliberately outside the therapy
+            onboarding — these users skip the questionnaire entirely. */}
+        <Stack.Screen name="MedPsychSignUp" component={MedPsychSignUpScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="MedPsychPsychiatrists" component={MedPsychPsychiatristsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SecondOpinionIntake" component={SecondOpinionIntakeScreen} options={{ title: 'Second Opinion' }} />
+        <Stack.Screen name="MedPsychBooking" component={MedPsychBookingScreen} options={{ headerShown: false }} />
         <Stack.Screen name="MedicalIntake" component={MedicalIntakeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="DoctorSearch" component={DoctorSearchScreen} options={{ title: 'Find a Doctor', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
         <Stack.Screen name="DoctorProfile" component={DoctorProfileScreen} options={{ title: 'Doctor Profile', headerStyle: { backgroundColor: MedicalColors.primary } }} />
@@ -849,6 +1150,9 @@ const AppNavigator = () => {
         <Stack.Screen name="HomeCareNurseMain" options={{ headerShown: false }}>
           {() => <HomeCareNurseNavigator profile={profile} />}
         </Stack.Screen>
+
+        {/* The video call for every role, reachable from anywhere (incoming calls, join buttons). */}
+        <Stack.Screen name="VideoCallSession" component={VideoCallSessionScreen} options={{ headerShown: false }} />
 
         <Stack.Screen name="InsuranceDetails" component={InsuranceDetailsScreen} options={{ title: 'Insurance Details', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
         <Stack.Screen name="EmergencyContact" component={EmergencyContactScreen} options={{ title: 'Emergency Contacts', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />

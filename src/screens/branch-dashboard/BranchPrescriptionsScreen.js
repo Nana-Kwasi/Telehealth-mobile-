@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Modal, TextInput, Alert, RefreshControl, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -169,7 +180,10 @@ export default function BranchPrescriptionsScreen({ profile }) {
       )}
 
       <Modal visible={!!selected} animationType="slide" transparent onRequestClose={() => setSelected(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
@@ -236,11 +250,14 @@ export default function BranchPrescriptionsScreen({ profile }) {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={!!altModal} transparent animationType="fade" onRequestClose={() => setAltModal(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.altCard}>
             <Text style={styles.altTitle}>Suggest Alternative Drug</Text>
             <Text style={styles.altSub}>Enter the alternative drug name. The doctor will approve.</Text>
@@ -255,7 +272,7 @@ export default function BranchPrescriptionsScreen({ profile }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -302,7 +319,7 @@ const styles = StyleSheet.create({
   deliveredBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 16, borderWidth: 1.5, borderColor: '#bbf7d0' },
   noteBlockBanner: { backgroundColor: '#fffbeb', borderRadius: 12, padding: 14, marginTop: 16, borderWidth: 1.5, borderColor: '#fde68a' },
   noteBlockText: { color: '#b45309', fontWeight: '700', fontSize: 13, lineHeight: 19 },
-  deliveredText: { color: '#15803d', fontWeight: '800', fontSize: 16 },
+  deliveredText: { color: '#0f5628', fontWeight: '800', fontSize: 16 },
   altCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, margin: 24 },
   altTitle: { fontSize: 18, fontWeight: '800', color: C.text, marginBottom: 8 },
   altSub: { fontSize: 13, color: C.textSecondary, marginBottom: 16 },

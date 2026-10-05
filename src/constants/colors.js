@@ -134,26 +134,77 @@ export const ScanColors = {
 };
 
 // Therapist theme colors (deep indigo + teal)
+// ─── Therapy module: ZenCare ─────────────────────────────────────────────────
+// Retheming these two palettes is how the ZenCare look reaches every therapy
+// screen at once. React Native has no cascade to override with, so the shared
+// palette IS the centralisation point: ~23 screens reference these keys, and
+// changing them here changes all of them together.
+//
+// The key NAMES are unchanged on purpose. Every screen already reads
+// `TherapistColors.surface` for a card and `.text` for a heading, so remapping
+// the values converts each screen without touching a single one of them.
+//
+// Ground values are sampled from assets/zencare-emblem.png — the artwork ships
+// with its navy baked in, so the app's navy has to be that same navy.
 export const TherapistColors = {
-  primary: '#4f46e5',         // Indigo
-  primaryDark: '#1e1b4b',     // Deep indigo
-  primaryLight: '#eff6ff',    // Light indigo tint
-  secondary: '#0d9488',       // Teal
-  accent: '#a855f7',          // Purple accent
-  background: '#f4f6fb',      // Soft gray-blue
-  surface: '#ffffff',         // White
-  text: '#0f172a',            // Slate dark
-  textSecondary: '#475569',   // Slate medium
-  textLight: '#94a3b8',       // Slate light
-  success: '#10b981',         // Emerald
-  warning: '#f59e0b',         // Amber
-  error: '#f43f5e',           // Rose
-  info: '#0ea5e9',            // Sky
-  border: '#e2e8f0',          // Slate border
-  shadow: 'rgba(0, 0, 0, 0.08)',
-  overlay: 'rgba(0, 0, 0, 0.5)',
-  cardBg: '#f8fafc',
-  sidebarBg: '#1a1748',
-  activeItem: '#4f46e5',
-  inactiveItem: '#94a3b8',
+  primary: '#5046bd',         // Violet — the only saturated accent (5.64:1 on white)
+  primaryDark: '#3f3796',     // Deeper violet, for pressed states and chrome (7.85:1)
+  primaryLight: '#7870e8',    // The raw sampled violet — borders and icon tiles only, 3.98:1
+  secondary: '#7870e8',
+  accent: '#5046bd',
+  background: '#eceaf2',      // Warm off-white page ground
+  surface: '#ffffff',         // Card — sits above the ground
+  // ── Ink ramp ────────────────────────────────────────────────────────────
+  // These were ALL pure white for the navy ground. On the light ground white
+  // text is invisible, so they invert to a dark ramp. `textLight` keeps its
+  // name for the sake of existing imports but is now the QUIETEST DARK, not a
+  // light colour — it must never be used on a dark fill.
+  text: '#101010',            // Headings
+  textSecondary: '#3d3d3d',   // Body copy
+  textLight: '#44474f',       // Meta — still ~7:1 on the ground, passes AA
+  // For the rare label that genuinely sits on a pine fill.
+  onAccent: '#ffffff',
+  success: '#0f5628',
+  warning: '#734e12',
+  error: '#8c322d',
+  info: '#2f5d7d',
+  border: 'rgba(16,16,16,0.10)',
+  shadow: 'rgba(38, 34, 70, 0.10)',
+  overlay: 'rgba(13, 13, 13, 0.45)',
+  cardBg: '#ffffff',
+  sidebarBg: '#ffffff',       // The drawer is a light rail now, not a dark one
+  activeItem: '#5046bd',      // Violet on white — reads clearly
+  inactiveItem: '#3d3d3d',    // Dark enough that drawer labels stay legible
+};
+
+/**
+ * The therapy CLIENT screens import the shared `Colors`, which is also used by
+ * login, intent and the doctor flow — retheming it would drag the dark look
+ * into modules that must keep their own. This is the same ZenCare palette under
+ * the key names those screens already use, so they can swap one import instead
+ * of being rewritten.
+ */
+export const TherapyColors = {
+  primary: '#5046bd',
+  secondary: '#7870e8',
+  accent: '#5046bd',
+  background: '#eceaf2',
+  surface: '#ffffff',
+  // Same inversion as TherapistColors above — dark ink on a light ground.
+  text: '#101010',
+  textSecondary: '#3d3d3d',
+  textLight: '#44474f',
+  onAccent: '#ffffff',
+  success: '#0f5628',
+  warning: '#734e12',
+  error: '#8c322d',
+  info: '#2f5d7d',
+  border: 'rgba(16,16,16,0.10)',
+  shadow: 'rgba(38, 34, 70, 0.10)',
+  overlay: 'rgba(13, 13, 13, 0.45)',
+  // Session-type accents, differentiated by hue but all dark enough to sit as
+  // text or a chip label on the light ground.
+  individual: '#5046bd',
+  couples: '#2f6d9e',
+  teen: '#0f5628',
 };

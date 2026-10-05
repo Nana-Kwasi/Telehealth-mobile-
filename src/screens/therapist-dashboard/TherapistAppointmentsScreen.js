@@ -21,6 +21,7 @@ import {
   TextInput,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +36,7 @@ import {
   isPendingRequest,
   callDate,
 } from '../../services/therapistCalendarService';
+import AppointmentRiskCard from '../../components/AppointmentRiskCard';
 
 const FILTERS = [
   { id: 'requests', label: 'Requests' },
@@ -53,10 +55,10 @@ function fmtWhen(call) {
 
 function statusTone(status) {
   const s = String(status || '').toLowerCase();
-  if (s === 'pending') return { bg: '#fef3c7', color: '#92400e' };
-  if (s === 'declined' || s === 'cancelled') return { bg: '#fee2e2', color: '#b91c1c' };
-  if (s === 'completed') return { bg: '#dcfce7', color: '#15803d' };
-  return { bg: '#dbeafe', color: '#1d4ed8' };
+  if (s === 'pending') return { bg: '#fef3c7', color: '#734e12' };
+  if (s === 'declined' || s === 'cancelled') return { bg: '#fee2e2', color: '#8c322d' };
+  if (s === 'completed') return { bg: '#dcfce7', color: '#2f7d5f' };
+  return { bg: '#dbeafe', color: '#2f5d7d' };
 }
 
 export default function TherapistAppointmentsScreen({ navigation }) {
@@ -228,6 +230,10 @@ export default function TherapistAppointmentsScreen({ navigation }) {
           Confirm session requests, reschedule, and keep your calendar accurate.
         </Text>
 
+        {/* Which of these is worth a reminder, and why. Hides itself when
+            nothing is worth chasing. */}
+        <AppointmentRiskCard />
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
           {FILTERS.map((f) => (
             <TouchableOpacity
@@ -346,7 +352,10 @@ export default function TherapistAppointmentsScreen({ navigation }) {
         animationType="slide"
         onRequestClose={() => setRescheduleCall(null)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>
               {isPendingRequest(rescheduleCall || {}) ? 'Propose a time' : 'Reschedule session'}
@@ -385,7 +394,10 @@ export default function TherapistAppointmentsScreen({ navigation }) {
                 over one that is already showing, so a picker rendered as a
                 sibling silently never appears. */}
             {reschedulePicker ? (
-              <View style={styles.pickerOverlay}>
+              <KeyboardAvoidingView
+        style={styles.pickerOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
                 <TouchableOpacity
                   style={styles.pickerBackdrop}
                   activeOpacity={1}
@@ -404,6 +416,12 @@ export default function TherapistAppointmentsScreen({ navigation }) {
                     </TouchableOpacity>
                   </View>
                   <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
                     value={rescheduleAt}
                     mode={reschedulePicker}
                     display={Platform.OS === 'ios' ? 'spinner' : 'default'}
@@ -415,7 +433,7 @@ export default function TherapistAppointmentsScreen({ navigation }) {
                     style={styles.picker}
                   />
                 </View>
-              </View>
+              </KeyboardAvoidingView>
             ) : null}
 
             <View style={styles.modalActions}>
@@ -432,14 +450,14 @@ export default function TherapistAppointmentsScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f8fafc' },
+  screen: { flex: 1, backgroundColor: 'transparent' },
   center: { alignItems: 'center', justifyContent: 'center' },
   content: { padding: 16, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: '800', color: TherapistColors.text },
@@ -449,7 +467,7 @@ const styles = StyleSheet.create({
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff', marginRight: 8,
+    borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: 'rgba(255,255,255,0.72)', marginRight: 8,
   },
   filterChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
   filterText: { fontSize: 13, fontWeight: '600', color: TherapistColors.textSecondary },
@@ -458,18 +476,18 @@ const styles = StyleSheet.create({
     minWidth: 20, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10,
     backgroundColor: '#f59e0b', alignItems: 'center',
   },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  badgeText: { color: '#0d0d0d', fontSize: 11, fontWeight: '800' },
 
   card: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 14, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: '#e2e8f0',
   },
   cardPending: { backgroundColor: '#fffbeb', borderColor: '#fcd34d' },
   cardTop: { flexDirection: 'row', gap: 10 },
   client: { fontSize: 16, fontWeight: '700', color: TherapistColors.text },
-  when: { fontSize: 13, color: '#64748b', marginTop: 3 },
-  meta: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
-  notes: { fontSize: 12, color: '#475569', fontStyle: 'italic', marginTop: 6 },
+  when: { fontSize: 13, color: '#0d0d0d', marginTop: 3 },
+  meta: { fontSize: 12, color: '#3d3d3d', marginTop: 2 },
+  notes: { fontSize: 12, color: '#0d0d0d', fontStyle: 'italic', marginTop: 6 },
   statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, alignSelf: 'flex-start' },
   statusText: { fontSize: 10, fontWeight: '800' },
 
@@ -478,31 +496,31 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingVertical: 10, borderRadius: 10, backgroundColor: TherapistColors.primary,
   },
-  btnPrimaryText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  btnPrimaryText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   btnOutline: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, borderRadius: 10, backgroundColor: '#fff',
+    paddingVertical: 10, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1, borderColor: TherapistColors.primary,
   },
   btnOutlineText: { color: TherapistColors.primary, fontSize: 13, fontWeight: '700' },
   btnGhost: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, borderRadius: 10, backgroundColor: '#fff',
+    paddingVertical: 10, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1, borderColor: '#fca5a5',
   },
-  btnGhostText: { color: '#dc2626', fontSize: 13, fontWeight: '700' },
+  btnGhostText: { color: '#8c322d', fontSize: 13, fontWeight: '700' },
   btnBusy: { opacity: 0.7 },
 
   emptyCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 28, alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 14, padding: 28, alignItems: 'center',
     borderWidth: 1, borderColor: '#e2e8f0',
   },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: TherapistColors.text, marginTop: 10 },
-  emptyHint: { fontSize: 12, color: '#94a3b8', textAlign: 'center', marginTop: 6 },
+  emptyHint: { fontSize: 12, color: '#3d3d3d', textAlign: 'center', marginTop: 6 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: 20, paddingBottom: Platform.OS === 'ios' ? 32 : 20, maxHeight: '90%',
   },
   modalTitle: { fontSize: 18, fontWeight: '800', color: TherapistColors.text },
@@ -516,17 +534,18 @@ const styles = StyleSheet.create({
   pickValue: { fontSize: 14, fontWeight: '700', color: TherapistColors.text },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: TherapistColors.textSecondary, marginBottom: 6, marginTop: 6 },
   notesInput: {
-    borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: 'rgba(16,16,16,0.16)', borderRadius: 12, padding: 12,
     minHeight: 70, textAlignVertical: 'top', color: TherapistColors.text,
+    backgroundColor: '#ffffff',
   },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   cancelBtn: {
-    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 10,
+    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 999,
     borderWidth: 1, borderColor: '#e2e8f0',
   },
   cancelBtnText: { fontSize: 14, fontWeight: '700', color: TherapistColors.textSecondary },
   saveBtn: {
-    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 10,
+    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 999,
     backgroundColor: TherapistColors.primary,
   },
   saveBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
@@ -537,7 +556,7 @@ const styles = StyleSheet.create({
   },
   pickerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.45)' },
   pickerSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingBottom: Platform.OS === 'ios' ? 28 : 16,
   },
   pickerHeader: {

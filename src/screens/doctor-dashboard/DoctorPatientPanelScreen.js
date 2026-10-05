@@ -15,7 +15,7 @@ function getInitials(name) {
 }
 
 const STATUS_COLORS = {
-  active:     { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
+  active:     { bg: '#f0fdf4', text: '#0f5628', border: '#bbf7d0' },
   inactive:   { bg: '#fff7ed', text: '#c2410c', border: '#fed7aa' },
   discharged: { bg: '#fef2f2', text: '#b91c1c', border: '#fecdd3' },
 };
@@ -24,7 +24,7 @@ const PANEL_TABS = ['All', 'Active', 'Inactive', 'Discharged'];
 
 const TAB_COLORS = {
   All:        DoctorColors.primary,
-  Active:     '#15803d',
+  Active:     '#0f5628',
   Inactive:   '#c2410c',
   Discharged: '#b91c1c',
 };
@@ -146,7 +146,7 @@ export default function DoctorPatientPanelScreen({ navigation }) {
       <View style={styles.summaryRow}>
         {[
           { label: 'All', count: patients.length, color: DoctorColors.primary, bg: '#eff6ff' },
-          { label: 'Active', count: tabCount('Active'), color: '#15803d', bg: '#f0fdf4' },
+          { label: 'Active', count: tabCount('Active'), color: '#0f5628', bg: '#f0fdf4' },
           { label: 'Inactive', count: tabCount('Inactive'), color: '#c2410c', bg: '#fff7ed' },
           { label: 'Discharged', count: tabCount('Discharged'), color: '#b91c1c', bg: '#fef2f2' },
         ].map(({ label, count, color, bg }) => (
@@ -171,7 +171,12 @@ export default function DoctorPatientPanelScreen({ navigation }) {
       </View>
 
       {/* Status Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
+      <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
         {PANEL_TABS.map(tab => {
           const count = tabCount(tab);
           const tabColor = TAB_COLORS[tab] || DoctorColors.primary;

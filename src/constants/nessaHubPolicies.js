@@ -20,4 +20,25 @@ export const NESSA_HUB_POLICY_LINKS = {
   therapyMatching: nessaHubPolicyUrl('therapy-therapist-matching-selection'),
   electronicSignature: nessaHubPolicyUrl('therapy-electronic-signature-consent'),
   coupleSensitiveScreening: nessaHubPolicyUrl('couple-therapy-sensitive-screening'),
+  notifications: nessaHubPolicyUrl('notifications-electronic-communications'),
+  medpsychScope: nessaHubPolicyUrl('medpsych-second-opinion'),
+  medpsychMembership: nessaHubPolicyUrl('medpsych-membership-upgrade'),
 };
+
+/**
+ * The consent keys the MedPsych sign-up gates on, mapped to the documents that
+ * back them. The key is what the backend records; the slug is what the user
+ * reads. Defined together so the two cannot drift apart.
+ */
+export const POLICY_KEY_TO_SLUG = {
+  terms_of_use: 'terms-of-service',
+  privacy_policy: 'patient-privacy-data-protection',
+  informed_consent: 'medpsych-second-opinion',
+  telehealth_consent: 'telemedicine-policy',
+};
+
+/** Full URL for a consent key, or the policy index if the key is unknown. */
+export function policyUrlForKey(key) {
+  const slug = POLICY_KEY_TO_SLUG[key];
+  return slug ? nessaHubPolicyUrl(slug) : getNessaHubPoliciesBase();
+}

@@ -44,7 +44,12 @@ export default function HomeCareReportScreen({ navigation, route }) {
   };
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>Report nurse</Text>
       <Text style={hc.sub}>Booking: {bookingId?.slice(0, 8)}…</Text>
       <Text style={hc.label}>Nature of complaint</Text>

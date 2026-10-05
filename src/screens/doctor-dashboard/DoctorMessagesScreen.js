@@ -191,6 +191,9 @@ export default function DoctorMessagesScreen({ route }) {
     if (!currentUserId) return;
     const chatId = [currentUserId, patientId].sort().join('_');
     const fetchMessages = () => {
+      // Opening a thread IS reading it. The endpoint existed all along;
+      // nothing called it, so the sender's ticks never turned blue.
+      api(`/api/v1/doctor-chats/${chatId}/read`, { method: 'POST', body: {} }).catch(() => {});
       api(`/api/v1/doctor-chats/${chatId}/messages`).then(msgs => {
         setMessages(msgs || []);
       }).catch(() => {});
@@ -722,6 +725,13 @@ const styles = StyleSheet.create({
   bubbleMine: {
     backgroundColor: C.primary, borderBottomLeftRadius: 18, borderBottomRightRadius: 4,
   },
+  // Referenced by the message row but never defined, so it resolved to
+  // undefined. Harmless only because `bubble` above already bakes in the
+  // incoming look — stating it here makes the pair symmetric, so a later change
+  // to `bubble` cannot silently alter one side of the conversation.
+  bubbleTheirs: {
+    backgroundColor: '#fff', borderBottomLeftRadius: 4, borderBottomRightRadius: 18,
+  },
   bubbleText: { fontSize: 14, color: '#1e293b', lineHeight: 20 },
   bubbleTextMine: { color: '#fff' },
   bubbleImage: { width: 200, height: 160, borderRadius: 12 },
@@ -746,7 +756,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
     backgroundColor: '#f0fdf4', paddingVertical: 6,
   },
-  uploadingText: { fontSize: 13, color: '#15803d', fontWeight: '600' },
+  uploadingText: { fontSize: 13, color: '#0f5628', fontWeight: '600' },
   recordingBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10,
     backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f1f5f9',

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { HomeCareColors as C } from '../../constants/homeCareColors';
+import { resolveFileUrl } from '../../utils/mediaUrl';
 
 export function nurseInitials(nurse) {
   const name = nurse?.fullName || nurse?.name || 'N';
@@ -17,7 +18,7 @@ export default function NurseAvatar({ nurse, size = 68, style }) {
   if (nurse?.photoURL) {
     return (
       <Image
-        source={{ uri: nurse.photoURL }}
+        source={{ uri: resolveFileUrl(nurse.photoURL)}}
         style={[styles.photo, { width: size, height: size, borderRadius: radius }, style]}
       />
     );

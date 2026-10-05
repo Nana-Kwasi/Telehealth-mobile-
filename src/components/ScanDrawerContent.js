@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { performLogout } from '../services/authService';
+import { performLogout, wipeLocalData } from '../services/authService';
 import { api } from '../services/apiClient';
 import { ScanColors as C } from '../constants/colors';
 
@@ -47,7 +47,7 @@ export default function ScanDrawerContent({ navigation, state, profile, isBranch
           // Clearing the session is not enough: without resetting navigation the
           // dashboard stays mounted and the user appears to still be logged in.
           try { await performLogout(); } catch (_) {}
-          try { await AsyncStorage.clear(); } catch (_) {}
+          await wipeLocalData();
           navigation.getParent()?.replace('Intent');
         },
       },
@@ -104,9 +104,9 @@ const styles = StyleSheet.create({
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   logoText: { color: '#fff', fontSize: 18, fontWeight: '800' },
   badge: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  badgeText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  avatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  avatarText: { color: '#ffffff', fontSize: 20, fontWeight: '800' },
   centerName: { color: '#fff', fontSize: 16, fontWeight: '700' },
   parentOrgName: { color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '700', marginTop: 4 },
   centerRole: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 2 },

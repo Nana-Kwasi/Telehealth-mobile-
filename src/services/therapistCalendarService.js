@@ -1,5 +1,18 @@
 import { api, getStoredUserId } from './apiClient';
-import { enrichClientRecord, getClientDisplayName } from '../utils/clientTherapyMetrics';
+import { enrichClientRecord, getClientDisplayName, fetchPersonProfile } from '../utils/clientTherapyMetrics';
+
+/**
+ * Fetch one person's profile, whichever kind of record they are.
+ *
+ * A therapy client lives behind /clients/{id}; /patients/{id} is the MEDICAL
+ * record and returns 403 for them. The loaders below called /patients only,
+ * so every lookup failed, the catch swallowed it, and the roster came back
+ * empty — the therapist saw "no clients" while ten active assignments existed.
+ *
+ * Tries the therapy endpoint first because these loaders are only ever used by
+ * a therapist, then falls back for the rare client who is also a patient.
+ */
+// Resolver lives in clientTherapyMetrics so there is exactly one copy.
 
 export async function loadTherapistCalendarClients(therapistUid, { lite = false } = {}) {
   const assignments = await api(`/api/v1/therapy-management/assignments?therapistId=${therapistUid}`).catch(() => []);
@@ -14,12 +27,7 @@ export async function loadTherapistCalendarClients(therapistUid, { lite = false 
   if (lite) {
     const rows = await Promise.all(
       assigned.map(async ({ clientId, fallbackName }) => {
-        let data = null;
-        try {
-          data = await api(`/api/v1/patients/${clientId}`);
-        } catch {
-          data = null;
-        }
+        const data = await fetchPersonProfile(clientId);
         const displayName =
           data?.fullName || data?.name || (data && getClientDisplayName(data)) || fallbackName || 'Client';
         // Spread first so a payload `id` can never replace the assignment's clientId,
@@ -32,16 +40,24 @@ export async function loadTherapistCalendarClients(therapistUid, { lite = false 
 
   const clients = [];
   for (const { clientId, fallbackName } of assigned) {
+    const raw = await fetchPersonProfile(clientId);
+    if (!raw) {
+      // Keep them on the roster under the assignment's own name rather than
+      // dropping them. A therapist who cannot see a client they are assigned
+      // to cannot call them — an incomplete profile must not cost them that.
+      clients.push({ id: clientId, displayName: fallbackName || 'Client', name: fallbackName || 'Client' });
+      continue;
+    }
     try {
-      const raw = await api(`/api/v1/patients/${clientId}`);
-      if (!raw) continue;
       const enriched = await enrichClientRecord(clientId, { ...raw, id: clientId });
       clients.push({
         ...enriched,
         id: clientId,
         displayName: enriched.name || getClientDisplayName(enriched) || fallbackName,
       });
-    } catch {}
+    } catch {
+      clients.push({ ...raw, id: clientId, displayName: raw.fullName || raw.name || fallbackName || 'Client' });
+    }
   }
 
   clients.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));

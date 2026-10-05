@@ -12,17 +12,25 @@ import {
   TextInput,
   Linking,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchClientData, getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
 import { api } from '../../services/apiClient';
-import { Colors } from '../../constants/colors';
+import { TherapyColors as Colors } from '../../constants/colors';
 import { buildProgressMetrics, overallProgressScore } from '../../utils/clientDashboardMetrics';
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
+import HeroArt from '../../components/HeroArt';
+import ClinicianStatusBadge from '../../components/ClinicianStatusBadge';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import ZCGround from '../../components/ZCGround';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
 import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
+import { ZC } from '../../constants/zencare';
+import GlassFill, { glassStyle } from '../../components/GlassFill';
+import AiAssistantFab from '../../components/AiAssistantFab';
 
 const { width } = Dimensions.get('window');
 
@@ -427,8 +435,8 @@ const ClientHomeScreen = ({ navigation }) => {
 
   const quickActions = [
     { icon: 'chatbubbles-outline', label: 'Messages', screen: 'Messages', color: Colors.primary },
-    { icon: 'videocam-outline', label: 'Video Call', screen: 'Video', color: '#10B981' },
-    { icon: 'calendar-outline', label: 'Book Session', screen: 'Schedule', color: '#F59E0B' },
+    { icon: 'videocam-outline', label: 'Video Call', screen: 'Video', color: '#2f7d5f' },
+    { icon: 'calendar-outline', label: 'Book Session', screen: 'Schedule', color: '#734e12' },
     { icon: 'book-outline', label: 'Resources', screen: 'Resources', color: '#8B5CF6' },
   ];
 
@@ -441,40 +449,85 @@ const ClientHomeScreen = ({ navigation }) => {
     );
   }
 
+
   return (
-    <ScrollView 
+    <ZCGround>
+<ScrollView 
       style={styles.container} 
       contentContainerStyle={styles.contentContainer}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Welcome back!</Text>
-          {/* The patient profile returns an empty fullName for therapy clients —
-              the name lives on the user account, which is what the drawer reads.
-              Fall through the same chain here so the greeting matches. */}
-          <Text style={styles.name}>
-            {clientData?.name || clientData?.fullName || sessionName || 'Client'}
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.moodCheckBtn} onPress={() => setShowMoodModal(true)}>
-            <Ionicons name="happy-outline" size={20} color={Colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
-            <Ionicons name="settings-outline" size={24} color={Colors.text} />
-          </TouchableOpacity>
+      <View style={[styles.header, glassStyle]}>
+        <GlassFill />
+        {/* Behind the header content, faded left-to-right so the greeting
+            stays on a near-solid surface. This screen was the last dashboard
+            still on the old plain-text header, so a therapy client saw a
+            different app from the one a doctor or medical patient saw. */}
+        <HeroArt
+          source={require('../../../assets/patient-hero.jpg')}
+          scrim={'#ffffff'}
+          width={210}
+          opacity={1}
+        />
+        <View style={styles.headerTop}>
+          <View style={{ flex: 1, paddingRight: 14, maxWidth: '60%' }}>
+            <Text style={styles.greeting}>Welcome back,</Text>
+            {/* The patient profile returns an empty fullName for therapy clients —
+                the name lives on the user account, which is what the drawer reads.
+                Fall through the same chain here so the greeting matches. */}
+            <Text style={styles.name} numberOfLines={2}>
+              {clientData?.name || clientData?.fullName || sessionName || 'Client'}
+            </Text>
+            <Text style={styles.headerDate}>
+              {new Date().toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric',
+              })}
+            </Text>
+          </View>
         </View>
       </View>
-      <LocationSummaryCardMobile
-        profile={locationProfile || clientData}
-        onEdit={() => navigation.navigate('Settings')}
-      />
-      {/* Conditions at that same saved location — it follows the coordinates,
-          so updating the location updates the weather. */}
-      <WeatherCardMobile profile={locationProfile || clientData} />
+
+      {/* One card, not two. Both answer "where am I and what is it like" — as
+          separate surfaces with their own padding and borders the row read as
+          clutter. The weather follows the saved coordinates, so updating the
+          location updates the weather. */}
+      <View style={[styles.metaCard, glassStyle]}>
+        <GlassFill />
+        <View style={styles.metaCardLeft}>
+          <LocationSummaryCardMobile
+            embedded
+            profile={locationProfile || clientData}
+            onEdit={() => navigation.navigate('Settings')}
+          />
+        </View>
+        <View style={styles.metaDivider} />
+        <View style={styles.metaCardRight}>
+          <WeatherCardMobile embedded profile={locationProfile || clientData} />
+        </View>
+      </View>
+
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={[styles.headerMoodCta, styles.actionButton]}
+          onPress={() => setShowMoodModal(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="happy-outline" size={15} color={Colors.primary} />
+          <Text style={styles.headerMoodCtaText}>Log how you feel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.emergencyBanner, styles.actionButton]}
+          onPress={() => setShowEmergencyModal(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="warning" size={18} color="#dc2626" />
+          <Text style={styles.emergencyBannerText}>In crisis? Tap for immediate help</Text>
+          <Ionicons name="chevron-forward" size={18} color="#dc2626" />
+        </TouchableOpacity>
+      </View>
 
       {clientData?.coupleId ? (
         <TouchableOpacity
@@ -487,22 +540,18 @@ const ClientHomeScreen = ({ navigation }) => {
         </TouchableOpacity>
       ) : null}
 
-      {/* Emergency Banner */}
-      <TouchableOpacity style={styles.emergencyBanner} onPress={() => setShowEmergencyModal(true)} activeOpacity={0.85}>
-        <Ionicons name="warning" size={18} color="#dc2626" />
-        <Text style={styles.emergencyBannerText}>In crisis? Tap for immediate help</Text>
-        <Ionicons name="chevron-forward" size={18} color="#dc2626" />
-      </TouchableOpacity>
-
       {/* Emergency Modal */}
       <Modal visible={showEmergencyModal} transparent animationType="slide" onRequestClose={() => setShowEmergencyModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.emergencyModal}>
             <View style={styles.emergencyModalHeader}>
               <Ionicons name="warning" size={28} color="#dc2626" />
               <Text style={styles.emergencyModalTitle}>Crisis & Emergency Support</Text>
               <TouchableOpacity onPress={() => setShowEmergencyModal(false)}>
-                <Ionicons name="close" size={24} color="#6b7280" />
+                <Ionicons name="close" size={24} color="#44474f" />
               </TouchableOpacity>
             </View>
             <Text style={styles.emergencyModalSubtitle}>You are not alone. Reach out now:</Text>
@@ -523,12 +572,15 @@ const ClientHomeScreen = ({ navigation }) => {
               <Text style={styles.messageTherapistText}>Message My Therapist</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Mood Check-in Modal */}
       <Modal visible={showMoodModal} transparent animationType="slide" onRequestClose={() => setShowMoodModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.moodModal}>
             <Text style={styles.moodModalTitle}>Daily Mood Check-in</Text>
             <Text style={styles.moodModalSubtitle}>How are you feeling today?</Text>
@@ -578,7 +630,7 @@ const ClientHomeScreen = ({ navigation }) => {
               </>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Therapist Card */}
@@ -591,6 +643,8 @@ const ClientHomeScreen = ({ navigation }) => {
           <View style={styles.therapistInfo}>
             <Text style={styles.therapistLabel}>Your Therapist</Text>
             <Text style={styles.therapistName}>{therapistData.name || 'Not assigned'}</Text>
+            {/* Their own declared availability; renders nothing when unset. */}
+            <ClinicianStatusBadge status={therapistData} />
           </View>
           <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
@@ -618,17 +672,20 @@ const ClientHomeScreen = ({ navigation }) => {
 
       {/* Stats Cards */}
       <View style={styles.statsRow}>
-        <View style={styles.statCard}>
+        <View style={[styles.statCard, glassStyle]}>
+          <GlassFill />
           <Ionicons name="checkmark-circle" size={32} color="#10B981" />
           <Text style={styles.statNumber}>{sessionsCompleted}</Text>
           <Text style={styles.statLabel}>Sessions</Text>
         </View>
-        <View style={styles.statCard}>
+        <View style={[styles.statCard, glassStyle]}>
+          <GlassFill />
           <Ionicons name="trending-up" size={32} color={Colors.primary} />
           <Text style={styles.statNumber}>{progressScore}%</Text>
           <Text style={styles.statLabel}>Progress</Text>
         </View>
-        <View style={styles.statCard}>
+        <View style={[styles.statCard, glassStyle]}>
+          <GlassFill />
           <Ionicons name="calendar" size={32} color="#F59E0B" />
           <Text style={styles.statNumber}>{upcomingCount}</Text>
           <Text style={styles.statLabel}>New schedules</Text>
@@ -641,21 +698,37 @@ const ClientHomeScreen = ({ navigation }) => {
         {/* Same four metrics, same maths, as the web dashboard — see
             utils/clientDashboardMetrics.js. A metric with nothing recorded shows
             "—" and says why, rather than a 0% bar that reads as a real score. */}
-        {progressMetrics.map((m) => {
-          const hasValue = typeof m.value === 'number';
-          return (
-            <View key={m.key} style={styles.metricRow}>
-              <View style={styles.metricHeader}>
-                <Text style={styles.metricLabel}>{m.label}</Text>
-                <Text style={styles.metricValue}>{hasValue ? `${m.value}%` : '—'}</Text>
+        {/* Each metric is its own glass card, matching the therapist
+            dashboard's panels. The colour is per-metric so the four are
+            distinguishable at a glance rather than four identical violet bars —
+            all four are dark enough to carry their own label on the tint. */}
+        <View style={styles.metricGrid}>
+          {progressMetrics.map((m) => {
+            const hasValue = typeof m.value === 'number';
+            const tint = METRIC_TINTS[m.key] || METRIC_TINTS.default;
+            return (
+              <View key={m.key} style={[styles.metricCard, glassStyle]}>
+                <GlassFill />
+                <View style={styles.metricHeader}>
+                  <View style={[styles.metricDot, { backgroundColor: tint }]} />
+                  <Text style={styles.metricLabel}>{m.label}</Text>
+                  <Text style={[styles.metricValue, { color: hasValue ? tint : '#44474f' }]}>
+                    {hasValue ? `${m.value}%` : '—'}
+                  </Text>
+                </View>
+                <View style={styles.progressBarTrack}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      { width: `${hasValue ? m.value : 0}%`, backgroundColor: tint },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.metricDetail}>{m.detail}</Text>
               </View>
-              <View style={styles.progressBarTrack}>
-                <View style={[styles.progressBarFill, { width: `${hasValue ? m.value : 0}%` }]} />
-              </View>
-              <Text style={styles.metricDetail}>{m.detail}</Text>
-            </View>
-          );
-        })}
+            );
+          })}
+        </View>
       </View>
 
       {/* Treatment goals — the client home screen showed none at all, even though
@@ -798,9 +871,10 @@ const ClientHomeScreen = ({ navigation }) => {
           {quickActions.map((action, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.actionCard}
+              style={[styles.actionCard, glassStyle]}
               onPress={() => navigation.navigate(action.screen)}
             >
+              <GlassFill />
               <View style={[styles.actionIconContainer, { backgroundColor: `${action.color}20` }]}>
                 <Ionicons name={action.icon} size={28} color={action.color} />
               </View>
@@ -818,7 +892,8 @@ const ClientHomeScreen = ({ navigation }) => {
         return (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Sessions per month</Text>
-            <View style={styles.chartCard}>
+            <View style={[styles.chartCard, glassStyle]}>
+            <GlassFill />
               <BarChart
                 data={{
                   labels: groupedLabels,
@@ -851,7 +926,8 @@ const ClientHomeScreen = ({ navigation }) => {
       {moodTrendData.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Session mood rating (last 10)</Text>
-          <View style={styles.chartCard}>
+          <View style={[styles.chartCard, glassStyle]}>
+            <GlassFill />
             <LineChart
               data={{
                 labels: moodTrendData.map(d => d.label),
@@ -873,7 +949,8 @@ const ClientHomeScreen = ({ navigation }) => {
       {moodDistribution.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Daily Mood Distribution</Text>
-          <View style={styles.chartCard}>
+          <View style={[styles.chartCard, glassStyle]}>
+            <GlassFill />
             <PieChart
               data={moodDistribution}
               width={width - 80}
@@ -922,13 +999,42 @@ const ClientHomeScreen = ({ navigation }) => {
         )}
       </View>
     </ScrollView>
+      <AiAssistantFab />
+    </ZCGround>
   );
 };
 
+/**
+ * One colour per progress metric.
+ *
+ * Every bar used to be the same violet, so four different measurements looked
+ * like one repeated. Each value clears 4.5:1 on a glass card, so it can carry
+ * its own percentage as text rather than only tinting the bar.
+ */
+const METRIC_TINTS = {
+  wellbeing: '#5046bd',   // violet — the module accent
+  goals:     '#0f5628',   // green
+  sessions:  '#2f6d9e',   // blue
+  consistency: '#734e12', // amber
+  default:   '#5046bd',
+};
+
 const styles = StyleSheet.create({
+  metricDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  metricCard: {
+    borderRadius: 18,
+    padding: 16,
+  },
+  metricGrid: {
+    gap: 12,
+  },
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
   },
   contentContainer: {
     padding: 20,
@@ -943,20 +1049,80 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
+    // Glass panel, matching the therapist dashboard. A column now, because the
+    // artwork occupies the right side — a row put the greeting under it.
+    marginHorizontal: 4,
+    marginBottom: 16,
+    borderRadius: 20,
+    padding: 18,
+    minHeight: 185,
+    overflow: 'hidden',
   },
+  headerTop: { flexDirection: 'row', alignItems: 'flex-start' },
   greeting: {
-    fontSize: 18,
+    fontSize: 15,
     color: Colors.textSecondary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   name: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
     color: Colors.text,
+    lineHeight: 22,
+    maxWidth: '74%',
+    flexShrink: 1,
+  },
+  headerDate: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  // Its own row under the greeting rather than an unlabelled icon button —
+  // a smiley in the corner gave no clue what tapping it would do.
+  headerMoodCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#e7f8ee',
+    borderWidth: 1,
+    borderColor: '#7cc9a1',
+  },
+  // #3f6b4c, not Colors.primary: the brand green measures 4.14:1 on this
+  // pill, under the 4.5:1 floor for text this size. This is 5.23:1.
+  headerMoodCtaText: { fontSize: 12.5, fontWeight: '700', color: '#1f5f3d' },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 12,
+    marginBottom: 16,
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 52,
+  },
+
+  // ── Location + weather, one card ──
+  metaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 18,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  // flex on the halves, not the row, so the divider keeps its 1px.
+  metaCardLeft: { flex: 1.35, minWidth: 0 },
+  metaCardRight: { flex: 1, minWidth: 0 },
+  metaDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginVertical: 12,
+    backgroundColor: 'rgba(15,20,36,0.09)',
   },
   therapistCard: {
     flexDirection: 'row',
@@ -1002,8 +1168,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+        borderRadius: 16,
     padding: 20,
     alignItems: 'center',
     elevation: 2,
@@ -1033,32 +1198,48 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   metricRow: { marginBottom: 14 },
-  metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  metricLabel: { fontSize: 13, fontWeight: '600', color: '#334155' },
-  metricValue: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
-  metricDetail: { fontSize: 11, color: '#94a3b8', marginTop: 4, lineHeight: 15 },
+  metricHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  metricLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#101010',
+  },
+  metricValue: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  metricDetail: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#44474f',
+  },
   goalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  goalRowTitle: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
-  goalRowTitleDone: { textDecorationLine: 'line-through', color: '#94a3b8' },
-  goalRowDesc: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  goalRowMeta: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  goalRowTitle: { fontSize: 14, fontWeight: '600', color: '#0d0d0d' },
+  goalRowTitleDone: { textDecorationLine: 'line-through', color: '#3d3d3d' },
+  goalRowDesc: { fontSize: 12, color: '#0d0d0d', marginTop: 2 },
+  goalRowMeta: { fontSize: 11, color: '#3d3d3d', marginTop: 2 },
   goalRowPct: { fontSize: 12, fontWeight: '700', color: '#6366f1' },
-  emptyHint: { fontSize: 13, color: '#94a3b8' },
+  emptyHint: { fontSize: 13, color: '#3d3d3d' },
   progressBarWrap: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
     padding: 16,
   },
   progressBarTrack: {
-    height: 12,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 6,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(16,16,16,0.09)',
     overflow: 'hidden',
   },
   progressBarFill: {
-    height: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: 6,
+    height: 8,
+    borderRadius: 999,
   },
   progressBarLabel: {
     fontSize: 12,
@@ -1121,7 +1302,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   calendarDayNumScheduled: {
-    color: '#fff',
+    color: '#0d0d0d',
   },
   calendarTick: {
     position: 'absolute',
@@ -1200,8 +1381,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chartCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+        borderRadius: 16,
     padding: 12,
     alignItems: 'center',
   },
@@ -1236,8 +1416,7 @@ const styles = StyleSheet.create({
   },
   actionCard: {
     width: '48%',
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
+        borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     elevation: 1,
@@ -1311,26 +1490,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   scheduleButtonText: {
     color: Colors.surface,
     fontSize: 16,
     fontWeight: '600',
-  },
-  // Header actions
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  moodCheckBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: `${Colors.primary}15`,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   // Emergency banner
   coupleBanner: {
@@ -1348,6 +1513,7 @@ const styles = StyleSheet.create({
   emergencyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#fff1f2',
     borderWidth: 1,
     borderColor: '#fca5a5',
@@ -1355,7 +1521,6 @@ const styles = StyleSheet.create({
     borderLeftColor: '#dc2626',
     borderRadius: 12,
     padding: 12,
-    marginBottom: 16,
     gap: 8,
   },
   emergencyBannerText: {
@@ -1367,11 +1532,11 @@ const styles = StyleSheet.create({
   // Modals
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(16,16,16,0.55)',
     justifyContent: 'flex-end',
   },
   emergencyModal: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1387,17 +1552,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '700',
-    color: '#1f2937',
+    color: '#0d0d0d',
   },
   emergencyModalSubtitle: {
-    color: '#4b5563',
+    color: '#0d0d0d',
     fontSize: 14,
     marginBottom: 16,
   },
   hotlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -1413,11 +1578,11 @@ const styles = StyleSheet.create({
   },
   hotlineName: {
     fontWeight: '600',
-    color: '#1f2937',
+    color: '#0d0d0d',
     fontSize: 14,
   },
   hotlineDesc: {
-    color: '#6b7280',
+    color: '#0d0d0d',
     fontSize: 12,
     marginTop: 2,
   },
@@ -1427,18 +1592,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: Colors.primary,
-    borderRadius: 12,
+    borderRadius: 999,
     padding: 14,
     marginTop: 8,
   },
   messageTherapistText: {
-    color: '#fff',
+    color: '#0d0d0d',
     fontWeight: '600',
     fontSize: 15,
   },
   // Mood modal
   moodModal: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1447,11 +1612,11 @@ const styles = StyleSheet.create({
   moodModalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1f2937',
+    color: '#0d0d0d',
     marginBottom: 4,
   },
   moodModalSubtitle: {
-    color: '#4b5563',
+    color: '#0d0d0d',
     fontSize: 14,
     marginBottom: 20,
   },
@@ -1464,7 +1629,7 @@ const styles = StyleSheet.create({
   moodOption: {
     width: '30%',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 14,
     borderWidth: 2,
@@ -1480,7 +1645,7 @@ const styles = StyleSheet.create({
   },
   moodLabel: {
     fontSize: 12,
-    color: '#374151',
+    color: '#0d0d0d',
     fontWeight: '500',
   },
   moodModalFooter: {
@@ -1491,19 +1656,19 @@ const styles = StyleSheet.create({
   moodSkipBtn: {
     flex: 1,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: '#d1d5db',
     alignItems: 'center',
   },
   moodSkipText: {
-    color: '#374151',
+    color: '#0d0d0d',
     fontWeight: '600',
   },
   moodNextBtn: {
     flex: 2,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     backgroundColor: Colors.primary,
     alignItems: 'center',
   },
@@ -1511,23 +1676,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#9ca3af',
   },
   moodNextText: {
-    color: '#fff',
+    color: '#0d0d0d',
     fontWeight: '600',
   },
   moodJournalLabel: {
     fontSize: 14,
-    color: '#374151',
+    color: '#0d0d0d',
     fontWeight: '500',
     marginBottom: 8,
   },
   moodJournalInput: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: '#e5e7eb',
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    color: '#1f2937',
+    color: '#0d0d0d',
     height: 100,
     marginBottom: 20,
   },

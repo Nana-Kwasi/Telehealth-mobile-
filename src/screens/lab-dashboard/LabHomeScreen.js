@@ -119,7 +119,7 @@ export default function LabHomeScreen({ profile, navigation }) {
                   <Text style={styles.insightMiniLbl}>Rejected</Text>
                 </View>
                 <View style={[styles.insightMini, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}>
-                  <Text style={[styles.insightMiniVal, { color: '#15803d' }]}>{stats.weekCompleted}</Text>
+                  <Text style={[styles.insightMiniVal, { color: '#0f5628' }]}>{stats.weekCompleted}</Text>
                   <Text style={styles.insightMiniLbl}>Done (7d)</Text>
                 </View>
                 <View style={[styles.insightMini, { flex: 1.4, borderColor: C.border, backgroundColor: '#fff' }]}>

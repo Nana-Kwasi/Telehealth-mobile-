@@ -86,7 +86,12 @@ const InsuranceDetailsScreen = () => {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.content}>
       {/* Header */}
       <View style={styles.headerCard}>
         <View style={styles.headerIcon}>

@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getStoredUserId } from '../../services/apiClient';
 import { fetchClientAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+import BillingAssistantCard from '../../components/BillingAssistantCard';
 
 const MedicalBillingScreen = () => {
   const [completedAppts, setCompletedAppts] = useState([]);
@@ -57,7 +58,13 @@ const MedicalBillingScreen = () => {
       style={styles.container}
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={MedicalColors.primary} />}
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
     >
+      {/* Invoices, insurance verification and claims. */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+        <BillingAssistantCard accent={MedicalColors.primary} />
+      </View>
       {/* Stats Row */}
       <View style={styles.statsRow}>
         <View style={[styles.statCard, { borderTopColor: MedicalColors.primary }]}>

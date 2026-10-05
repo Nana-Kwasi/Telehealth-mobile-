@@ -1,12 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal,
-  KeyboardAvoidingView, Platform, Linking,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api, getStoredUserId } from '../../services/apiClient';
+import RecordGapsCard from '../../components/RecordGapsCard';
+import SmartDocumentCard from '../../components/SmartDocumentCard';
+import CodingAssistCard from '../../components/CodingAssistCard';
 import { DoctorColors } from '../../constants/colors';
 import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
 import { formatDate, formatDateTime, toDateSafe } from '../../utils/dateDisplay';
@@ -25,7 +37,7 @@ const NOTE_TYPES = [
 
 const STATUS_COLORS = {
   pending:   { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
-  confirmed: { bg: '#f0fdf4', border: '#86efac', text: '#15803d' },
+  confirmed: { bg: '#f0fdf4', border: '#86efac', text: '#0f5628' },
   completed: { bg: '#f8fafc', border: '#cbd5e1', text: '#475569' },
   cancelled: { bg: '#fff1f2', border: '#fecdd3', text: '#be123c' },
 };
@@ -394,7 +406,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
           {/* Patient Panel status badge */}
           <View style={{ flexDirection: 'row', marginTop: 4, gap: 6 }}>
             {(() => {
-              const smap = { active: ['#f0fdf4','#15803d'], inactive: ['#fff7ed','#c2410c'], discharged: ['#fef2f2','#b91c1c'] };
+              const smap = { active: ['#f0fdf4','#0f5628'], inactive: ['#fff7ed','#c2410c'], discharged: ['#fef2f2','#b91c1c'] };
               const [bg, color] = smap[patientStatus] || smap.active;
               const label = patientStatus.charAt(0).toUpperCase() + patientStatus.slice(1);
               return <View style={{ backgroundColor: bg, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 }}><Text style={{ fontSize: 11, fontWeight: '700', color }}>{label}</Text></View>;
@@ -451,7 +463,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               }}
             >
               <Ionicons name="play-circle-outline" size={14} color="#15803d" />
-              <Text style={[styles.dischargeBtnText, { color: '#15803d' }]}>{changingStatus ? '…' : 'Activate'}</Text>
+              <Text style={[styles.dischargeBtnText, { color: '#0f5628' }]}>{changingStatus ? '…' : 'Activate'}</Text>
             </TouchableOpacity>
           )}
           {patientStatus === 'discharged' && (
@@ -473,7 +485,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               }}
             >
               <Ionicons name="refresh-circle-outline" size={14} color="#15803d" />
-              <Text style={[styles.dischargeBtnText, { color: '#15803d' }]}>{changingStatus ? '…' : 'Reactivate'}</Text>
+              <Text style={[styles.dischargeBtnText, { color: '#0f5628' }]}>{changingStatus ? '…' : 'Reactivate'}</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.dischargeBtn} onPress={() => setShowDischarge(true)}>
@@ -514,6 +526,10 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         {/* ── OVERVIEW ── */}
         {activeTab === 'Overview' && (
           <>
+            {/* What is missing, by rule; and a document to read, name-check and file. */}
+            <RecordGapsCard patientId={patientId} />
+            <SmartDocumentCard patientId={patientId} accent={DoctorColors.primary} />
+            <CodingAssistCard patientId={patientId} accent={DoctorColors.primary} />
             <View style={styles.quickActions}>
               <TouchableOpacity style={styles.qBtn} onPress={() => { setActiveTab('Notes'); setShowNoteForm(true); }}>
                 <Ionicons name="document-text-outline" size={16} color={DoctorColors.primary} />
@@ -590,7 +606,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                     {appt.status === 'pending' && (
                       <>
                         <TouchableOpacity style={[styles.apptBtn, { backgroundColor: '#f0fdf4' }]} onPress={() => updateApptStatus(appt.id, 'confirmed')}>
-                          <Text style={{ color: '#15803d', fontSize: 12, fontWeight: '700' }}>Accept</Text>
+                          <Text style={{ color: '#0f5628', fontSize: 12, fontWeight: '700' }}>Accept</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.apptBtn, { backgroundColor: '#fff1f2' }]} onPress={() => updateApptStatus(appt.id, 'cancelled')}>
                           <Text style={{ color: '#be123c', fontSize: 12, fontWeight: '700' }}>Reject</Text>
@@ -1098,7 +1114,10 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
       </ScrollView>
 
       <Modal visible={!!viewingRx} transparent animationType="slide" onRequestClose={() => setViewingRx(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={[styles.dischargeCard, { maxHeight: '86%' }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <Text style={styles.dischargeTitle}>Prescription Details</Text>
@@ -1135,7 +1154,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               </ScrollView>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Note Reading Modal */}
@@ -1143,7 +1162,10 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         const tm = getTypeMeta(viewingNote.type);
         return (
           <Modal visible={!!viewingNote} transparent animationType="fade" onRequestClose={() => setViewingNote(null)}>
-            <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
               <View style={[styles.dischargeCard, { padding: 0, overflow: 'hidden' }]}>
                 <View style={{ padding: 20, paddingBottom: 12 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
@@ -1168,7 +1190,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </Modal>
         );
       })()}
@@ -1180,7 +1202,10 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         const files = recordFiles(viewingRecord);
         return (
           <Modal visible={!!viewingRecord} transparent animationType="slide" onRequestClose={() => setViewingRecord(null)}>
-            <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
               <View style={[styles.dischargeCard, { padding: 0, overflow: 'hidden', maxHeight: '85%' }]}>
                 <View style={{ backgroundColor: '#eff6ff', borderBottomWidth: 1, borderBottomColor: '#bfdbfe', padding: 16, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                   <View style={{ flex: 1 }}>
@@ -1241,7 +1266,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   </View>
                 </ScrollView>
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </Modal>
         );
       })()}
@@ -1263,7 +1288,10 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         const symptomList = Array.isArray(viewingFeeling.symptoms) ? viewingFeeling.symptoms.filter(Boolean) : [];
         return (
           <Modal visible={!!viewingFeeling} transparent animationType="slide" onRequestClose={() => setViewingFeeling(null)}>
-            <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
               <View style={[styles.dischargeCard, { padding: 0, overflow: 'hidden', maxHeight: '85%' }]}>
                 {/* Coloured header */}
                 <View style={{ backgroundColor: meta.bg, padding: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: meta.border }}>
@@ -1368,7 +1396,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </Modal>
         );
       })()}

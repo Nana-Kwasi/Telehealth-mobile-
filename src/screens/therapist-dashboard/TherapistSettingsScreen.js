@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Switch, ActivityIndicator, Alert, Image, Platform,
+  TextInput, ActivityIndicator, Alert, Image, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +11,10 @@ import { performLogout } from '../../services/authService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TherapistColors } from '../../constants/colors';
 import { pickAndUploadAvatar } from '../../utils/profileImage';
+import NotificationTogglesSection from '../../components/NotificationTogglesSection';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
+import { resolveFileUrl } from '../../utils/mediaUrl';
+import SecuritySettingsSection from '../../components/SecuritySettingsSection';
 import {
   changeTherapistLoginEmail,
   changeTherapistPassword,
@@ -28,7 +31,6 @@ const TherapistSettingsScreen = ({ navigation }) => {
     languages: [], photoURL: '', availabilityStatus: 'available', sessionRate: '',
     location: '', country: '', city: '', area: '', region: '', street: '', ghanaDigitalAddress: '', latitude: null, longitude: null,
   });
-  const [notifications, setNotifications] = useState({ sessionReminders: true, newMessages: true, systemUpdates: true });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [activeSection, setActiveSection] = useState('profile');
@@ -180,7 +182,6 @@ const TherapistSettingsScreen = ({ navigation }) => {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: async () => {
         await performLogout();
-        await AsyncStorage.clear();
         navigation.getParent()?.replace('Welcome');
       }},
     ]);
@@ -215,7 +216,14 @@ const TherapistSettingsScreen = ({ navigation }) => {
         showsHorizontalScrollIndicator={false}
         style={styles.tabsScroll}
         contentContainerStyle={styles.tabsContent}
+      
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
       >
+        {/* Shared with every role. 2FA and biometric sign-in existed
+            only in the medical patient screen, so a clinician could not
+            reach either. */}
+        <SecuritySettingsSection accent={TherapistColors.primary} />
         {sections.map(s => (
           <TouchableOpacity
             key={s.id}
@@ -247,7 +255,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
                 {uploadingPhoto ? (
                   <ActivityIndicator size="large" color={TherapistColors.primary} />
                 ) : profile.photoURL ? (
-                  <Image source={{ uri: profile.photoURL }} style={styles.photo} />
+                  <Image source={{ uri: resolveFileUrl(profile.photoURL)}} style={styles.photo} />
                 ) : (
                   <View style={styles.photoPlaceholder}>
                     <Text style={styles.photoPlaceholderText}>{(profile.name||'T')[0].toUpperCase()}</Text>
@@ -534,26 +542,14 @@ const TherapistSettingsScreen = ({ navigation }) => {
         )}
 
         {/* ── Notifications Section ── */}
+        {/* These were three switches held in component state and nothing else —
+            never saved, never read, reset on unmount. Replaced with the four
+            preferences the backend actually honours: the mailer checks them
+            before sending optional mail, and the notifier checks pushEnabled
+            before reaching a device. */}
         {activeSection === 'notifications' && (
           <View style={styles.sectionCard}>
-            {[
-              { key:'sessionReminders', label:'Session Reminders', desc:'Get notified before upcoming sessions' },
-              { key:'newMessages', label:'New Messages', desc:'Notifications for client messages' },
-              { key:'systemUpdates', label:'System Updates', desc:'Platform updates and announcements' },
-            ].map(({ key, label, desc }) => (
-              <View key={key} style={styles.toggleRow}>
-                <View style={{ flex:1 }}>
-                  <Text style={styles.toggleLabel}>{label}</Text>
-                  <Text style={styles.toggleDesc}>{desc}</Text>
-                </View>
-                <Switch
-                  value={notifications[key]}
-                  onValueChange={v => setNotifications(p=>({...p,[key]:v}))}
-                  trackColor={{ false:'#e2e8f0', true: TherapistColors.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-            ))}
+            <NotificationTogglesSection accent={TherapistColors.primary} />
           </View>
         )}
 
@@ -569,7 +565,7 @@ const styles = StyleSheet.create({
   tabsScroll: {
     flexGrow: 0,
     flexShrink: 0,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderBottomWidth: 1,
     borderBottomColor: TherapistColors.border,
     maxHeight: 56,
@@ -588,7 +584,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(95,84,214,0.07)',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
@@ -597,13 +593,13 @@ const styles = StyleSheet.create({
     borderColor: TherapistColors.primary,
   },
   tabText: { fontSize: 13, fontWeight: '600', color: TherapistColors.textSecondary },
-  tabTextActive: { color: '#fff' },
+  tabTextActive: { color: '#ffffff' },
 
   contentScroll: { flex: 1 },
   contentContainer: { padding: 16, paddingBottom: 40 },
 
   sectionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 14,
     padding: 16,
     gap: 14,
@@ -638,7 +634,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  photoPlaceholderText: { fontSize: 32, fontWeight: '800', color: '#fff' },
+  photoPlaceholderText: { fontSize: 32, fontWeight: '800', color: '#ffffff' },
   cameraOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -667,7 +663,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   fieldHintStrong: { fontWeight: '700', color: TherapistColors.textSecondary },
-  inputReadonly: { backgroundColor: '#eef2f7', color: TherapistColors.textSecondary },
+  inputReadonly: { backgroundColor: '#eef2f7', color: TherapistColors.textSecondary,
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   alertErr: {
     backgroundColor: '#fee2e2',
     borderRadius: 10,
@@ -676,7 +675,7 @@ const styles = StyleSheet.create({
     borderColor: '#fca5a5',
     marginBottom: 8,
   },
-  alertErrText: { fontSize: 13, color: '#b91c1c', lineHeight: 18 },
+  alertErrText: { fontSize: 13, color: '#8c322d', lineHeight: 18 },
   alertOk: {
     backgroundColor: '#dcfce7',
     borderRadius: 10,
@@ -685,9 +684,9 @@ const styles = StyleSheet.create({
     borderColor: '#86efac',
     marginBottom: 8,
   },
-  alertOkText: { fontSize: 13, color: '#15803d', lineHeight: 18 },
+  alertOkText: { fontSize: 13, color: '#2f7d5f', lineHeight: 18 },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
@@ -697,18 +696,18 @@ const styles = StyleSheet.create({
     color: TherapistColors.text,
   },
 
-  chip: { paddingHorizontal:13, paddingVertical:7, borderRadius:20, borderWidth:1.5, borderColor: TherapistColors.border, backgroundColor:'#f8fafc', marginRight:8 },
+  chip: { paddingHorizontal:13, paddingVertical:7, borderRadius:20, borderWidth:1.5, borderColor: TherapistColors.border, backgroundColor:'transparent', marginRight:8 },
   chipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
   chipText: { fontSize:13, fontWeight:'600', color: TherapistColors.textSecondary },
 
   langGrid: { flexDirection:'row', flexWrap:'wrap', gap:8, marginTop:8 },
-  langChip: { paddingHorizontal:12, paddingVertical:6, borderRadius:20, borderWidth:1.5, borderColor: TherapistColors.border, backgroundColor:'#f8fafc' },
+  langChip: { paddingHorizontal:12, paddingVertical:6, borderRadius:20, borderWidth:1.5, borderColor: TherapistColors.border, backgroundColor:'transparent' },
   langChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
   langChipText: { fontSize:13, fontWeight:'600', color: TherapistColors.textSecondary },
 
   saveBtn: {
     backgroundColor: TherapistColors.primary,
-    borderRadius: 12,
+    borderRadius: 999,
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 4,
@@ -723,7 +722,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: TherapistColors.primary + '40',
     backgroundColor: TherapistColors.primary + '14',
@@ -731,12 +730,12 @@ const styles = StyleSheet.create({
   locBtnText: { color: TherapistColors.primary, fontWeight: '700', fontSize: 12 },
   locMsg: { marginTop: 6, color: TherapistColors.textSecondary, fontSize: 12, lineHeight: 16 },
 
-  infoCard: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#fff', borderRadius:12, padding:14, borderWidth:1.5, borderColor: TherapistColors.border },
+  infoCard: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'rgba(255,255,255,0.72)', borderRadius:12, padding:14, borderWidth:1.5, borderColor: TherapistColors.border },
   infoCardLabel: { fontSize:12, color: TherapistColors.textLight, marginBottom:2 },
   infoCardValue: { fontSize:14, fontWeight:'600', color: TherapistColors.text },
 
   subsection: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 14,
     gap: 10,
@@ -746,15 +745,15 @@ const styles = StyleSheet.create({
   sectionCardTitle: { fontSize: 16, fontWeight: '700', color: TherapistColors.text, marginBottom: 4 },
   sectionTitle: { fontSize:16, fontWeight:'700', color: TherapistColors.text },
 
-  dangerBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor:'#fff0f3', borderRadius:12, paddingVertical:14, borderWidth:1.5, borderColor:'#fecdd3' },
+  dangerBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor:'#fff0f3', borderRadius: 999, paddingVertical:14, borderWidth:1.5, borderColor:'#fecdd3' },
   dangerBtnText: { color: TherapistColors.error, fontSize:15, fontWeight:'700' },
 
-  statusOption: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#fff', borderRadius:12, padding:14, borderWidth:1.5, borderColor: TherapistColors.border },
-  statusOptionActive: { borderColor: TherapistColors.primary, backgroundColor:'#eff6ff' },
+  statusOption: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'rgba(255,255,255,0.72)', borderRadius:12, padding:14, borderWidth:1.5, borderColor: TherapistColors.border },
+  statusOptionActive: { borderColor: TherapistColors.primary, backgroundColor:'rgba(207,169,97,0.12)' },
   statusDot: { width:10, height:10, borderRadius:5 },
   statusOptionText: { flex:1, fontSize:14, color: TherapistColors.text, fontWeight:'500', textTransform:'capitalize' },
 
-  toggleRow: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#fff', borderRadius:12, padding:14, borderWidth:1, borderColor: TherapistColors.border },
+  toggleRow: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'rgba(255,255,255,0.72)', borderRadius:12, padding:14, borderWidth:1, borderColor: TherapistColors.border },
   toggleLabel: { fontSize:14, fontWeight:'600', color: TherapistColors.text, marginBottom:2 },
   toggleDesc: { fontSize:12, color: TherapistColors.textLight },
 });

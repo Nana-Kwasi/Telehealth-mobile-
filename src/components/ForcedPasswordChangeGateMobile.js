@@ -7,6 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/apiClient';
@@ -84,7 +86,10 @@ export default function ForcedPasswordChangeGateMobile({ active, userRole, profi
 
   return (
     <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.pwCard}>
           <Text style={styles.pwTitle}>Password reset required</Text>
           <Text style={styles.pwSub}>
@@ -135,7 +140,7 @@ export default function ForcedPasswordChangeGateMobile({ active, userRole, profi
             <Text style={styles.pwLogoutText}>Log out</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -10,12 +10,14 @@ import {
   Alert,
   Modal,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
 import { api, getStoredUserId, uploadFile } from '../../services/apiClient';
 import { MedicalColors } from '../../constants/colors';
+import SmartDocumentCard from '../../components/SmartDocumentCard';
 
 // ── Type groups ──────────────────────────────────────────────────────────────
 const HR_RADIOLOGY = ['MRI', 'CT Scan', 'Ultrasound', 'X-Ray'];
@@ -32,7 +34,13 @@ const HR_LAB = [
   'Urinalysis',
   'Allergy Test',
 ];
+// Referral … Imaging Report are what document intelligence files a document as.
 const HR_OTHER = [
+  'Referral',
+  'Medical Certificate',
+  'Discharge Summary',
+  'Insurance Document',
+  'Imaging Report',
   'Vaccination',
   'Surgical Report',
   'Drug Allergy',
@@ -281,6 +289,9 @@ const HealthRecordsScreen = () => {
           </View>
         </View>
 
+        {/* Upload once: read, sorted and filled in, then filed after a check. */}
+        <SmartDocumentCard accent={MedicalColors.primary} onFiled={loadRecords} />
+
         {records.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="folder-open-outline" size={54} color={MedicalColors.textLight} />
@@ -349,7 +360,10 @@ const HealthRecordsScreen = () => {
 
       {/* Add/Edit Modal */}
       <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             {/* Modal Header */}
             <View style={styles.modalHeader}>
@@ -386,6 +400,12 @@ const HealthRecordsScreen = () => {
               </TouchableOpacity>
               {showDatePicker && (
                 <DateTimePicker
+        // Pinned, not left to the OS: the picker follows the SYSTEM appearance,
+        // so on a device in dark mode it drew light text on this light sheet and
+        // was invisible. The simulator was in light mode, which is why it only
+        // showed up on real hardware.
+        themeVariant="light"
+        accentColor="#5046bd"
                   value={selectedDate}
                   mode="date"
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
@@ -624,7 +644,7 @@ const HealthRecordsScreen = () => {
               <View style={{ height: 24 }} />
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -791,7 +811,7 @@ const styles = StyleSheet.create({
     marginTop: 6, padding: 8, backgroundColor: '#f0fdf4',
     borderRadius: 8, borderWidth: 1, borderColor: '#bbf7d0',
   },
-  uploadedText: { flex: 1, fontSize: 12, color: '#15803d', fontWeight: '600' },
+  uploadedText: { flex: 1, fontSize: 12, color: '#0f5628', fontWeight: '600' },
 
   // Error
   errorRow: {

@@ -88,7 +88,12 @@ export default function PharmacyWalkInScreen({ profile }) {
   const pm = rx?.pharmacyStatus ? (RX_STATUS_META[rx.pharmacyStatus] || null) : null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={{ padding: 16 }}>
       <Text style={styles.heading}>Walk-in Verification</Text>
       <Text style={styles.sub}>Scan a QR code or enter a prescription reference code</Text>
 
@@ -230,7 +235,7 @@ const styles = StyleSheet.create({
   deliverBtn: { backgroundColor: C.primary, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 8 },
   deliverBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   deliveredBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 16, alignItems: 'center', borderWidth: 1.5, borderColor: '#bbf7d0' },
-  deliveredText: { color: '#15803d', fontWeight: '800', fontSize: 16 },
+  deliveredText: { color: '#0f5628', fontWeight: '800', fontSize: 16 },
   scannerContainer: { flex: 1, backgroundColor: '#000' },
   scannerOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scannerFrame: { width: 260, height: 260, borderWidth: 3, borderColor: '#fff', borderRadius: 16, marginBottom: 24 },

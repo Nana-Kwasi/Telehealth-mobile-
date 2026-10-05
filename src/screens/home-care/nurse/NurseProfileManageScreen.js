@@ -126,7 +126,12 @@ export default function NurseProfileManageScreen({ profile, embedded = false }) 
   if (embedded) return <View>{body}</View>;
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="My profile" subtitle="Photo, experience, fees & contact" />
       {body}
     </ScrollView>

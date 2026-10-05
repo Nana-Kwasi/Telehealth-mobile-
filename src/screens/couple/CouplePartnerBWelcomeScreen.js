@@ -9,7 +9,14 @@ export default function CouplePartnerBWelcomeScreen({ navigation, route }) {
     partnerAName = 'Your partner',
     partnerBEmail = '',
     partnerBName = '',
+    draftToken,
   } = route.params || {};
+
+  // A draft invite has no couple record and no account yet — B is being asked
+  // to join a sign-up that has not been paid for. They set a password and do
+  // their intake; the accounts are created when partner A completes payment.
+  const isDraft = Boolean(draftToken || (!coupleId && token));
+  const inviteToken = draftToken || token;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -37,7 +44,19 @@ export default function CouplePartnerBWelcomeScreen({ navigation, route }) {
 
       <TouchableOpacity
         style={styles.primaryBtn}
-        onPress={() =>
+        onPress={() => {
+          if (isDraft) {
+            // Straight to the intake, carrying the token. No account is created
+            // here — the old path sent B to SignUp, which registered them
+            // before anyone had paid.
+            navigation.navigate('CoupleAcceptInvite', {
+              draftToken: inviteToken,
+              partnerBEmail,
+              partnerBName,
+              partnerAName,
+            });
+            return;
+          }
           navigation.navigate('SignUp', {
             clientData: {
               therapyType: 'couples',
@@ -50,10 +69,12 @@ export default function CouplePartnerBWelcomeScreen({ navigation, route }) {
               lockEmail: true,
               invitePartnerName: partnerAName,
             },
-          })
-        }
+          });
+        }}
       >
-        <Text style={styles.primaryBtnText}>Create my account</Text>
+        <Text style={styles.primaryBtnText}>
+          {isDraft ? 'Accept invitation' : 'Create my account'}
+        </Text>
       </TouchableOpacity>
 
       <TouchableOpacity

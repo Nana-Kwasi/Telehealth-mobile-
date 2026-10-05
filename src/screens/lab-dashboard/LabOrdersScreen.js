@@ -106,7 +106,10 @@ export default function LabOrdersScreen({ profile }) {
           placeholder="Patient name (as on National ID) or test…"
           value={search}
           onChangeText={setSearch}
-          placeholderTextColor={C.textLight}
+          // Literal, not C.textLight (#94a3b8): that token measures 2.56:1 on
+          // this white field. 4.76:1 here. The token is left alone because it is
+          // used for non-essential text elsewhere.
+          placeholderTextColor="#64748b"
         />
       </View>
 
@@ -126,6 +129,14 @@ export default function LabOrdersScreen({ profile }) {
         <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
       ) : (
         <FlatList
+          // A FlatList defaults to keyboardShouldPersistTaps="never", so with the
+          // search keyboard open the first tap on a result was swallowed
+          // dismissing it — you had to tap every result twice. "handled" lets the
+          // row take the tap. The insets keep the last rows off the keyboard, and
+          // dragging the list puts it away.
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
           data={filtered}
           keyExtractor={i => i.id}
           renderItem={renderItem}

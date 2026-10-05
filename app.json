@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nessahub.client"
+      "bundleIdentifier": "com.nessahub.client",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "NessaHub uses Face ID so you can sign in without typing your password. Your face data never leaves your device."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,13 +25,27 @@
         "backgroundColor": "#4a7c59"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.nessahub.client"
+      "package": "com.nessahub.client",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/icon.png"
     },
     "plugins": [
-      "expo-barcode-scanner"
-    ]
+      "expo-web-browser",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "NessaHub uses Face ID so you can sign in without typing your password."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "scheme": "nessahub"
   }
 }

@@ -1,9 +1,20 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../../constants/coupleTherapyConfig';
 import { fetchCoupleByInviteToken } from '../../services/coupleTherapyService';
+import { api } from '../../services/apiClient';
 
 export default function CoupleInviteEntryScreen({ navigation, route }) {
   const initialToken = route.params?.token || '';
@@ -19,6 +30,39 @@ export default function CoupleInviteEntryScreen({ navigation, route }) {
 
     setLoading(true);
     try {
+      // A code can be one of two things, and B has no way of telling them
+      // apart: a DRAFT token (new flow — no accounts exist yet) or a legacy
+      // invite against a real couple record. Try the draft first, because that
+      // is what every new invitation now is, and fall back for the couples
+      // still mid-flight from before the change.
+      let draft = null;
+      try {
+        draft = await api(`/api/v1/couples/drafts?token=${encodeURIComponent(trimmed)}`, {
+          authenticated: false,
+        });
+      } catch (_) {
+        draft = null;
+      }
+
+      if (draft && draft.draftId) {
+        await AsyncStorage.multiSet([
+          [COUPLE_STORAGE_KEYS.partnerRole, 'partnerB'],
+          [COUPLE_STORAGE_KEYS.inviteToken, trimmed],
+          [COUPLE_STORAGE_KEYS.otherPartnerName, draft.invitedByName || ''],
+        ]);
+
+        // No coupleId on purpose — there is no couple record yet, and passing
+        // one would make the welcome screen take the old register-now branch.
+        navigation.replace('CouplePartnerBWelcome', {
+          draftToken: trimmed,
+          token: trimmed,
+          partnerAName: draft.invitedByName,
+          partnerBEmail: draft.partnerBEmail,
+          partnerBName: draft.partnerBName,
+        });
+        return;
+      }
+
       const invite = await fetchCoupleByInviteToken(trimmed);
       await AsyncStorage.multiSet([
         [COUPLE_STORAGE_KEYS.coupleId, invite.coupleId],
@@ -47,7 +91,10 @@ export default function CoupleInviteEntryScreen({ navigation, route }) {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <Text style={styles.title}>Partner invitation</Text>
       <Text style={styles.subtitle}>Open the link from your email or paste your invitation code.</Text>
       <TextInput
@@ -61,7 +108,7 @@ export default function CoupleInviteEntryScreen({ navigation, route }) {
       <TouchableOpacity style={styles.btn} onPress={() => openWelcome(token)} disabled={loading}>
         {loading ? <ActivityIndicator color={Colors.surface} /> : <Text style={styles.btnText}>Continue</Text>}
       </TouchableOpacity>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

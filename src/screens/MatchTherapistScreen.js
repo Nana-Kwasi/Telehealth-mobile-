@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import PriceTag from '../components/PriceTag';
+import { quotePrices } from '../services/pricing';
 import {
   View,
   Text,
@@ -20,11 +22,14 @@ import {
   proposeCoupleTherapist,
   confirmCoupleTherapist,
 } from '../services/coupleTherapyService';
+import { therapistFee } from '../utils/therapistFee';
+import { resolveFileUrl } from '../utils/mediaUrl';
 
 
 /** A therapist's own per-session charge (kept in their profile metadata). */
 export function therapistRate(t) {
-  const raw = t?.sessionRate ?? t?.consultationFee ?? t?.rate ?? t?.price;
+  // One implementation, shared with every other fee reader.
+  const raw = therapistFee(t);
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
@@ -36,6 +41,27 @@ const MatchTherapistScreen = ({ navigation, route }) => {
   const [coupleBlocked, setCoupleBlocked] = useState(false);
   const [availabilityOverlap, setAvailabilityOverlap] = useState(true);
   const [myPartnerKey, setMyPartnerKey] = useState(null);
+
+  // Keyed by therapist id. Declared here with the other hooks — below an early
+  // return it would run conditionally, which React forbids.
+  const [quotes, setQuotes] = useState({});
+
+  // One request for the whole list rather than one per card, so the list
+  // cannot render half discounted and half not.
+  useEffect(() => {
+    const items = therapists
+      .map((t) => ({
+        key: t.id || t.uid,
+        providerId: t.id || t.uid,
+        serviceType: 'therapy',
+        baseAmount: therapistRate(t),
+      }))
+      .filter((i) => i.key && i.baseAmount > 0);
+    if (!items.length) { setQuotes({}); return undefined; }
+    let live = true;
+    quotePrices(items).then((map) => { if (live) setQuotes(map || {}); });
+    return () => { live = false; };
+  }, [therapists]);
 
   useEffect(() => {
     loadTherapists();
@@ -285,7 +311,7 @@ const MatchTherapistScreen = ({ navigation, route }) => {
             >
               <View style={styles.therapistHeader}>
                 {therapist.photoURL ? (
-                  <Image source={{ uri: therapist.photoURL }} style={styles.avatar} />
+                  <Image source={{ uri: resolveFileUrl(therapist.photoURL) }} style={styles.avatar} />
                 ) : (
                   <View style={styles.avatarPlaceholder}>
                     <Text style={styles.avatarText}>🧑‍⚕️</Text>
@@ -313,11 +339,18 @@ const MatchTherapistScreen = ({ navigation, route }) => {
                   Languages: {Array.isArray(therapist.languagesSpoken) ? therapist.languagesSpoken.join(', ') : therapist.languagesSpoken}
                 </Text>
               )}
-              <Text style={styles.therapistRate}>
-                {therapistRate(therapist) != null
-                  ? `GHS ${therapistRate(therapist).toFixed(2)} / session`
-                  : 'Rate not published'}
-              </Text>
+              <View style={styles.therapistRateRow}>
+                {therapistRate(therapist) != null ? (
+                  <PriceTag
+                    quote={quotes[therapist.id || therapist.uid]}
+                    baseAmount={therapistRate(therapist)}
+                    suffix=" / session"
+                    size="sm"
+                  />
+                ) : (
+                  <Text style={styles.rateMissing}>Rate not published</Text>
+                )}
+              </View>
               {therapist.score && (
                 <View style={styles.matchScore}>
                   <Text style={styles.matchScoreText}>Match: {Math.round(therapist.score)}%</Text>
@@ -430,6 +463,10 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
   },
   therapistRate: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 8 },
+  // A View, so it carries spacing only — font props on a View are ignored and
+  // warn in development.
+  therapistRateRow: { marginBottom: 8 },
+  rateMissing: { fontSize: 14, color: Colors.textSecondary },
   specialties: {
     fontSize: 14,
     color: Colors.textSecondary,

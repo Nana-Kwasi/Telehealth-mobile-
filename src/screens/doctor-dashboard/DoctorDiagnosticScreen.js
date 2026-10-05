@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, TextInput, Alert, Modal,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api, getStoredUserId } from '../../services/apiClient';
@@ -610,7 +619,10 @@ export default function DoctorDiagnosticScreen({ navigation }) {
       </ScrollView>
 
       <Modal visible={showCustomModal} transparent animationType="fade" onRequestClose={() => setShowCustomModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Custom {orderType === 'lab' ? 'lab test' : 'scan type'}</Text>
             <Text style={styles.modalHint}>Saved only for your account. You can remove it anytime.</Text>
@@ -630,7 +642,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -701,11 +713,51 @@ const styles = StyleSheet.create({
   branchRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   distBadge: { backgroundColor: C.primaryLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   distText: { fontSize: 12, fontWeight: '700', color: C.primary },
-  summaryCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  summaryTitle: { fontSize: 14, fontWeight: '800', color: C.text, marginBottom: 10 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  summaryLabel: { fontSize: 13, color: C.textSecondary, fontWeight: '600' },
-  summaryValue: { fontSize: 13, color: C.text, fontWeight: '700' },
+  summaryCard: {
+    backgroundColor: '#f8fbff',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+    shadowColor: '#1d4ed8',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  summaryTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: C.text,
+    marginBottom: 12,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf2f7',
+    gap: 10,
+  },
+  summaryLabel: {
+    width: 80,
+    fontSize: 13,
+    color: C.textSecondary,
+    fontWeight: '600',
+    flexShrink: 0,
+  },
+  summaryValue: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    color: C.text,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'right',
+  },
   fieldLabel: { fontSize: 12, fontWeight: '700', color: C.text, marginBottom: 8 },
   notesInput: { backgroundColor: '#fff', borderRadius: 12, padding: 14, fontSize: 15, color: C.text, borderWidth: 1, borderColor: '#e2e8f0', height: 100, marginBottom: 16 },
   patientNote: { flexDirection: 'row', gap: 8, backgroundColor: '#eff6ff', borderRadius: 10, padding: 12, marginBottom: 20, borderWidth: 1, borderColor: '#bfdbfe' },

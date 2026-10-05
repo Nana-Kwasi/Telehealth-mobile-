@@ -11,11 +11,14 @@ import {
   Image,
   RefreshControl,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchDoctors, getSpecializations } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+import { resolveFileUrl } from '../../utils/mediaUrl';
 
 const SORT_OPTIONS = [
   { key: 'rating', label: 'Highest Rated' },
@@ -190,7 +193,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
     >
       <View style={styles.cardHeader}>
         {item.photoURL ? (
-          <Image source={{ uri: item.photoURL }} style={styles.avatar} />
+          <Image source={{ uri: resolveFileUrl(item.photoURL)}} style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarText}>
@@ -357,7 +360,10 @@ const DoctorSearchScreen = ({ navigation, route }) => {
 
       {/* Advanced Filters Modal */}
       <Modal visible={showAdvancedFilters} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Advanced Filters</Text>
@@ -413,7 +419,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Results */}

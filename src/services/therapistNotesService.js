@@ -165,6 +165,13 @@ function assignedIdsPayload(form) {
   return ids.length ? JSON.stringify(ids) : null;
 }
 
+/** True when any SOAP field differs from what the draft proposed. */
+function didEditDraft(form) {
+  const snap = form.aiDraftSnapshot || {};
+  return ['subjective', 'objective', 'assessment', 'plan']
+    .some((f) => (form[f] || '') !== (snap[f] || ''));
+}
+
 export async function createTherapistNote(form, profile) {
   if (form.noteType === 'therapyBook') {
     const book = await api('/api/v1/therapy-books', {
@@ -211,6 +218,13 @@ export async function createTherapistNote(form, profile) {
       visibleToClient: !!form.visibleToClient,
       isDraft: !!form.isDraft,
       signature: form.signature || null,
+      // Provenance. A signed note used to imply a person typed every word; once
+      // a draft can be generated, the record has to say so. `aiEdited` compares
+      // what is being saved against what was proposed, so accepting a draft
+      // verbatim is distinguishable from reworking it.
+      aiAssisted: !!form.aiAssisted,
+      aiAuditId: form.aiAuditId || null,
+      aiEdited: form.aiAssisted ? didEditDraft(form) : null,
     },
   });
   return note?.id;

@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Dimensions, Image, DeviceEventEmitter,
+  ActivityIndicator, RefreshControl, Dimensions, DeviceEventEmitter,
   Modal, TextInput, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import HeroArt from '../../components/HeroArt';
+import DailyBriefCard from '../../components/DailyBriefCard';
+import InboxTriageCard from '../../components/InboxTriageCard';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
@@ -12,6 +15,7 @@ import { dedupePatientPharmacies, hasPatientPharmacy } from '../../utils/patient
 import { LineChart } from 'react-native-chart-kit';
 import Svg, { Circle, G } from 'react-native-svg';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import AiAssistantFab from '../../components/AiAssistantFab';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -20,7 +24,7 @@ const SCREEN_W = Dimensions.get('window').width;
 
 const STATUS_COLORS = {
   pending:   { bg: '#fffbeb', text: '#c2410c', icon: 'time-outline',           dot: '#f59e0b' },
-  confirmed: { bg: '#f0fdf4', text: '#15803d', icon: 'checkmark-circle-outline', dot: '#22c55e' },
+  confirmed: { bg: '#f0fdf4', text: '#0f5628', icon: 'checkmark-circle-outline', dot: '#22c55e' },
   completed: { bg: '#f1f5f9', text: '#475569', icon: 'star-outline',            dot: '#6366f1' },
   cancelled: { bg: '#fff1f2', text: '#be123c', icon: 'close-circle-outline',    dot: '#ef4444' },
 };
@@ -439,31 +443,32 @@ export default function DoctorHomeScreen({ navigation }) {
   return (
     <>
     <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={DoctorColors.primary} />}
     >
       {/* Header (badges live here so the location card never stacks over them) */}
       <View style={styles.header}>
+        {/* Behind the header content, faded left-to-right so the
+            greeting stays on a near-solid surface. */}
+        <HeroArt
+          source={require('../../../assets/clinician-hero.jpg')}
+          scrim={DoctorColors.primaryDark}
+          width={140}
+        />
+        {/* Greeting only. The avatar duplicated the one in the drawer header,
+            and the "Verified" pill was hardcoded — it rendered for every doctor
+            regardless of whether any credential had actually been checked, so
+            it asserted something the system had not established. */}
         <View style={styles.headerTopRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.greeting}>{greeting()}</Text>
             <Text style={styles.doctorName}>Dr. {profile?.name || 'Doctor'}</Text>
             <Text style={styles.specialty}>{profile?.specialty || profile?.specialization || 'General Practice'}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: 10 }}>
-            {profile?.photoURL ? (
-              <Image source={{ uri: profile.photoURL }} style={styles.headerAvatar} />
-            ) : (
-              <View style={styles.headerAvatarPlaceholder}>
-                <Text style={styles.headerAvatarInitials}>
-                  {(profile?.name || 'D')[0].toUpperCase()}
-                </Text>
-              </View>
-            )}
-            <View style={styles.verifiedPill}>
-              <Ionicons name="shield-checkmark" size={13} color="#10b981" />
-              <Text style={styles.verifiedText}>Verified</Text>
-            </View>
           </View>
         </View>
         <View style={styles.headerBadgesRow}>
@@ -482,6 +487,26 @@ export default function DoctorHomeScreen({ navigation }) {
       <View style={styles.locationCardSlot}>
         <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('DoctorSettings')} />
       </View>
+
+      {/* Counted server-side; the model only writes the sentence over those
+          figures, so the card is right even when the model is not there. */}
+      <DailyBriefCard
+        navigation={navigation}
+        accent={DoctorColors.primary}
+        routeFor={(key) => ({
+          appointments: 'DoctorAppointments',
+          unread_messages: 'DoctorMessages',
+          followups_to_review: 'DoctorCheckIns',
+          new_results: 'DoctorDiagnosticResults',
+        }[key])}
+      />
+
+      {/* The companion to the brief's unread count: which of them need you
+          first. Sorted on request, because it costs a model call per message. */}
+      <InboxTriageCard
+        accent={DoctorColors.primary}
+        onOpen={() => navigation.navigate('DoctorMessages')}
+      />
 
       {/* Stats — horizontal scroll */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll} contentContainerStyle={styles.statsScrollContent}>
@@ -504,24 +529,26 @@ export default function DoctorHomeScreen({ navigation }) {
       {/* Quick Actions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickScroll} contentContainerStyle={styles.quickScrollContent}>
-          {[
-            { label: 'Patients',      icon: 'people',         screen: 'DoctorPatients',      color: '#2563eb', bg: '#eff6ff' },
-            { label: 'Appointments',  icon: 'calendar',       screen: 'DoctorAppointments',  color: '#16a34a', bg: '#dcfce7' },
-            { label: 'Video Calls',   icon: 'videocam',       screen: 'DoctorVideo',         color: '#7c3aed', bg: '#f3e8ff' },
-            { label: 'Prescriptions', icon: 'medkit',         screen: 'DoctorPrescriptions', color: '#d97706', bg: '#fef3c7' },
-            { label: 'Messages',      icon: 'chatbubbles',    screen: 'DoctorMessages',      color: '#0284c7', bg: '#e0f2fe' },
-            { label: 'Notes',         icon: 'document-text',  screen: 'DoctorNotes',         color: '#dc2626', bg: '#fee2e2' },
-            { label: 'E-Pharmacy',    icon: 'storefront',     onPress: openEPharmacy,         color: '#0f766e', bg: '#ccfbf1' },
-          ].map((a, i) => (
-            <TouchableOpacity key={i} style={styles.quickBtn} onPress={() => a.onPress ? a.onPress() : navigation.navigate(a.screen)}>
-              <View style={[styles.quickIcon, { backgroundColor: a.bg }]}>
-                <Ionicons name={`${a.icon}-outline`} size={22} color={a.color} />
-              </View>
-              <Text style={[styles.quickLabel, { color: a.color }]}>{a.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <View style={styles.quickActionsCard}>
+          <View style={styles.quickGrid}>
+            {[
+              { label: 'Patients',      icon: 'people',         screen: 'DoctorPatients',      color: '#2563eb', bg: '#eff6ff' },
+              { label: 'Appointments',  icon: 'calendar',       screen: 'DoctorAppointments',  color: '#16a34a', bg: '#dcfce7' },
+              { label: 'Video Calls',   icon: 'videocam',       screen: 'DoctorVideo',         color: '#7c3aed', bg: '#f3e8ff' },
+              { label: 'Prescriptions', icon: 'medkit',         screen: 'DoctorPrescriptions', color: '#d97706', bg: '#fef3c7' },
+              { label: 'Messages',      icon: 'chatbubbles',    screen: 'DoctorMessages',      color: '#0284c7', bg: '#e0f2fe' },
+              { label: 'Notes',         icon: 'document-text',  screen: 'DoctorNotes',         color: '#dc2626', bg: '#fee2e2' },
+              { label: 'E-Pharmacy',    icon: 'storefront',     onPress: openEPharmacy,         color: '#0f766e', bg: '#ccfbf1' },
+            ].map((a, i) => (
+              <TouchableOpacity key={i} style={styles.quickBtn} onPress={() => a.onPress ? a.onPress() : navigation.navigate(a.screen)}>
+                <View style={[styles.quickIcon, { backgroundColor: a.bg }]}>
+                  <Ionicons name={`${a.icon}-outline`} size={20} color={a.color} />
+                </View>
+                <Text style={[styles.quickLabel, { color: a.color }]}>{a.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       </View>
 
       {/* Mini Calendar */}
@@ -957,6 +984,7 @@ export default function DoctorHomeScreen({ navigation }) {
         </View>
       </View>
     </Modal>
+      <AiAssistantFab clinician />
     </>
   );
 }
@@ -965,6 +993,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: DoctorColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
+    // Clips the hero artwork to the card's rounded corners — an
+    // absolutely positioned child is not clipped by borderRadius alone.
+    overflow: 'hidden',
     backgroundColor: DoctorColors.primaryDark,
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -987,23 +1018,6 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 3 },
   doctorName: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 2 },
   specialty: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
-  headerAvatar: {
-    width: 52, height: 52, borderRadius: 26,
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)',
-  },
-  headerAvatarPlaceholder: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
-  },
-  headerAvatarInitials: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  verifiedPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(16,185,129,0.15)',
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
-  },
-  verifiedText: { fontSize: 11, color: '#10b981', fontWeight: '700', marginLeft: 2 },
   locationCardSlot: {
     marginTop: 12,
     marginBottom: 16,
@@ -1036,16 +1050,48 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: DoctorColors.text, marginBottom: 12 },
   seeAll: { fontSize: 13, color: DoctorColors.primary, fontWeight: '600' },
-  quickScroll: { marginHorizontal: -4 },
-  quickScrollContent: { paddingHorizontal: 4, paddingBottom: 4, gap: 10 },
-  quickBtn: { alignItems: 'center', width: 72 },
-  quickIcon: {
-    width: 56, height: 56, borderRadius: 16,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 6,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 1,
+  quickActionsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
-  quickLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center', lineHeight: 13 },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  quickBtn: {
+    width: '48%',
+    minHeight: 78,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#edf2f7',
+  },
+  quickIcon: {
+    width: 36, height: 36, borderRadius: 12,
+    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+    borderWidth: 1, borderColor: 'rgba(15,23,42,0.04)',
+  },
+  quickLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 14,
+    letterSpacing: 0.1,
+    flexShrink: 1,
+  },
   // Calendar
   calHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   calNav: { padding: 6, borderRadius: 8, backgroundColor: '#f1f5f9' },

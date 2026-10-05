@@ -202,6 +202,11 @@ export default function EPharmacyScreen() {
       {/* Prescriptions Tab */}
       {tab === 'prescriptions' && (
         <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 16, gap: 14 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(true)} tintColor={C.primary} />}
         >
@@ -486,7 +491,7 @@ const styles = StyleSheet.create({
   transferConsentAgreeText: { color: '#0f766e', fontSize: 11, fontWeight: '700' },
   transferConsentRejectText: { color: '#be123c', fontSize: 11, fontWeight: '700' },
   pickupBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 16, borderWidth: 1.5, borderColor: '#bbf7d0', alignItems: 'center', gap: 6, marginTop: 8 },
-  pickupTitle: { fontSize: 16, fontWeight: '800', color: '#15803d' },
+  pickupTitle: { fontSize: 16, fontWeight: '800', color: '#0f5628' },
   pickupSub: { fontSize: 13, color: '#166534' },
   pickupCode: { fontFamily: 'monospace', fontSize: 22, fontWeight: '900', color: '#14532d', letterSpacing: 3 },
   showQrBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#16a34a', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, marginTop: 4 },

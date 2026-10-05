@@ -137,7 +137,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
                 <Ionicons name="checkmark-circle-outline" size={28} color="#15803d" />
                 <View style={{ marginLeft: 12 }}>
                   <Text style={[styles.idTitle, { color: '#166534' }]}>Results are with your doctor</Text>
-                  <Text style={[styles.idSub, { color: '#15803d' }]}>Your lab or imaging center has completed this order. Ask your doctor for results and what they mean for your care.</Text>
+                  <Text style={[styles.idSub, { color: '#0f5628' }]}>Your lab or imaging center has completed this order. Ask your doctor for results and what they mean for your care.</Text>
                 </View>
               </View>
               )}

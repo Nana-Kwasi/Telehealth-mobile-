@@ -71,10 +71,17 @@ const ParentConsentScreen = ({ navigation }) => {
 
       await AsyncStorage.setItem('th.onboard', JSON.stringify(combinedData));
 
-      // Navigate to questionnaire for the child
-      navigation.navigate('Questionnaire', { 
+      // Into the SAME cached flow the individual path uses.
+      //
+      // Nothing has been written server-side up to this point — parent,
+      // child and consent details have all been local — so the teen journey
+      // can defer account creation until payment succeeds, exactly like
+      // individual. `flow: 'medpsych'` is what routes the questionnaire into
+      // the cached path instead of straight to SignUp.
+      navigation.navigate('Questionnaire', {
         therapyType: 'teen',
-        isChildRegistration: true 
+        isChildRegistration: true,
+        flow: 'medpsych',
       });
     } catch (error) {
       console.error('Error saving consent:', error);
@@ -108,6 +115,11 @@ const ParentConsentScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={true}

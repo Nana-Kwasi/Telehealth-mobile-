@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, TextInput, Alert, Linking,
@@ -23,12 +25,13 @@ function todayLocal() {
 const FILTERS = ['Today', 'Upcoming', 'Past', 'All'];
 
 const CALL_STATUS = {
-  ready:       { label: 'Ready',       bg: '#f0fdf4', text: '#15803d' },
+  ready:       { label: 'Ready',       bg: '#f0fdf4', text: '#0f5628' },
   in_progress: { label: 'In Progress', bg: '#eff6ff', text: '#1d4ed8' },
   completed:   { label: 'Completed',   bg: '#f8fafc', text: '#475569' },
 };
 
 export default function DoctorVideoScreen() {
+  const navigation = useNavigation();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -106,16 +109,31 @@ export default function DoctorVideoScreen() {
         prev.map(a => a.id === appt.id ? { ...a, callStatus: 'in_progress', callRoomName: roomName } : a)
       );
 
-      Alert.alert(
-        'Call Started',
-        `Video call started with ${appt.clientName || 'patient'}. Room: ${roomName}`,
-        [{ text: 'OK' }]
-      );
+      // Ring the patient on every device they have open (and push to their
+      // phone), then open the call. Before this the doctor saw an alert and
+      // never actually entered the call.
+      await api('/api/v1/calls', { method: 'POST', body: { calleeId: appt.clientId, roomName } })
+        .catch((e) => Alert.alert('Could not ring', e?.message || 'The patient was not notified, but the call is open.'));
+      openCall(appt, roomName);
     } catch (err) {
       Alert.alert('Error', 'Could not start call. Please try again.');
     } finally {
       setStarting(null);
     }
+  };
+
+  /** Open the shared call screen (signed in, current HTTPS address). */
+  const openCall = async (appt, roomName) => {
+    let me = 'Doctor';
+    try {
+      const p = JSON.parse((await AsyncStorage.getItem('userProfile')) || '{}');
+      me = p.fullName || p.name || p.email || me;
+    } catch { /* default name */ }
+    navigation.navigate('VideoCallSession', {
+      roomName: roomName || appt.callRoomName || `dr-${appt.id}`,
+      participantName: me,
+      callInfo: { targetPerson: appt.clientName, displayNames: appt.clientId ? { [appt.clientId]: appt.clientName } : {} },
+    });
   };
 
   const endCall = async (appt) => {
@@ -183,7 +201,7 @@ export default function DoctorVideoScreen() {
             <View style={styles.callActions}>
               {item.callStatus === 'in_progress' ? (
                 <>
-                  <TouchableOpacity style={[styles.callBtn, styles.rejoinBtn]}>
+                  <TouchableOpacity style={[styles.callBtn, styles.rejoinBtn]} onPress={() => openCall(item)}>
                     <Ionicons name="videocam-outline" size={14} color="#1d4ed8" />
                     <Text style={[styles.callBtnText, { color: '#1d4ed8' }]}>Rejoin</Text>
                   </TouchableOpacity>
@@ -255,7 +273,9 @@ export default function DoctorVideoScreen() {
         <TextInput
           style={styles.searchInput}
           placeholder="Search patient or date..."
-          placeholderTextColor="#94a3b8"
+          // #64748b, not #94a3b8: the placeholder measured 2.56:1 on this white
+          // field, and it is the only instruction on what to type. 4.76:1.
+          placeholderTextColor="#64748b"
           value={search}
           onChangeText={setSearch}
         />
@@ -265,6 +285,14 @@ export default function DoctorVideoScreen() {
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
         <FlatList
+          // A FlatList defaults to keyboardShouldPersistTaps="never", so with the
+          // search keyboard open the first tap on a result was swallowed
+          // dismissing it — you had to tap every result twice. "handled" lets the
+          // row take the tap. The insets keep the last rows off the keyboard, and
+          // dragging the list puts it away.
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
           data={getFiltered()}
           keyExtractor={item => item.id}
           renderItem={renderItem}

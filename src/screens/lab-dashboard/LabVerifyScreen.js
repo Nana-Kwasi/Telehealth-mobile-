@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ActivityIndicator, FlatList, Alert, Modal, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  FlatList,
+  Alert,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
@@ -156,7 +166,10 @@ export default function LabVerifyScreen({ profile }) {
       )}
 
       <Modal visible={showResultModal} transparent animationType="slide">
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Upload Lab Result</Text>
             <Text style={styles.modalSub}>{selectedOrder?.testType} — {selectedOrder?.patientName}</Text>
@@ -189,7 +202,7 @@ export default function LabVerifyScreen({ profile }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

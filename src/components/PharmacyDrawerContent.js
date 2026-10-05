@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'rea
 import { DrawerContentScrollView } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { performLogout } from '../services/authService';
+import { performLogout, wipeLocalData } from '../services/authService';
 
 import { PharmacyColors as C } from '../constants/colors';
 
@@ -43,7 +43,7 @@ export default function PharmacyDrawerContent({ navigation, state, profile, isBr
           // Clearing the session is not enough: without resetting navigation the
           // dashboard stays mounted and the user appears to still be logged in.
           try { await performLogout(); } catch (_) {}
-          try { await AsyncStorage.clear(); } catch (_) {}
+          await wipeLocalData();
           navigation.getParent()?.replace('Intent');
         },
       },
@@ -102,9 +102,9 @@ const styles = StyleSheet.create({
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   logoText: { color: '#fff', fontSize: 18, fontWeight: '800' },
   badge: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  badgeText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  avatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  avatarText: { color: '#ffffff', fontSize: 20, fontWeight: '800' },
   pharmacyName: { color: '#fff', fontSize: 16, fontWeight: '700' },
   pharmacyRole: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 2 },
   nav: { flex: 1, padding: 12 },

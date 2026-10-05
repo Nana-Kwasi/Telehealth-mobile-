@@ -13,8 +13,9 @@ import {
   Modal,
   DeviceEventEmitter,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { signInWithEmailOrUsername } from '../services/authService';
+import { signInWithEmailOrUsername, completeTwoFactorSignIn, signInWithRefreshToken } from '../services/authService';
 import { api } from '../services/apiClient';
 import { fetchClientData } from '../services/clientDataService';
 import { Colors } from '../constants/colors';
@@ -23,12 +24,36 @@ import { PRIVACY_STORAGE_KEY, syncPrivacyConsentToUser } from '../services/priva
 import { resetToHomeCarePatientDashboard } from '../utils/homeCareNavigation';
 import { applyCoupleLandingIfNeeded } from '../services/coupleTherapyService';
 import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
+import {
+  biometricCapability,
+  isBiometricLoginEnabled,
+  unlockRefreshToken,
+  disableBiometricLogin,
+  enableBiometricLogin,
+} from '../services/biometricAuth';
+
+const friendlyAuthError = (err) => {
+  const msg = err?.message || err?.error || 'Unable to sign in right now.';
+  if (msg.includes('Session expired')) return 'Your session expired. Please sign in again.';
+  if (msg.includes('verification') || msg.includes('code')) return msg;
+  if (msg.includes('invalid') || msg.includes('incorrect') || msg.includes('credential')) {
+    return 'That email and password do not match. Please try again.';
+  }
+  return msg;
+};
 
 const LoginScreen = ({ navigation, route }) => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [challengeId, setChallengeId] = useState('');
+  const [challengeEmail, setChallengeEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricReady, setBiometricReady] = useState(false);
+  // "Face ID" / "Fingerprint" / "Biometrics" — whatever this device actually has.
+  const [biometricLabel, setBiometricLabel] = useState('Biometrics');
 
   // Forgot password modal state
   const [showForgot, setShowForgot] = useState(false);
@@ -48,6 +73,75 @@ const LoginScreen = ({ navigation, route }) => {
     prime();
   }, [route.params?.coupleResume, route.params?.coupleId, route.params?.partnerRole]);
 
+  useEffect(() => {
+    const probeBiometric = async () => {
+      try {
+        // Capability is measured FIRST and unconditionally. It used to be
+        // checked only when enrolment was already on, so the screen could
+        // never say "this device supports Face ID" to someone who had not
+        // turned it on yet — and there was no way to discover the feature
+        // from here at all.
+        const capability = await biometricCapability();
+        setBiometricReady(Boolean(capability.available));
+        setBiometricLabel(capability.label || 'Biometrics');
+
+        const enabled = await isBiometricLoginEnabled();
+        setBiometricEnabled(enabled);
+
+        // Only auto-prompt when there is actually a saved session to unlock.
+        if (enabled && capability.available) {
+          await attemptBiometricLogin(true);
+        }
+      } catch {
+        setBiometricEnabled(false);
+        setBiometricReady(false);
+      }
+    };
+    probeBiometric();
+  }, []);
+
+  const attemptBiometricLogin = async (enabledOverride = biometricEnabled) => {
+    if (!enabledOverride) return;
+    setError('');
+
+    try {
+      const capability = await biometricCapability();
+      if (!capability.available) {
+        await disableBiometricLogin();
+        setBiometricEnabled(false);
+        setBiometricReady(false);
+        setError('Biometric sign-in is not available on this device. Please log in with your password to re-enable it.');
+        return;
+      }
+
+      setLoading(true);
+      const refreshToken = await unlockRefreshToken('Use Face ID or fingerprint to sign in');
+      if (!refreshToken) {
+        setLoading(false);
+        return;
+      }
+
+      const result = await signInWithRefreshToken(refreshToken);
+      await completeSignIn(result.role, result.profile, result.refreshToken);
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (msg.includes('reuse detected') || msg.includes('revoked') || msg.includes('expired')) {
+        await disableBiometricLogin();
+        setBiometricEnabled(false);
+        setBiometricReady(false);
+        setError('Your saved biometric sign-in expired. Please log in with your password to set it up again.');
+      } else {
+        setError(friendlyAuthError(err));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    await attemptBiometricLogin(true);
+  };
+
   const handleLogin = async () => {
     setError('');
 
@@ -58,8 +152,96 @@ const LoginScreen = ({ navigation, route }) => {
 
     try {
       setLoading(true);
-      const { role, profile } = await signInWithEmailOrUsername(identifier, password);
+      const result = await signInWithEmailOrUsername(identifier, password);
 
+      if (result.twoFactorRequired) {
+        setChallengeId(result.challengeId);
+        setChallengeEmail(result.email || identifier);
+        setVerificationCode('');
+        setLoading(false);
+        return;
+      }
+
+      await completeSignIn(result.role, result.profile, result.refreshToken);
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyTwoFactor = async () => {
+    if (!challengeId) {
+      setError('The verification code is missing. Please sign in again.');
+      return;
+    }
+
+    if (!verificationCode.trim()) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const result = await completeTwoFactorSignIn(challengeId, verificationCode);
+      await completeSignIn(result.role, result.profile, result.refreshToken);
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Everything after a real token exists. Shared by the password, 2FA and
+   * biometric paths so all three land in the same state — routing, stored
+   * profile and privacy sync included.
+   */
+  /**
+   * Offer biometric enrolment straight after a password sign-in.
+   *
+   * Asked here because this is the only moment we hold a fresh refresh token
+   * AND have the user's attention. Burying it in Settings meant most people
+   * never found it, and the login screen had nothing to show them.
+   *
+   * Declining is remembered for the session only — it is a prompt, not a
+   * commitment, and Settings still has the switch.
+   */
+  const offerBiometricEnrolment = async (refreshToken, email) => {
+    if (!refreshToken) return;
+    try {
+      if (await isBiometricLoginEnabled()) return;
+      const capability = await biometricCapability();
+      if (!capability.available) return;
+
+      await new Promise((resolve) => {
+        Alert.alert(
+          `Use ${capability.label} next time?`,
+          `Sign in with ${capability.label} instead of typing your password. `
+          + 'Your password is never stored on this device.',
+          [
+            { text: 'Not now', style: 'cancel', onPress: resolve },
+            {
+              text: `Use ${capability.label}`,
+              onPress: async () => {
+                await enableBiometricLogin(refreshToken, email);
+                resolve();
+              },
+            },
+          ],
+          { cancelable: false },
+        );
+      });
+    } catch {
+      // Enrolment is a convenience; never block a completed sign-in on it.
+    }
+  };
+
+  const completeSignIn = async (role, profile, refreshToken) => {
+    // Ask before routing away — once the navigator replaces this screen the
+    // moment is gone.
+    await offerBiometricEnrolment(refreshToken, profile?.email || identifier);
+    try {
       const allowedRoles = [
         'client', 'patient', 'therapist', 'admin', 'doctor',
         'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch', 'homecare_nurse',
@@ -239,56 +421,129 @@ const LoginScreen = ({ navigation, route }) => {
             </View>
           ) : null}
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email or Username</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email or username"
-              placeholderTextColor={Colors.textLight}
-              value={identifier}
-              onChangeText={setIdentifier}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-            />
-          </View>
+          {challengeId ? (
+            <>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Verification code</Text>
+                <Text style={styles.challengeText}>
+                  A 6-digit code was sent to {challengeEmail || 'your email address'}.
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your code"
+                  placeholderTextColor={Colors.textLight}
+                  value={verificationCode}
+                  onChangeText={setVerificationCode}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+              </View>
 
-          <View style={styles.inputContainer}>
-            <View style={styles.passwordLabelRow}>
-              <Text style={styles.label}>Password</Text>
-              <TouchableOpacity onPress={openForgotPassword}>
-                <Text style={styles.forgotLink}>Forgot Password?</Text>
+              <TouchableOpacity
+                style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+                onPress={handleVerifyTwoFactor}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={Colors.surface} />
+                ) : (
+                  <Text style={styles.loginButtonText}>Verify Code</Text>
+                )}
               </TouchableOpacity>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
-              placeholderTextColor={Colors.textLight}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
 
-          <TouchableOpacity
-            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={Colors.surface} />
-            ) : (
-              <Text style={styles.loginButtonText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => {
+                  setChallengeId('');
+                  setVerificationCode('');
+                  setError('');
+                }}
+              >
+                <Text style={styles.secondaryButtonText}>Use a different sign-in method</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Email or Username</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email or username"
+                  placeholderTextColor={Colors.textLight}
+                  value={identifier}
+                  onChangeText={setIdentifier}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <View style={styles.passwordLabelRow}>
+                  <Text style={styles.label}>Password</Text>
+                  <TouchableOpacity onPress={openForgotPassword}>
+                    <Text style={styles.forgotLink}>Forgot Password?</Text>
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor={Colors.textLight}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={Colors.surface} />
+                ) : (
+                  <Text style={styles.loginButtonText}>Sign In</Text>
+                )}
+              </TouchableOpacity>
+
+              {biometricEnabled && biometricReady ? (
+                <TouchableOpacity
+                  style={styles.biometricButton}
+                  onPress={handleBiometricLogin}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={biometricLabel === 'Face ID' ? 'scan-outline' : 'finger-print-outline'}
+                    size={20}
+                    color={Colors.primary}
+                  />
+                  <Text style={styles.biometricButtonText}>Sign in with {biometricLabel}</Text>
+                </TouchableOpacity>
+              ) : biometricReady ? (
+                /* The device can do this but the account has not opted in.
+                   Say so here rather than leaving the feature invisible until
+                   someone happens to find it in Settings. */
+                <Text style={styles.biometricHint}>
+                  Sign in once, then turn on {biometricLabel} in Settings to skip
+                  your password next time.
+                </Text>
+              ) : null}
+            </>
+          )}
         </View>
       </ScrollView>
 
-      {/* ── Forgot Password Modal ── */}
       <Modal visible={showForgot} transparent animationType="fade" onRequestClose={() => setShowForgot(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.modalCard}>
             {resetSent ? (
               <>
@@ -339,7 +594,7 @@ const LoginScreen = ({ navigation, route }) => {
               </>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -438,6 +693,52 @@ const styles = StyleSheet.create({
     color: Colors.surface,
     fontSize: 16,
     fontWeight: '600',
+  },
+  // ── Biometric sign-in ──
+  biometricButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: '#ffffff',
+  },
+  biometricButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  biometricHint: {
+    marginTop: 14,
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    color: '#656b7d',
+  },
+
+  secondaryButton: {
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+  },
+  secondaryButtonText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  challengeText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    marginBottom: 12,
+    lineHeight: 20,
   },
   // Modal styles
   modalOverlay: {

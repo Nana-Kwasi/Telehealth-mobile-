@@ -17,8 +17,10 @@ import { api, uploadFile } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickAndUploadAvatar } from '../../utils/profileImage';
 import { getCachedClientData } from '../../services/clientDataService';
-import { Colors } from '../../constants/colors';
+import { TherapyColors as Colors } from '../../constants/colors';
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
+import { resolveFileUrl } from '../../utils/mediaUrl';
+import SecuritySettingsSection from '../../components/SecuritySettingsSection';
 
 const ClientSettingsScreen = ({ navigation }) => {
   const [clientData, setClientData] = useState(null);
@@ -190,7 +192,6 @@ const ClientSettingsScreen = ({ navigation }) => {
     setDeletingAccount(true);
     try {
       await api('/api/v1/auth/account/delete', { method: 'POST', body: { password: deletePassword } });
-      await AsyncStorage.clear();
     } catch (err) {
       setPasswordError(err?.message || 'Failed to delete account.');
     } finally {
@@ -225,7 +226,14 @@ const ClientSettingsScreen = ({ navigation }) => {
           showsHorizontalScrollIndicator={false}
           style={styles.navScroll}
           contentContainerStyle={styles.navContent}
-        >
+        
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Shared with every role. 2FA and biometric sign-in existed
+            only in the medical patient screen, so a clinician could not
+            reach either. */}
+        <SecuritySettingsSection accent={'#5046bd'} />
           {sections.map(section => (
             <TouchableOpacity
               key={section.id}
@@ -280,7 +288,7 @@ const ClientSettingsScreen = ({ navigation }) => {
               {/* Profile Photo */}
               <TouchableOpacity style={styles.photoContainer} onPress={handleProfilePhotoUpload}>
                 {clientData?.photoURL ? (
-                  <Image source={{ uri: clientData.photoURL }} style={styles.photoImage} />
+                  <Image source={{ uri: resolveFileUrl(clientData.photoURL)}} style={styles.photoImage} />
                 ) : (
                   <View style={styles.photoPlaceholder}>
                     <Text style={styles.photoInitials}>{clientData?.name ? clientData.name.charAt(0).toUpperCase() : 'C'}</Text>
@@ -672,7 +680,11 @@ const ClientSettingsScreen = ({ navigation }) => {
               <View style={styles.toggleRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.toggleLabel}>Share progress with therapist</Text>
-                  <Text style={styles.toggleDesc}>Allow therapist to view mood check-ins</Text>
+                  <Text style={styles.toggleDesc}>
+                    Lets your therapist see your mood scores and what you wrote with them.
+                    Turn it off and they see that you are not sharing, not the entries
+                    themselves. You keep logging either way.
+                  </Text>
                 </View>
                 <Switch
                   value={clientData?.shareProgressWithTherapist !== false}
@@ -906,8 +918,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   readonlyInput: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     color: Colors.textSecondary,
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   secondaryButton: {
     flexDirection: 'row',
@@ -916,7 +930,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.primary + '40',
     backgroundColor: Colors.primary + '12',
@@ -940,11 +954,14 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   saveButton: {
     backgroundColor: Colors.primary,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     marginTop: 8,
   },
@@ -1019,7 +1036,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.surface,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 2,
     borderColor: Colors.primary,
     gap: 12,
@@ -1040,7 +1057,7 @@ const styles = StyleSheet.create({
   cancelButton: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 2,
     borderColor: Colors.border,
     alignItems: 'center',
@@ -1054,7 +1071,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.primary,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
   },
   updatePasswordButtonText: {
@@ -1088,7 +1105,7 @@ const styles = StyleSheet.create({
   photoInitials: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#fff',
+    color: '#0d0d0d',
   },
   photoOverlay: {
     position: 'absolute',
@@ -1103,7 +1120,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   photoOverlayText: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 11,
     fontWeight: '600',
   },
@@ -1164,12 +1181,12 @@ const styles = StyleSheet.create({
   dangerTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#dc2626',
+    color: '#8c322d',
     marginBottom: 4,
   },
   dangerDesc: {
     fontSize: 13,
-    color: '#4b5563',
+    color: '#0d0d0d',
   },
   deleteButton: {
     flexDirection: 'row',
@@ -1178,19 +1195,21 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#dc2626',
     padding: 14,
-    borderRadius: 10,
+    borderRadius: 999,
     flex: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(95,84,214,0.35)',
   },
   deleteButtonDisabled: {
     backgroundColor: '#9ca3af',
   },
   deleteButtonText: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
   },
   deleteWarning: {
-    color: '#dc2626',
+    color: '#8c322d',
     fontWeight: '600',
     marginBottom: 16,
     fontSize: 14,

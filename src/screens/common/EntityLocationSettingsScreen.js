@@ -70,7 +70,12 @@ export default function EntityLocationSettingsScreen({ profile, collectionName =
   };
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.content}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={s.container} contentContainerStyle={s.content}>
       <Text style={s.title}>{title}</Text>
       <Text style={s.subtitle}>Keep this updated for accurate nearby assignment and routing.</Text>
 

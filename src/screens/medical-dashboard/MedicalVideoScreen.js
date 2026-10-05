@@ -9,10 +9,25 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { callState, callTimeLabel, CALL_STATE_COLORS } from '../../utils/callState';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStoredUserId } from '../../services/apiClient';
 import { fetchClientAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+
+
+/** Open the shared call screen as this user (signed in, current HTTPS address). */
+async function openCallAs(navigation, roomName, otherName, otherId) {
+  let me = 'Patient';
+  try {
+    const p = JSON.parse((await AsyncStorage.getItem('userProfile')) || '{}');
+    me = p.fullName || p.name || p.email || me;
+  } catch { /* default name */ }
+  navigation.navigate('VideoCallSession', {
+    roomName, participantName: me,
+    callInfo: { roomName, targetPerson: otherName, displayNames: otherId ? { [otherId]: otherName } : {} },
+  });
+}
 
 const MedicalVideoScreen = ({ navigation }) => {
   const [videoAppointments, setVideoAppointments] = useState([]);
@@ -42,9 +57,8 @@ const MedicalVideoScreen = ({ navigation }) => {
   // The patient can join once the doctor has started the call (shared call room).
   const joinCall = (appt) => {
     if (appt.callStatus === 'in_progress' && appt.callRoomName) {
-      Alert.alert('Joining call', `Connecting to Dr. ${appt.doctorName || 'your doctor'} — room ${appt.callRoomName}.`);
-      // The live Twilio session opens here once video credentials + the medical
-      // call screen are configured.
+      // Was an alert only: patients could not join their doctor's call from the app.
+      openCallAs(navigation, appt.callRoomName, appt.doctorName, appt.doctorId);
     } else {
       Alert.alert('Call not started', 'Your doctor has not started the video call yet. You can join as soon as they begin.');
     }
@@ -79,25 +93,61 @@ const MedicalVideoScreen = ({ navigation }) => {
         <>
           <Text style={styles.sectionTitle}>Ready to Join</Text>
           {upcoming.map((appt) => (
-            <View key={appt.id} style={styles.videoCard}>
-              <View style={styles.videoCardHeader}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{(appt.doctorName || 'D')[0].toUpperCase()}</Text>
+            (() => {
+              // A call that has come and gone used to look exactly like
+              // tomorrow's, with a live Join button. Tapping it opened an
+              // empty room and said nothing about why.
+              const st = callState(appt.scheduledTime || appt.scheduledAt, appt.status);
+              const tone = CALL_STATE_COLORS[st.tone];
+              return (
+                <View key={appt.id} style={[styles.videoCard, st.past && styles.videoCardPast]}>
+                  <View style={styles.videoCardHeader}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{(appt.doctorName || 'D')[0].toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.doctorName}>Dr. {appt.doctorName}</Text>
+                      <Text style={styles.dateTime}>
+                        {appt.date} at {appt.time}
+                      </Text>
+                      <Text style={styles.dateTime}>
+                        {callTimeLabel(appt.scheduledTime || appt.scheduledAt)}
+                      </Text>
+                    </View>
+                    <View style={[styles.callBadge, { backgroundColor: tone.bg }]}>
+                      <Text style={[styles.callBadgeText, { color: tone.fg }]}>{st.label}</Text>
+                    </View>
+                  </View>
+
+                  {st.past ? (
+                    <View style={styles.pastNote}>
+                      <Ionicons name="information-circle-outline" size={15} color="#8a4b09" />
+                      <Text style={styles.pastNoteText}>
+                        {st.key === 'completed'
+                          ? 'This consultation has ended.'
+                          : st.key === 'cancelled'
+                            ? 'This consultation was cancelled.'
+                            : 'This time has passed. Book another to see your doctor.'}
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.joinButton, !st.joinable && styles.joinButtonOff]}
+                      onPress={() => joinCall(appt)}
+                      disabled={!st.joinable}
+                    >
+                      <Ionicons name="videocam" size={20} color="#FFFFFF" />
+                      <Text style={styles.joinButtonText}>
+                        {st.joinable
+                          ? (appt.callStatus === 'in_progress' && appt.callRoomName
+                              ? 'Join Video Call' : 'Waiting for doctor')
+                          : `Opens ${callTimeLabel(appt.scheduledTime || appt.scheduledAt)}`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.doctorName}>Dr. {appt.doctorName}</Text>
-                  <Text style={styles.dateTime}>
-                    {appt.date} at {appt.time}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity style={styles.joinButton} onPress={() => joinCall(appt)}>
-                <Ionicons name="videocam" size={20} color="#FFFFFF" />
-                <Text style={styles.joinButtonText}>
-                  {appt.callStatus === 'in_progress' && appt.callRoomName ? 'Join Video Call' : 'Waiting for doctor'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+              );
+            })()
           ))}
         </>
       )}
@@ -190,6 +240,16 @@ const styles = StyleSheet.create({
     color: MedicalColors.text,
     marginBottom: 12,
   },
+  videoCardPast: { opacity: 0.72 },
+  callBadge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, flexShrink: 0 },
+  callBadgeText: { fontSize: 10.5, fontWeight: '800' },
+  pastNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
+    backgroundColor: '#fdeee0', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10,
+  },
+  // flex:1 on the text only, so it wraps instead of stretching the row.
+  pastNoteText: { flex: 1, fontSize: 12, lineHeight: 17, color: '#8a4b09' },
+  joinButtonOff: { opacity: 0.5 },
   videoCard: {
     backgroundColor: MedicalColors.surface,
     borderRadius: 14,

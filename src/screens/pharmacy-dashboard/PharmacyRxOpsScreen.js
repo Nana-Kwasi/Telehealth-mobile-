@@ -290,7 +290,12 @@ export default function PharmacyRxOpsScreen({ profile, mode = 'branch' }) {
     .filter(m => isOwner || branchOwned || ((m.transferBranchId || '') === actorId));
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Text style={styles.title}>Prescription Operations</Text>
       <Text style={styles.sub}>{rx.patientName || 'Patient'} · Ref {rx.prescriptionRef || '—'}</Text>
 
@@ -617,7 +622,7 @@ const styles = StyleSheet.create({
   drugName: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
   drugSub: { fontSize: 12, color: '#64748b', marginTop: 2 },
   statusPill: { fontSize: 12, fontWeight: '700' },
-  pickedUp: { fontSize: 12, color: '#15803d', fontWeight: '700', marginTop: 6 },
+  pickedUp: { fontSize: 12, color: '#0f5628', fontWeight: '700', marginTop: 6 },
   btnRow: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
   opBtn: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1 },
   okBtn: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },

@@ -160,7 +160,12 @@ export default function DiagnosticBranchDetailScreen({ profile, type = 'lab', ac
   const completed = orders.filter(o => normalizeDiagnosticOrderStatus(o.status) === 'COMPLETED').length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Text style={styles.title}>{branch.branchName || 'Branch'}</Text>
       <Text style={styles.sub}>{branch.email || 'No login email'}</Text>
       <View style={[styles.pill, status === 'active' ? styles.pillOk : styles.pillWarn]}>

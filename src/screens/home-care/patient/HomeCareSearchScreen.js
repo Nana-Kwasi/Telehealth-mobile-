@@ -58,7 +58,12 @@ export default function HomeCareSearchScreen({ navigation, route }) {
   };
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>Search & filter</Text>
       <TextInput style={hc.input} placeholder="Search by name" value={query} onChangeText={setQuery} />
 

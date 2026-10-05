@@ -1,3 +1,4 @@
+import { fetchPersonProfile } from '../../utils/clientTherapyMetrics';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -15,7 +16,7 @@ const MOOD_EMOJI = { 9:'😄', 8:'😊', 7:'🙂', 6:'😐', 5:'😐', 4:'😰',
 const MOOD_COLOR = (v) => v >= 7 ? '#10B981' : v >= 5 ? '#F59E0B' : '#EF4444';
 
 const chartConfig = {
-  backgroundColor: '#fff',
+  backgroundColor: 'rgba(255,255,255,0.72)',
   backgroundGradientFrom: '#fff',
   backgroundGradientTo: '#fff',
   decimalPlaces: 0,
@@ -46,7 +47,7 @@ const TherapistMoodScreen = ({ navigation }) => {
       const list = [];
       for (const id of ids) {
         try {
-          const data = await api(`/api/v1/patients/${id}`);
+          const data = await fetchPersonProfile(id);
           if (data) list.push({ id, name: data.fullName || data.name || data.email || 'Client', email: data.email || '' });
         } catch {}
       }
@@ -262,13 +263,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20,
     borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 4 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#0d0d0d' },
+  headerSub: { fontSize: 13, color: '#0d0d0d', marginTop: 4 },
 
   listContent: { padding: 16 },
   clientCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 14, padding: 14, marginBottom: 10,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
   clientAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: TherapistColors.primary, justifyContent: 'center', alignItems: 'center' },
@@ -278,7 +279,7 @@ const styles = StyleSheet.create({
 
   chatHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: TherapistColors.border,
+    padding: 14, backgroundColor: 'rgba(255,255,255,0.72)', borderBottomWidth: 1, borderBottomColor: TherapistColors.border,
   },
   chatName: { fontSize: 16, fontWeight: '700', color: TherapistColors.text },
   chatSub: { fontSize: 12, color: TherapistColors.textSecondary },
@@ -287,7 +288,7 @@ const styles = StyleSheet.create({
 
   summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
   summaryCard: {
-    flex: 1, backgroundColor: '#fff', borderRadius: 14, padding: 14,
+    flex: 1, backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 14, padding: 14,
     alignItems: 'center', borderTopWidth: 3,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 11, color: TherapistColors.textSecondary, fontWeight: '600', textTransform: 'capitalize' },
 
   card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14,
+    backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 16, padding: 16, marginBottom: 14,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
   cardTitle: { fontSize: 16, fontWeight: '700', color: TherapistColors.text, marginBottom: 8 },

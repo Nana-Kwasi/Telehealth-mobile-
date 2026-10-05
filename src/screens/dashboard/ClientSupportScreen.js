@@ -11,12 +11,14 @@ import {
   Alert,
   RefreshControl,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
-import { Colors } from '../../constants/colors';
+import { TherapyColors as Colors } from '../../constants/colors';
 
 const ClientSupportScreen = ({ navigation }) => {
   const [recentSessions, setRecentSessions] = useState([]);
@@ -331,11 +333,11 @@ const ClientSupportScreen = ({ navigation }) => {
             </View>
           </View>
           {[
-            { name: 'National Emergency — 112', desc: 'Police, ambulance & fire — 24/7', url: 'tel:112', color: '#dc2626' },
+            { name: 'National Emergency — 112', desc: 'Police, ambulance & fire — 24/7', url: 'tel:112', color: '#8c322d' },
             { name: 'Mental Health Authority Helpline', desc: '0509 405 480 — 24/7 counselling', url: 'tel:+233509405480', color: '#7c3aed' },
             { name: 'Suicide Prevention (Ghana)', desc: '0244 846 701', url: 'tel:+233244846701', color: '#0ea5e9' },
             { name: 'National Ambulance — 193', desc: 'Ambulance dispatch', url: 'tel:193', color: '#ea580c' },
-            { name: 'NAMI Helpline', desc: '1-800-950-6264', url: 'tel:18009506264', color: '#16a34a' },
+            { name: 'NAMI Helpline', desc: '1-800-950-6264', url: 'tel:18009506264', color: '#2f7d5f' },
           ].map((h, i) => (
             <TouchableOpacity key={i} style={styles.crisisHotlineRow} onPress={() => Linking.openURL(h.url)}>
               <View style={[styles.crisisHotlineDot, { backgroundColor: h.color }]} />
@@ -515,7 +517,10 @@ const ClientSupportScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowRatingModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Rate Session</Text>
@@ -592,7 +597,7 @@ const ClientSupportScreen = ({ navigation }) => {
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Issue Modal */}
@@ -602,7 +607,10 @@ const ClientSupportScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowIssueModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Report Issue</Text>
@@ -679,7 +687,7 @@ const ClientSupportScreen = ({ navigation }) => {
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* FAQ Modal */}
@@ -689,7 +697,10 @@ const ClientSupportScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowFAQ(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Frequently Asked Questions</Text>
@@ -716,7 +727,7 @@ const ClientSupportScreen = ({ navigation }) => {
               ))}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Incident Details Modal */}
@@ -726,7 +737,10 @@ const ClientSupportScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowIncidentDetails(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Incident Details</Text>
@@ -769,7 +783,7 @@ const ClientSupportScreen = ({ navigation }) => {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -893,7 +907,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 999,
     gap: 6,
   },
   rateButtonText: {
@@ -960,12 +974,15 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   searchButton: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   searchButtonText: {
     color: Colors.surface,
@@ -1067,6 +1084,7 @@ const styles = StyleSheet.create({
     minHeight: 100,
     textAlignVertical: 'top',
     marginBottom: 16,
+    backgroundColor: '#ffffff',
   },
   formGroup: {
     marginBottom: 20,
@@ -1089,6 +1107,9 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 120,
     textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
   severityContainer: {
     flexDirection: 'row',
@@ -1097,7 +1118,7 @@ const styles = StyleSheet.create({
   severityButton: {
     flex: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 2,
     borderColor: Colors.border,
     alignItems: 'center',
@@ -1117,7 +1138,7 @@ const styles = StyleSheet.create({
   submitButton: {
     backgroundColor: Colors.primary,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     marginTop: 8,
   },
@@ -1125,10 +1146,10 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   emailAdminButton: {
-    marginTop: 10, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#bfdbfe', backgroundColor: '#eff6ff',
+    marginTop: 10, paddingVertical: 14, borderRadius: 999, alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#bfdbfe', backgroundColor: 'rgba(207,169,97,0.12)',
   },
-  emailAdminButtonText: { fontSize: 15, fontWeight: '700', color: '#2563eb' },
+  emailAdminButtonText: { fontSize: 15, fontWeight: '700', color: '#2f5d7d' },
   submitButtonText: {
     color: Colors.surface,
     fontSize: 16,
@@ -1184,17 +1205,17 @@ const styles = StyleSheet.create({
   crisisTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#dc2626',
+    color: '#8c322d',
     marginBottom: 2,
   },
   crisisSubtitle: {
     fontSize: 13,
-    color: '#4b5563',
+    color: '#0d0d0d',
   },
   crisisHotlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 10,
     padding: 12,
     marginBottom: 6,
@@ -1209,16 +1230,16 @@ const styles = StyleSheet.create({
   crisisHotlineName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1f2937',
+    color: '#0d0d0d',
   },
   crisisHotlineDesc: {
     fontSize: 12,
-    color: '#6b7280',
+    color: '#0d0d0d',
     marginTop: 2,
   },
   crisisSafetyNote: {
     fontSize: 12,
-    color: '#6b7280',
+    color: '#0d0d0d',
     fontStyle: 'italic',
     marginTop: 8,
   },

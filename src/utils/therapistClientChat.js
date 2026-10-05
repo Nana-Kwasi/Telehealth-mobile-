@@ -1,14 +1,43 @@
+import { API_BASE } from '../services/apiClient';
+
 /** Message helpers — same shape as doctor/medical chat (mediaUrl + legacy content). */
+
+/**
+ * Point a stored media URL at the host we can actually reach RIGHT NOW.
+ *
+ * Attachments are saved with an absolute URL built from whatever host the
+ * uploader was using — e.g. http://172.20.10.4:8085/... from a laptop hotspot.
+ * That address is meaningless to anyone on a different network: the same voice
+ * note played fine in the simulator (localhost IS the Mac) and failed on a real
+ * phone over LTE, which looked like a broken recording rather than a broken URL.
+ *
+ * The file id and its capability token are the parts that matter and travel
+ * fine; only the ORIGIN is stale. So keep the path and re-point it at the API
+ * base this app is currently talking to — which is reachable by definition,
+ * since every other request is going there. Also handles relative URLs.
+ */
+function resolveMediaHost(url) {
+  if (!url) return url;
+  const raw = String(url).trim();
+  if (raw.startsWith('/')) return `${API_BASE}${raw}`;
+  const m = /^https?:\/\/[^/]+(\/.*)$/i.exec(raw);
+  if (!m) return raw;
+  const path = m[1];
+  // Only rewrite OUR own file routes. An external link (a resource on a real
+  // website) must be left exactly as it is.
+  if (!path.startsWith('/api/')) return raw;
+  return `${API_BASE}${path}`;
+}
 
 export function getMessageMediaUrl(msg) {
   if (!msg) return null;
   const direct = msg.mediaUrl || msg.fileUrl || (typeof msg.content === 'object' ? msg.content?.url : null);
-  if (direct) return direct;
+  if (direct) return resolveMediaHost(direct);
   // Messages sent before attachments carried their metadata stored the URL as the
   // message body — those rendered as a raw link instead of an image/voice note.
   // Treat a URL-looking body as the media url so old messages still display.
   const body = typeof msg.content === 'string' ? msg.content : (msg.text || msg.body || '');
-  return /^https?:\/\//i.test(String(body).trim()) ? String(body).trim() : null;
+  return /^https?:\/\//i.test(String(body).trim()) ? resolveMediaHost(String(body).trim()) : null;
 }
 
 export function getMessageText(msg) {

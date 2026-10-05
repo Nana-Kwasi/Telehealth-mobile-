@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, storeSession, clearSession, STORAGE_KEYS, getStoredToken, getStoredUserId } from './apiClient';
-import { registerForPushNotifications } from './notificationService';
+import { registerForPushNotifications, unregisterPushNotifications } from './notificationService';
+import { isBiometricLoginEnabled, enableBiometricLogin, disableBiometricLogin } from './biometricAuth';
 
 // ─── Role mapping: backend enum → mobile string ───────────────────────────────
 function mapRole(backendRole) {
@@ -35,7 +36,20 @@ async function fetchProfileForRole(userId, mobileRole) {
       return await api(`/api/v1/doctors/${userId}`);
     }
     if (mobileRole === 'patient' || mobileRole === 'client') {
-      return await api(`/api/v1/patients/${userId}`);
+      const base = await api(`/api/v1/patients/${userId}`);
+
+      // The MEMBERSHIP TIER decides which dashboard a client gets — a Second
+      // Opinion user must not see a programme they have not bought. It does not
+      // live on the patient record, so it was absent from every profile the app
+      // cached: the tier check silently read undefined and everyone landed on
+      // the member dashboard. Ask the one endpoint that knows.
+      const tier = await api('/api/v1/medpsych/me').catch(() => null);
+      return {
+        ...(base || {}),
+        membershipTier: tier?.membershipTier || 'member',
+        isSecondOpinion: Boolean(tier?.isSecondOpinion),
+        isLimited: Boolean(tier?.isLimited),
+      };
     }
     if (mobileRole === 'homecare_nurse') {
       const nurses = await api(`/api/v1/homecare/nurses?userId=${userId}`);
@@ -60,6 +74,18 @@ export async function signInWithEmailOrUsername(identifier, password) {
     body: { email, password },
   });
 
+  // 2FA on: the password was right, but this is NOT a session yet. Returning
+  // here matters — storeSession would otherwise write a null token and the
+  // profile fetch below would 401, which looks like a broken login rather
+  // than a second factor being required.
+  if (data.twoFactorRequired) {
+    return {
+      twoFactorRequired: true,
+      challengeId: data.challengeId,
+      email: data.email || email,
+    };
+  }
+
   const mobileRole = mapRole(data.role);
 
   await storeSession({
@@ -67,6 +93,8 @@ export async function signInWithEmailOrUsername(identifier, password) {
     refreshToken: data.refreshToken,
     userId: data.userId,
     role: mobileRole,
+    // Kept for Paystack: every charge needs a real email for the receipt.
+    email: data.email || email,
   });
 
   const profile = await fetchProfileForRole(data.userId, mobileRole);
@@ -179,6 +207,13 @@ export async function logUserLogout(userId, userRole, profile) {
 }
 
 export async function performLogout({ userId, role, profile, clearCoupleKeys = false } = {}) {
+  // Withdraw this device's push token BEFORE the session is cleared — the call
+  // needs the access token to authenticate. Leaving it registered would keep
+  // this handset receiving the departing user's notifications, previews and all.
+  try {
+    await unregisterPushNotifications();
+  } catch {}
+
   try {
     await logUserLogout(userId, role, profile);
   } catch {}
@@ -190,11 +225,110 @@ export async function performLogout({ userId, role, profile, clearCoupleKeys = f
     } catch {}
   }
 
+  // Do not force-disable biometric sign-in on every logout. A normal logout is
+  // not the same as a revoked refresh-token family. If the stored biometric
+  // refresh token is no longer valid, the login screen catches the backend error
+  // and disables it there with a clearer recovery message.
   await clearSession();
   await AsyncStorage.multiRemove(['userProfile', 'clientData', 'therapistData', 'th.clientId', 'userName']);
+  await wipeLocalData();
+}
+
+/**
+ * Remove every locally cached key.
+ *
+ * Deliberately NOT `AsyncStorage.clear()`. On iOS that deletes the storage
+ * DIRECTORY itself, which fails with NSCocoaErrorDomain Code=4
+ * ("RCTAsyncLocalStorage couldn't be removed") — and because every caller had
+ * it before the navigation line, a failed wipe left the user logged in and
+ * staring at an error. Removing the keys leaves the directory alone.
+ *
+ * Never throws: signing out must not be blocked by a storage problem. The
+ * session token is already gone by this point, which is what actually matters.
+ */
+export async function wipeLocalData() {
+  try {
+    const keepKeys = new Set([
+      'nessa.biometric.enabled',
+      'nessa.biometric.email',
+      'nessa.biometric.refreshToken',
+    ]);
+    const keys = await AsyncStorage.getAllKeys();
+    const removable = keys.filter((key) => !keepKeys.has(key));
+    if (removable.length) await AsyncStorage.multiRemove(removable);
+  } catch (err) {
+    if (__DEV__) console.warn('[authService] local data wipe failed (ignored):', err?.message);
+  }
 }
 
 // ─── Stub kept for compatibility ───────────────────────────────────────────────
 export function signOut() {
   return performLogout();
+}
+
+/**
+ * Finish a 2FA sign-in by exchanging the emailed code for a session.
+ *
+ * Shares everything after the token exchange with the password path, so a
+ * 2FA login lands in exactly the same state as an ordinary one.
+ */
+export async function completeTwoFactorSignIn(challengeId, code) {
+  const data = await api('/api/v1/auth/2fa/verify', {
+    method: 'POST',
+    authenticated: false,
+    body: { challengeId, code: String(code || '').trim() },
+  });
+  return finishSession(data, data.email);
+}
+
+/**
+ * Sign in with a refresh token released by the device's biometric prompt.
+ *
+ * No password is involved and none is stored — see services/biometricAuth.js.
+ * A rejected refresh means the token was revoked (logout elsewhere, password
+ * change), so the caller falls back to the password form.
+ */
+export async function signInWithRefreshToken(refreshToken) {
+  const data = await api('/api/v1/auth/refresh', {
+    method: 'POST',
+    authenticated: false,
+    body: { refreshToken },
+  });
+  if (!data?.token) throw new Error('Your saved sign-in has expired. Please use your password.');
+  return finishSession(data, data.email);
+}
+
+/** The half of sign-in that runs once a real token exists. */
+async function finishSession(data, fallbackEmail) {
+  const mobileRole = mapRole(data.role);
+
+  await storeSession({
+    token: data.token,
+    refreshToken: data.refreshToken,
+    userId: data.userId,
+    role: mobileRole,
+    email: data.email || fallbackEmail,
+  });
+
+  if (await isBiometricLoginEnabled()) {
+    await enableBiometricLogin(data.refreshToken, data.email || fallbackEmail);
+  }
+
+  const profile = await fetchProfileForRole(data.userId, mobileRole);
+
+  const resolvedProfile = {
+    id: data.userId,
+    uid: data.userId,
+    email: data.email,
+    role: mobileRole,
+    fullName: profile?.fullName || profile?.name || '',
+    name: profile?.fullName || profile?.name || '',
+    status: 'active',
+    ...(profile || {}),
+  };
+
+  await AsyncStorage.setItem('userRole', mobileRole);
+  await AsyncStorage.setItem('userProfile', JSON.stringify(resolvedProfile));
+
+  return { role: mobileRole, profile: resolvedProfile, refreshToken: data.refreshToken };
 }

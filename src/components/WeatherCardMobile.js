@@ -12,7 +12,7 @@ import { fetchCurrentWeather } from '../services/weatherService';
  * reached — an error box over something this peripheral would be worse than
  * simply leaving it out.
  */
-export default function WeatherCardMobile({ profile }) {
+export default function WeatherCardMobile({ profile, embedded = false }) {
   const { latitude, longitude, city, area, region, country } = pickLocation(profile);
   const [weather, setWeather] = useState(null);
 
@@ -41,7 +41,7 @@ export default function WeatherCardMobile({ profile }) {
     .filter(Boolean).slice(0, 2).join(', ');
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, embedded && styles.cardEmbedded]}>
       <View style={styles.main}>
         <Text style={styles.icon}>{weather.icon}</Text>
         <View style={styles.headline}>
@@ -60,6 +60,17 @@ export default function WeatherCardMobile({ profile }) {
 }
 
 const styles = StyleSheet.create({
+  // Embedded: no surface of its own. It is sitting INSIDE another card, and
+  // a second background, border and margin there reads as clutter rather than
+  // as structure.
+  cardEmbedded: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    marginHorizontal: 0,
+    marginBottom: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
   card: {
     backgroundColor: '#eff6ff',
     borderWidth: 1.5,

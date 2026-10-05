@@ -1,8 +1,19 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, TextInput, Modal, Alert, ScrollView,
-  RefreshControl, KeyboardAvoidingView, Platform, Switch,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+  Modal,
+  Alert,
+  ScrollView,
+  RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
+  Switch,
 } from 'react-native';
 import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +26,7 @@ function generatePrescriptionRef() {
   return ref;
 }
 import { DoctorColors } from '../../constants/colors';
+import PrescriptionAssistCard from '../../components/PrescriptionAssistCard';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import { hasPendingDoctorNote, isRxDelivered } from '../../utils/pharmacyRxNotes';
 
@@ -701,7 +713,10 @@ export default function DoctorPrescriptionsScreen() {
 
       {/* Alternative Drug Approval Modal */}
       <Modal visible={!!altApprovalRx} animationType="slide" transparent onRequestClose={() => setAltApprovalRx(null)}>
-        <View style={styles.altModalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.altModalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.altModalCard}>
             <View style={styles.altModalHeader}>
               <Text style={styles.altModalTitle}>🔁 Alternative Review</Text>
@@ -759,11 +774,14 @@ export default function DoctorPrescriptionsScreen() {
               </>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={!!viewingRx} animationType="slide" transparent onRequestClose={() => setViewingRx(null)}>
-        <View style={styles.altModalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.altModalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={[styles.altModalCard, { maxHeight: '88%' }]}>
             <View style={styles.altModalHeader}>
               <Text style={styles.altModalTitle}>Prescription Details</Text>
@@ -881,11 +899,14 @@ export default function DoctorPrescriptionsScreen() {
               <Text style={styles.rxViewAllText}>{showRxAll ? 'Hide details' : 'View all'}</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={!!reassignRx} animationType="slide" transparent onRequestClose={() => setReassignRx(null)}>
-        <View style={styles.altModalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.altModalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.altModalCard}>
             <View style={styles.altModalHeader}>
               <Text style={styles.altModalTitle}>Reassign Unavailable Drugs</Text>
@@ -926,7 +947,7 @@ export default function DoctorPrescriptionsScreen() {
               </>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Prescription Form Modal */}
@@ -962,6 +983,23 @@ export default function DoctorPrescriptionsScreen() {
                   {!form.patientId && <Text style={styles.hint}>Select a patient above</Text>}
                 </View>
               )}
+
+              {/* Formulary-backed drafting and checks; added orders land in this
+                  form for the doctor to edit and save. */}
+              <PrescriptionAssistCard
+                patientId={form.patientId}
+                medications={form.medications}
+                allergies={patientAllergies}
+                accent={DoctorColors.primary}
+                onAddOrders={(orders, patientText) => setForm((prev) => ({
+                  ...prev,
+                  medications: [
+                    ...prev.medications.filter((m) => m.name && m.name.trim()),
+                    ...orders.map((o) => ({ ...EMPTY_MED, ...o, schedule: o.frequency ? autoSchedule(o.frequency) : [] })),
+                  ],
+                  instructions: prev.instructions || patientText || '',
+                }))}
+              />
 
               {/* Safety Warnings */}
               {warnings.length > 0 && (

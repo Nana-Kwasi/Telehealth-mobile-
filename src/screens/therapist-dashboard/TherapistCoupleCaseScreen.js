@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, marginVertical: 12,
     backgroundColor: '#fef3c7', borderRadius: 10, borderWidth: 1, borderColor: '#fcd34d',
   },
-  privacyText: { flex: 1, fontSize: 12, color: '#92400e', lineHeight: 17 },
+  privacyText: { flex: 1, fontSize: 12, color: '#734e12', lineHeight: 17 },
 
   partnerBlock: { marginBottom: 20 },
   partnerHeading: {

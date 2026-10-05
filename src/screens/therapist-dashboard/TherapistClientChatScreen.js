@@ -4,7 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/apiClient';
-import { findOrCreateThread, sendThreadMessage, threadHasParticipant } from '../../utils/chatUtils';
+import {
+  findOrCreateThread, sendThreadMessage, threadHasParticipant,
+  setPresenceOnline, setPresenceOffline,
+} from '../../utils/chatUtils';
 import { TherapistColors } from '../../constants/colors';
 import ChatThreadView from '../../components/chat/ChatThreadView';
 
@@ -41,13 +44,35 @@ export default function TherapistClientChatScreen({ navigation, route }) {
           const msgs = await api(`/api/v1/care/chats/threads/${threadIdRef.current}/messages`);
           if (!cancelled) {
             setMessages(Array.isArray(msgs) ? msgs : []);
+            // Mark the CLIENT's messages read.
+            //
+            // Only the client side did this, so the ticks were one-way: a
+            // therapist's messages turned blue, while everything the client
+            // sent stayed on grey double ticks no matter how long the therapist
+            // had been reading it. Having this open IS reading them.
+            api(`/api/v1/care/chats/threads/${threadIdRef.current}/read`, {
+              method: 'POST',
+              body: {},
+            }).catch(() => {});
             setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
           }
         } catch {}
       };
       poll();
-      const id = setInterval(poll, 15_000);
-      return () => { cancelled = true; clearInterval(id); };
+
+      // Announce, and keep announcing. The server treats presence as stale
+      // after 40 seconds, and this screen never announced at all — so a
+      // therapist actively replying still showed as offline to her client.
+      setPresenceOnline(therapistId);
+      const heartbeat = setInterval(() => setPresenceOnline(therapistId), 25_000);
+      // 3s, not 15s — a reply should not sit unseen for a quarter of a minute.
+      const id = setInterval(poll, 3_000);
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+        clearInterval(heartbeat);
+        setPresenceOffline(therapistId);
+      };
     };
 
     let cleanup = () => {};
@@ -144,10 +169,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.35)',
   },
-  headerAvatarText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  headerName: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  headerAvatarText: { color: '#0d0d0d', fontWeight: '800', fontSize: 15 },
+  headerName: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  headerSub: { fontSize: 12, color: '#0d0d0d', marginTop: 2 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  missingText: { fontSize: 16, color: '#64748b' },
+  missingText: { fontSize: 16, color: '#0d0d0d' },
   missingLink: { fontSize: 15, color: TherapistColors.primary, fontWeight: '600' },
 });

@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Modal, TextInput, Alert, RefreshControl, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -158,7 +169,10 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
 
       {/* Detail modal */}
       <Modal visible={!!selected} animationType="slide" transparent onRequestClose={() => setSelected(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
@@ -227,12 +241,15 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Alt suggestion modal */}
       <Modal visible={!!altModal} transparent animationType="fade" onRequestClose={() => setAltModal(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.altCard}>
             <Text style={styles.altTitle}>Suggest Alternative Drug</Text>
             <Text style={styles.altSub}>Enter the alternative drug name. The doctor will be asked to approve.</Text>
@@ -253,7 +270,7 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -291,7 +308,7 @@ const styles = StyleSheet.create({
   medActions: { flexDirection: 'row', gap: 8 },
   actionBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   availBtn: { backgroundColor: '#dcfce7' },
-  availBtnText: { color: '#15803d', fontWeight: '700', fontSize: 12 },
+  availBtnText: { color: '#0f5628', fontWeight: '700', fontSize: 12 },
   unavailBtn: { backgroundColor: '#fff1f2' },
   unavailBtnText: { color: '#be123c', fontWeight: '700', fontSize: 12 },
   altBtn: { backgroundColor: '#fdf4ff' },
@@ -301,7 +318,7 @@ const styles = StyleSheet.create({
   deliveredBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 16, borderWidth: 1.5, borderColor: '#bbf7d0' },
   noteBlockBanner: { backgroundColor: '#fffbeb', borderRadius: 12, padding: 14, marginTop: 16, borderWidth: 1.5, borderColor: '#fde68a' },
   noteBlockText: { color: '#b45309', fontWeight: '700', fontSize: 13, lineHeight: 19 },
-  deliveredText: { color: '#15803d', fontWeight: '800', fontSize: 16 },
+  deliveredText: { color: '#0f5628', fontWeight: '800', fontSize: 16 },
   // Alt modal
   altCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, margin: 24 },
   altTitle: { fontSize: 18, fontWeight: '800', color: C.text, marginBottom: 8 },

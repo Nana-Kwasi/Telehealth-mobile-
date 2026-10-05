@@ -205,7 +205,10 @@ export default function TherapistReportIssueScreen({ profile }) {
 
       {/* Detail modal */}
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={styles.modalCard}>
             {selected && (() => {
               const sm = statusMeta(selected.status);
@@ -253,7 +256,7 @@ export default function TherapistReportIssueScreen({ profile }) {
               );
             })()}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -265,7 +268,7 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 22, fontWeight: '800', color: TherapistColors.text },
   pageSub: { fontSize: 14, color: TherapistColors.textLight, marginTop: 6, marginBottom: 16, lineHeight: 20 },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
@@ -279,13 +282,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
   },
   chipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
   chipText: { fontSize: 12, fontWeight: '600', color: TherapistColors.textSecondary, textTransform: 'capitalize' },
   chipTextActive: { color: '#fff' },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
     borderRadius: 12,
@@ -294,10 +297,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: TherapistColors.text,
   },
-  textarea: { minHeight: 140, textAlignVertical: 'top' },
+  textarea: { minHeight: 140, textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   submitBtn: {
     backgroundColor: TherapistColors.primary,
-    borderRadius: 12,
+    borderRadius: 999,
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 20,
@@ -319,7 +326,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: TherapistColors.textLight, textAlign: 'center', paddingVertical: 20 },
   reportRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: TherapistColors.border,
+    backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 12, borderWidth: 1, borderColor: TherapistColors.border,
     padding: 12, marginBottom: 8,
   },
   reportSubject: { fontSize: 14, fontWeight: '700', color: TherapistColors.text },
@@ -327,17 +334,17 @@ const styles = StyleSheet.create({
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   statusPillText: { fontSize: 11, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28 },
+  modalCard: { backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   modalTitle: { flex: 1, fontSize: 17, fontWeight: '800', color: TherapistColors.text },
   modalBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
-  metaPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: '#f1f5f9' },
-  metaPillText: { fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'capitalize' },
+  metaPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.72)' },
+  metaPillText: { fontSize: 11, fontWeight: '700', color: '#0d0d0d', textTransform: 'capitalize' },
   detailKV: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 4 },
-  detailK: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase' },
-  detailV: { fontSize: 13, color: '#334155', flex: 1, textAlign: 'right' },
-  detailSectionLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginTop: 14, marginBottom: 4 },
-  detailBody: { fontSize: 14, color: '#334155', lineHeight: 20, backgroundColor: '#f8fafc', borderRadius: 10, padding: 12 },
+  detailK: { fontSize: 11, fontWeight: '700', color: '#3d3d3d', textTransform: 'uppercase' },
+  detailV: { fontSize: 13, color: '#0d0d0d', flex: 1, textAlign: 'right' },
+  detailSectionLabel: { fontSize: 11, fontWeight: '700', color: '#3d3d3d', textTransform: 'uppercase', marginTop: 14, marginBottom: 4 },
+  detailBody: { fontSize: 14, color: '#0d0d0d', lineHeight: 20, backgroundColor: 'transparent', borderRadius: 10, padding: 12 },
   adminBody: { fontSize: 14, color: '#0c4a6e', lineHeight: 20, backgroundColor: '#f0f9ff', borderRadius: 10, padding: 12 },
-  noAdmin: { fontSize: 12, color: '#94a3b8', marginTop: 10 },
+  noAdmin: { fontSize: 12, color: '#3d3d3d', marginTop: 10 },
 });

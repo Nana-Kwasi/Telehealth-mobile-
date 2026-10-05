@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import PriceTag from '../components/PriceTag';
+import { quotePrice } from '../services/pricing';
 import {
   View,
   Text,
@@ -32,6 +34,26 @@ const PaymentScreen = ({ navigation, route }) => {
   const [cvc, setCvc] = useState('');
   const [checking, setChecking] = useState(isCouple);
   const [blocked, setBlocked] = useState(false);
+
+  // The server's answer to "what does this cost this person right now". Null
+  // until it lands; the card shows the full fee meanwhile, which is the safe
+  // direction — nobody is charged more than they were shown.
+  const [quote, setQuote] = useState(null);
+
+  useEffect(() => {
+    if (!therapistFee) { setQuote(null); return undefined; }
+    let live = true;
+    quotePrice({
+      serviceType: 'therapy',
+      baseAmount: therapistFee,
+      providerId: selectedTherapist?.id || null,
+    }).then((q) => { if (live) setQuote(q); });
+    return () => { live = false; };
+  }, [therapistFee, selectedTherapist]);
+
+  // What is actually charged. Reads the SERVER's final amount, never a number
+  // this screen worked out.
+  const amountDue = quote?.discounted ? Number(quote.finalAmount) : therapistFee;
 
   const prices = { basic: 70, standard: 85, premium: 100 };
 
@@ -69,7 +91,10 @@ const PaymentScreen = ({ navigation, route }) => {
       'th.subscription',
       JSON.stringify({
         plan: selectedTherapist ? 'per-session' : plan,
-        price: therapistFee ?? prices[plan],
+        price: amountDue ?? prices[plan],
+        // Kept so a refund can find which offer applied.
+        promotionId: quote?.discounted ? quote.promotionId : null,
+        listPrice: therapistFee ?? prices[plan],
         therapistId: selectedTherapist?.id || null,
         therapistName: selectedTherapist?.name || null,
         activatedAt: new Date().toISOString(),
@@ -138,7 +163,12 @@ const PaymentScreen = ({ navigation, route }) => {
   if (blocked) return null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      // The keyboard covered whatever was being typed into: this screen had
+      // no keyboard handling at all. iOS insets the scroll view; Android
+      // resizes the window (app.json softwareKeyboardLayoutMode default).
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.contentContainer}>
       <Text style={styles.title}>
         {selectedTherapist ? 'Confirm and pay' : isCouple ? 'Couple plan' : 'Choose your plan'}
       </Text>
@@ -159,9 +189,14 @@ const PaymentScreen = ({ navigation, route }) => {
           {selectedTherapist.specialization ? (
             <Text style={styles.feature}>{selectedTherapist.specialization}</Text>
           ) : null}
-          <Text style={styles.planPrice}>
-            {therapistFee != null ? `GHS ${therapistFee.toFixed(2)}` : 'Rate not set'}
-          </Text>
+          <View style={styles.planPriceRow}>
+            <PriceTag quote={quote} baseAmount={therapistFee} size="lg" />
+          </View>
+          {quote?.discounted ? (
+            <Text style={styles.savings}>
+              {quote.promotionName} — you save GHS {Number(quote.discountAmount).toFixed(2)}
+            </Text>
+          ) : null}
           <Text style={styles.planPeriod}>
             {therapistFee != null
               ? 'per session'
@@ -210,8 +245,8 @@ const PaymentScreen = ({ navigation, route }) => {
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
           <Text style={styles.submitButtonText}>
             {selectedTherapist
-              ? therapistFee != null
-                ? `Pay GHS ${therapistFee.toFixed(2)}`
+              ? amountDue != null
+                ? `Pay GHS ${amountDue.toFixed(2)}`
                 : 'Confirm therapist'
               : isCouple
                 ? 'Activate couple subscription'
@@ -241,6 +276,8 @@ const styles = StyleSheet.create({
   therapistCard: { marginBottom: 32 },
   planTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.text, marginBottom: 8 },
   planPrice: { fontSize: 32, fontWeight: 'bold', color: Colors.primary },
+  planPriceRow: { marginVertical: 4 },
+  savings: { fontSize: 12.5, fontWeight: '700', color: '#166534', marginTop: 2 },
   planPeriod: { fontSize: 14, color: Colors.textSecondary, marginBottom: 16 },
   featuresContainer: { gap: 8 },
   feature: { fontSize: 14, color: Colors.text },

@@ -274,6 +274,9 @@ const MedicalMessagesScreen = () => {
     if (!myUid) return;
     const chatId = [myUid, docId].sort().join('_');
     const fetchMsgs = () => {
+      // Opening a thread IS reading it. The endpoint existed all along;
+      // nothing called it, so the sender's ticks never turned blue.
+      api(`/api/v1/doctor-chats/${chatId}/read`, { method: 'POST', body: {} }).catch(() => {});
       api(`/api/v1/doctor-chats/${chatId}/messages`).then(msgs => setMessages(msgs || [])).catch(() => {});
     };
     fetchMsgs();
@@ -655,7 +658,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
     backgroundColor: '#f0fdf4', paddingVertical: 6,
   },
-  uploadingText: { fontSize: 13, color: '#15803d', fontWeight: '600' },
+  uploadingText: { fontSize: 13, color: '#0f5628', fontWeight: '600' },
   recordingBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10,
     backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.border,

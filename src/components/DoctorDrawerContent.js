@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { performLogout } from '../services/authService';
 import { api, getStoredUserId } from '../services/apiClient';
 import { DoctorColors } from '../constants/colors';
+import { resolveFileUrl } from '../utils/mediaUrl';
 
 const drawerItems = [
   { screen: 'DoctorHome',               icon: 'home-outline',            label: 'Dashboard' },
@@ -16,8 +17,14 @@ const drawerItems = [
   { screen: 'DoctorAppointments',       icon: 'calendar-outline',        label: 'Appointments' },
   { screen: 'DoctorVideo',              icon: 'videocam-outline',        label: 'Video Calls' },
   { screen: 'DoctorMessages',           icon: 'chatbubbles-outline',     label: 'Messages' },
+  { screen: 'DoctorWellness',     icon: 'leaf-outline',            label: 'Wellness' },
+  { screen: 'DoctorAiAssistant',  icon: 'sparkles-outline',        label: 'NessaHub Clinical Assistant' },
+  { screen: 'DoctorNotificationPrefs', icon: 'notifications-outline', label: 'Notification settings' },
   { screen: 'DoctorNotes',              icon: 'document-text-outline',   label: 'Notes' },
   { screen: 'DoctorPrescriptions',      icon: 'medkit-outline',          label: 'Prescriptions' },
+  { screen: 'DoctorCarePlans',          icon: 'clipboard-outline',       label: 'Care Plans' },
+  { screen: 'DoctorDocuments',          icon: 'document-attach-outline', label: 'Documents' },
+  { screen: 'DoctorReferrals',          icon: 'share-social-outline',    label: 'Referrals' },
   { stackScreen: 'DoctorDiagnosticOrder', icon: 'add-circle-outline',    label: 'Order Lab / Scan' },
   { screen: 'DoctorDiagnosticResults',  icon: 'flask-outline',           label: 'Lab & Scan Results' },
   { screen: 'DoctorReviews',            icon: 'star-outline',            label: 'Reviews' },
@@ -45,10 +52,13 @@ const DoctorDrawerContent = ({ navigation, profile, state }) => {
   const handleLogout = async () => {
     try {
       await performLogout();
-      await AsyncStorage.clear();
-      navigation.getParent()?.replace('Intent');
     } catch (error) {
-      console.error('Logout error:', error);
+      // Never block sign-out on a cleanup failure. The session token is
+      // already gone by this point, so stranding the user on the dashboard
+      // is strictly worse than a failed tidy-up.
+      console.warn('Logout cleanup failed (continuing):', error?.message);
+    } finally {
+      navigation.getParent()?.replace('Intent');
     }
   };
 
@@ -64,7 +74,7 @@ const DoctorDrawerContent = ({ navigation, profile, state }) => {
 
         <View style={styles.userInfo}>
           {profile?.photoURL ? (
-            <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
+            <Image source={{ uri: resolveFileUrl(profile.photoURL)}} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarInitial}>{displayName[0]?.toUpperCase()}</Text>

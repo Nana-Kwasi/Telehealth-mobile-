@@ -14,7 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
-import { Colors } from '../../constants/colors';
+import { TherapyColors as Colors } from '../../constants/colors';
+import BillingAssistantCard from '../../components/BillingAssistantCard';
 
 const ClientBillingScreen = ({ navigation }) => {
   const [billingHistory, setBillingHistory] = useState([]);
@@ -65,9 +66,36 @@ const ClientBillingScreen = ({ navigation }) => {
       setClientData(client);
 
       try {
-        const invoices = await api(`/api/v1/billing/invoices?patientId=${clientId}`);
-        const history = (Array.isArray(invoices) ? invoices : [])
-          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        // Two separate systems hold money information, and this screen read
+        // only the first:
+        //
+        //   /billing/invoices          — issued invoices (often none)
+        //   /clients/{id}/billing-records — what the client ACTUALLY PAID
+        //
+        // Every Paystack charge lands in the second one, so a client who had
+        // just paid GHS 2,000 saw an empty billing screen. Merge both, newest
+        // first, and normalise the record shape onto the invoice shape the
+        // list already renders.
+        const [invoices, records] = await Promise.all([
+          api(`/api/v1/billing/invoices?patientId=${clientId}`).catch(() => []),
+          api(`/api/v1/clients/${clientId}/billing-records`).catch(() => []),
+        ]);
+
+        const asInvoice = (r) => ({
+          id: r.id,
+          amount: (Number(r.amountCents) || 0) / 100,
+          currency: r.currency || 'GHS',
+          status: r.status || 'paid',
+          description: r.description || 'Payment',
+          createdAt: r.createdAt,
+          source: 'payment',
+        });
+
+        const history = [
+          ...(Array.isArray(invoices) ? invoices : []),
+          ...(Array.isArray(records) ? records.map(asInvoice) : []),
+        ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
         setBillingHistory(history);
         setFilteredHistory(history);
       } catch (error) {
@@ -210,10 +238,15 @@ const ClientBillingScreen = ({ navigation }) => {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Invoices, insurance verification and claims. */}
+        <BillingAssistantCard accent={Colors.primary} />
+
         {/* Billing Summary */}
         <View style={styles.summaryCards}>
           <View style={styles.summaryCard}>
@@ -533,7 +566,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   outstandingAmount: {
-    color: '#F59E0B',
+    color: '#734e12',
   },
   cardCount: {
     fontSize: 18,
@@ -597,7 +630,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
     gap: 6,
@@ -639,7 +672,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 999,
     gap: 8,
   },
   addButtonText: {
@@ -703,7 +736,7 @@ const styles = StyleSheet.create({
   editButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.border,
   },
@@ -715,7 +748,7 @@ const styles = StyleSheet.create({
   removeButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.error,
   },
@@ -743,6 +776,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: Colors.text,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
+  // Referenced from the JSX but never defined, so this row laid its label and
+  // chips out in a column. Undefined styles fail silently in RN — nothing warns.
+  filterSelect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   filterRow: {
     flexDirection: 'row',
@@ -837,7 +881,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: Colors.primary,
     gap: 6,

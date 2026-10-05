@@ -148,14 +148,28 @@ export async function resolveTherapistIdForClient(clientId, clientData = {}) {
   }
 }
 
-export async function fetchAuthProfileForClient(clientData) {
-  const uid = clientData.authUid;
-  if (!uid) return null;
+/**
+ * A person's profile, whichever kind of record they are.
+ *
+ * A therapy client lives behind /clients/{id}. /patients/{id} is the MEDICAL
+ * record and answers 403 for them — which is why therapist screens that only
+ * called /patients came back empty with no error to show for it.
+ */
+export async function fetchPersonProfile(id) {
+  if (!id) return null;
   try {
-    return await api(`/api/v1/patients/${uid}`);
+    const c = await api(`/api/v1/clients/${id}`);
+    if (c) return c;
+  } catch { /* not a therapy client, or not visible to us */ }
+  try {
+    return await api(`/api/v1/patients/${id}`);
   } catch {
     return null;
   }
+}
+
+export async function fetchAuthProfileForClient(clientData) {
+  return fetchPersonProfile(clientData.authUid);
 }
 
 export async function enrichClientRecord(clientId, clientData = {}) {

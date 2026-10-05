@@ -5,6 +5,7 @@ import {
   Modal, TextInput, Alert, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import HeroArt from '../../components/HeroArt';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, getStoredUserId } from '../../services/apiClient';
@@ -14,6 +15,9 @@ import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobil
 import { mergeLocationProfile } from '../../utils/locationProfile';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
 import { dateMillis, formatDate } from '../../utils/dateDisplay';
+import { resolveFileUrl } from '../../utils/mediaUrl';
+import AiAssistantFab from '../../components/AiAssistantFab';
+import SymptomTriageCard from '../../components/SymptomTriageCard';
 
 const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
@@ -430,20 +434,19 @@ const MedicalHomeScreen = ({ navigation }) => {
 
   const quickActions = [
     primaryDoctor
-      ? { icon: 'calendar-outline', label: 'Book Appt', color: MedicalColors.primary, bg: '#eff6ff', onPress: () => navigation.navigate('MedicalAppointments') }
-      : { icon: 'search-outline', label: 'Find Doctor', color: MedicalColors.primary, bg: '#eff6ff', onPress: () => navigation.getParent()?.navigate('DoctorSearch') },
-    { icon: 'list-outline', label: 'Appointments', color: MedicalColors.success, bg: '#f0fdf4', onPress: () => navigation.navigate('MedicalAppointments') },
-    { icon: 'chatbubbles-outline', label: 'Messages', color: MedicalColors.warning, bg: '#fef3c7', onPress: () => navigation.navigate('MedicalMessages') },
-    { icon: 'medkit-outline', label: 'Prescriptions', color: '#059669', bg: '#f0fdf4', onPress: () => navigation.navigate('MedicalPrescriptions') },
-    { icon: 'folder-outline', label: 'History', color: MedicalColors.accent, bg: '#f3e8ff', onPress: () => navigation.navigate('MedicalHistory') },
-    { icon: 'videocam-outline', label: 'Video Calls', color: '#7c3aed', bg: '#ede9fe', onPress: () => navigation.navigate('MedicalVideo') },
-    { icon: 'card-outline', label: 'Billing', color: '#be185d', bg: '#fdf2f8', onPress: () => navigation.navigate('MedicalBilling') },
-    { icon: 'shield-checkmark-outline', label: 'Insurance', color: MedicalColors.primary, bg: '#eff6ff', onPress: () => navigation.getParent()?.navigate('InsuranceDetails') },
-    { icon: 'call-outline', label: 'Emergency', color: '#ea580c', bg: '#fff7ed', onPress: () => navigation.getParent()?.navigate('EmergencyContact') },
-    { icon: 'documents-outline', label: 'Records', color: MedicalColors.success, bg: '#f0fdf4', onPress: () => navigation.getParent()?.navigate('HealthRecords') },
-    { icon: 'alert-circle-outline', label: 'Support', color: '#dc2626', bg: '#fef2f2', onPress: () => navigation.getParent()?.navigate('Support') },
-    { icon: 'settings-outline', label: 'Settings', color: '#64748b', bg: '#f1f5f9', onPress: () => navigation.navigate('MedicalSettings') },
-    { icon: 'medical-outline', label: 'E-Pharmacy', color: '#7c3aed', bg: '#ede9fe', onPress: () => navigation.getParent()?.navigate('EPharmacy') },
+      ? { icon: 'calendar-outline', label: 'Book Appointment', color: '#1d4ed8', bg: '#dfeafc', onPress: () => navigation.navigate('MedicalAppointments') }
+      : { icon: 'search-outline', label: 'Find Doctor', color: '#1d4ed8', bg: '#dfeafc', onPress: () => navigation.getParent()?.navigate('DoctorSearch') },
+    { icon: 'videocam-outline', label: 'Video Calls', color: '#7c3aed', bg: '#eee7ff', onPress: () => navigation.navigate('MedicalVideo') },
+    { icon: 'chatbubbles-outline', label: 'Messages', color: '#0ea5e9', bg: '#dff4ff', onPress: () => navigation.navigate('MedicalMessages') },
+    { icon: 'medkit-outline', label: 'Prescriptions', color: '#10b981', bg: '#dcfce7', onPress: () => navigation.navigate('MedicalPrescriptions') },
+    { icon: 'document-text-outline', label: 'Medical History', color: '#f59e0b', bg: '#fff3d6', onPress: () => navigation.navigate('MedicalHistory') },
+    { icon: 'shield-checkmark-outline', label: 'Insurance', color: '#0ea5e9', bg: '#dff6ff', onPress: () => navigation.getParent()?.navigate('InsuranceDetails') },
+    { icon: 'call-outline', label: 'Emergency Contacts', color: '#f97316', bg: '#ffedd5', onPress: () => navigation.getParent()?.navigate('EmergencyContact') },
+    { icon: 'download-outline', label: 'Health Records', color: '#22c55e', bg: '#dcfce7', onPress: () => navigation.getParent()?.navigate('HealthRecords') },
+    { icon: 'heart-outline', label: 'Record Vitals', color: '#ef4444', bg: '#ffe4e6', onPress: () => navigation.getParent()?.navigate('HealthRecords') },
+    { icon: 'medical-outline', label: 'E-Pharmacy', color: '#7c3aed', bg: '#f3e8ff', onPress: () => navigation.getParent()?.navigate('EPharmacy') },
+    { icon: 'person-circle-outline', label: 'My Profile', color: '#64748b', bg: '#e2e8f0', onPress: () => navigation.navigate('MedicalSettings') },
+    { icon: 'alert-circle-outline', label: 'Support', color: '#ef4444', bg: '#ffe4e6', onPress: () => navigation.getParent()?.navigate('Support') },
   ];
 
   if (isLoading) {
@@ -465,52 +468,100 @@ const MedicalHomeScreen = ({ navigation }) => {
     >
       {/* Welcome Banner */}
       <View style={styles.welcomeCard}>
-        <View style={{ flex: 1 }}>
+        {/* Behind the header content, faded left-to-right so the
+            greeting stays on a near-solid surface. */}
+        <HeroArt
+          source={require('../../../assets/patient-hero.jpg')}
+          scrim={MedicalColors.primary}
+          width={210}
+          opacity={1}
+        />
+        {/* Half the card for the greeting, half for the artwork. The avatar
+            and the "Active" badge were both here and in the drawer; one of
+            each is enough and the drawer is where a profile belongs. */}
+        <View style={styles.welcomeCopy}>
           <Text style={styles.welcomeGreeting}>Hello, {userName.split(' ')[0]}</Text>
           <Text style={styles.welcomeSubtitle}>How are you feeling today?</Text>
-        </View>
-        <View style={{ alignItems: 'center', gap: 8 }}>
-          {userPhotoURL ? (
-            <Image source={{ uri: userPhotoURL }} style={styles.welcomeAvatar} />
-          ) : (
-            <View style={styles.welcomeAvatarPlaceholder}>
-              <Text style={styles.welcomeAvatarInitials}>
-                {(userName || 'P')[0].toUpperCase()}
-              </Text>
-            </View>
-          )}
-          {/* Patient status badge */}
-          <View style={[
-            styles.statusBadgeWelcome,
-            patientStatus === 'discharged' && styles.statusBadgeDischarged,
-          ]}>
-            <Ionicons
-              name={patientStatus === 'discharged' ? 'close-circle-outline' : 'checkmark-circle-outline'}
-              size={13}
-              color={patientStatus === 'discharged' ? '#dc2626' : '#16a34a'}
-            />
-            <Text style={[
-              styles.statusBadgeText,
-              patientStatus === 'discharged' && { color: '#dc2626' },
-            ]}>
-              {patientStatus === 'discharged' ? 'Discharged' : 'Active'}
-            </Text>
-          </View>
           {!primaryDoctor && (
             <TouchableOpacity
               style={styles.findDoctorButton}
               onPress={() => navigation.getParent()?.navigate('DoctorSearch')}
             >
-              <Ionicons name="search" size={18} color="#FFFFFF" />
+              <Ionicons name="search" size={16} color="#FFFFFF" />
               <Text style={styles.findDoctorText}>Find Doctor</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
-      <LocationSummaryCardMobile profile={locationProfile} onEdit={() => navigation.navigate('MedicalSettings')} />
-      {/* Conditions at that same saved location — it re-reads whenever the
-          coordinates change, so updating the location updates the weather. */}
-      <WeatherCardMobile profile={locationProfile} />
+      {/* Your Doctor Card */}
+      {primaryDoctor && (
+        <View style={styles.yourDoctorCard}>
+          <View style={styles.ydLabelRow}>
+            <Ionicons name="heart" size={13} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.ydLabel}>Your Doctor</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.ydBody}
+            activeOpacity={0.8}
+            onPress={() => navigation.getParent()?.navigate('DoctorDetail', { doctorId: primaryDoctor.id })}
+          >
+            <View style={styles.ydAvatar}>
+              {primaryDoctor.photoURL ? (
+                <Image source={{ uri: resolveFileUrl(primaryDoctor.photoURL)}} style={{ width: '100%', height: '100%', borderRadius: 24 }} />
+              ) : (
+                <Text style={styles.ydAvatarText}>{getInitials(primaryDoctor.name)}</Text>
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.ydName}>Dr. {primaryDoctor.name}</Text>
+              <Text style={styles.ydSpec}>{primaryDoctor.spec}</Text>
+              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Tap to view profile →</Text>
+            </View>
+            <View style={styles.ydActions}>
+              <TouchableOpacity
+                style={styles.ydBtnPrimary}
+                onPress={() => navigation.navigate('MedicalAppointments')}
+              >
+                <Ionicons name="calendar-outline" size={14} color="#fff" />
+                <Text style={styles.ydBtnPrimaryText}>Schedule</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.ydBtnOutline}
+                onPress={() => navigation.navigate('MedicalMessages')}
+              >
+                <Ionicons name="chatbubbles-outline" size={14} color="rgba(255,255,255,0.85)" />
+                <Text style={styles.ydBtnOutlineText}>Message</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* One card, not two. Both answer "where am I and what is it like" —
+          as separate surfaces with their own padding the row read as clutter.
+          The weather re-reads whenever the coordinates change, so updating
+          the location updates the weather. */}
+      <View style={styles.metaCard}>
+        <View style={styles.metaCardLeft}>
+          <LocationSummaryCardMobile
+            embedded
+            profile={locationProfile}
+            onEdit={() => navigation.navigate('MedicalSettings')}
+          />
+        </View>
+        <View style={styles.metaDivider} />
+        <View style={styles.metaCardRight}>
+          <WeatherCardMobile embedded profile={locationProfile} />
+        </View>
+      </View>
+
+      {/* Level-of-care suggestion before booking, matching web. The server's
+          pattern-based safety layer outranks the model, and the card hides the
+          booking button when it says "go now". */}
+      <SymptomTriageCard
+        accent={MedicalColors.primary}
+        onBook={() => navigation.navigate('MedicalAppointments')}
+      />
 
       {/* Find Doctor CTA Banner */}
       {!primaryDoctor && !newBookingDoctor && (
@@ -576,7 +627,7 @@ const MedicalHomeScreen = ({ navigation }) => {
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f0fdf4', borderRadius: 14, padding: 12, borderWidth: 1.5, borderColor: '#bbf7d0' }}>
             <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#15803d' }}>Vitals logged</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f5628' }}>Vitals logged</Text>
               <Text style={{ fontSize: 11, color: '#4d9c68', marginTop: 1 }} numberOfLines={1}>
                 {summariseVitals(latestVitals) || 'Tap view to see your readings'}
               </Text>
@@ -676,49 +727,7 @@ const MedicalHomeScreen = ({ navigation }) => {
         </View>
       )}
 
-      {/* Your Doctor Card */}
-      {primaryDoctor && (
-        <View style={styles.yourDoctorCard}>
-          <View style={styles.ydLabelRow}>
-            <Ionicons name="heart" size={13} color="rgba(255,255,255,0.7)" />
-            <Text style={styles.ydLabel}>Your Doctor</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.ydBody}
-            activeOpacity={0.8}
-            onPress={() => navigation.getParent()?.navigate('DoctorDetail', { doctorId: primaryDoctor.id })}
-          >
-            <View style={styles.ydAvatar}>
-              {primaryDoctor.photoURL ? (
-                <Image source={{ uri: primaryDoctor.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 24 }} />
-              ) : (
-                <Text style={styles.ydAvatarText}>{getInitials(primaryDoctor.name)}</Text>
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.ydName}>Dr. {primaryDoctor.name}</Text>
-              <Text style={styles.ydSpec}>{primaryDoctor.spec}</Text>
-              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Tap to view profile →</Text>
-            </View>
-            <View style={styles.ydActions}>
-              <TouchableOpacity
-                style={styles.ydBtnPrimary}
-                onPress={() => navigation.navigate('MedicalAppointments')}
-              >
-                <Ionicons name="calendar-outline" size={14} color="#fff" />
-                <Text style={styles.ydBtnPrimaryText}>Schedule</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.ydBtnOutline}
-                onPress={() => navigation.navigate('MedicalMessages')}
-              >
-                <Ionicons name="chatbubbles-outline" size={14} color="rgba(255,255,255,0.85)" />
-                <Text style={styles.ydBtnOutlineText}>Message</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </View>
-      )}
+
 
       {/* Quick Stats */}
       <View style={styles.statsGrid}>
@@ -804,27 +813,28 @@ const MedicalHomeScreen = ({ navigation }) => {
         </Text>
       </View>
 
-      {/* Quick Actions — horizontal scrollable row */}
+      {/* Quick Actions */}
       <Text style={styles.sectionTitle}>Quick Actions</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.actionsScroll}
-        contentContainerStyle={styles.actionsScrollContent}
-      >
-        {quickActions.map((action) => (
-          <TouchableOpacity
-            key={action.label}
-            style={styles.actionCard}
-            onPress={action.onPress}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: action.bg }]}>
-              <Ionicons name={action.icon} size={22} color={action.color} />
-            </View>
-            <Text style={styles.actionLabel}>{action.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.quickActionsCard}>
+        <View style={styles.quickGrid}>
+          {quickActions.map((action) => {
+            const isPrimary = action.label === 'Book Appointment';
+            return (
+              <TouchableOpacity
+                key={action.label}
+                style={[styles.quickBtn, isPrimary && styles.quickBtnPrimary]}
+                onPress={action.onPress}
+                activeOpacity={0.9}
+              >
+                <View style={[styles.quickIcon, { backgroundColor: action.bg }]}>
+                  <Ionicons name={action.icon} size={20} color={action.color} />
+                </View>
+                <Text style={[styles.quickLabel, { color: action.color }]}>{action.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
 
       {/* Charts Section */}
     
@@ -1160,6 +1170,7 @@ const MedicalHomeScreen = ({ navigation }) => {
         </View>
       </KeyboardAvoidingView>
     </Modal>
+      <AiAssistantFab />
     </>
   );
 };
@@ -1178,13 +1189,44 @@ const styles = StyleSheet.create({
   },
 
   /* Welcome */
+  // Equal split: the greeting takes half, the artwork the other half.
+  welcomeCopy: { flex: 1, minWidth: 0, paddingRight: 8 },
+
+  // ── Location + weather, one card ──
+  metaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e4e7ee',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    marginHorizontal: 16,
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  // flex on the halves, not the row, so the divider keeps its 1px.
+  metaCardLeft: { flex: 1.35, minWidth: 0 },
+  metaCardRight: { flex: 1, minWidth: 0 },
+  metaDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginVertical: 12,
+    backgroundColor: 'rgba(15,20,36,0.09)',
+  },
+
   welcomeCard: {
+    // Clips the hero artwork to the card's rounded corners — an
+    // absolutely positioned child is not clipped by borderRadius alone.
+    overflow: 'hidden',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: MedicalColors.primary,
     borderRadius: 16,
     padding: 20,
+    minHeight: 185,
     marginBottom: 14,
   },
   welcomeGreeting: {
@@ -1465,37 +1507,58 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  /* Quick Actions — horizontal scroll */
-  actionsScroll: {
-    marginBottom: 24,
-    marginHorizontal: -16,
-  },
-  actionsScrollContent: {
-    paddingHorizontal: 16,
-    gap: 10,
-  },
-  actionCard: {
-    width: 76,
-    alignItems: 'center',
-    backgroundColor: MedicalColors.surface,
-    borderRadius: 14,
-    padding: 12,
+  /* Quick Actions */
+  quickActionsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: MedicalColors.border,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
-  actionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  quickBtn: {
+    width: '48%',
+    minHeight: 78,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#edf2f7',
+  },
+  quickBtnPrimary: {
+    borderColor: '#dfeafc',
+    backgroundColor: '#ffffff',
+  },
+  quickIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 7,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.04)',
   },
-  actionLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: MedicalColors.text,
-    textAlign: 'center',
+  quickLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 14,
+    letterSpacing: 0.1,
+    flexShrink: 1,
   },
 
   /* Charts */

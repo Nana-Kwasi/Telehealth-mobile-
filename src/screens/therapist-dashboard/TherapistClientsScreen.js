@@ -11,6 +11,7 @@ import {
   Modal,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -246,7 +247,23 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
     return metrics;
   };
 
-  const sourceList = activeTab === 'all' ? allSystemClients : clients;
+  // Second Opinion cases are separated out. They are a different piece of
+  // work — one review, no programme — and mixing them into the caseload meant
+  // the same actions appeared on both, including Notes, which a one-off review
+  // has nowhere to put.
+  const isSecondOpinionClient = (c) =>
+    c?.isSecondOpinion === true || c?.membershipTier === 'second_opinion';
+
+  const memberClients = clients.filter((c) => !isSecondOpinionClient(c));
+  const memberAllClients = allSystemClients.filter((c) => !isSecondOpinionClient(c));
+  const secondOpinionPool = (isAdmin ? allSystemClients : clients).filter(isSecondOpinionClient);
+  const secondOpinionCount = secondOpinionPool.length;
+  const secondOpinionClients = secondOpinionPool;
+
+  const sourceList =
+    activeTab === 'secondOpinion' ? secondOpinionClients
+      : activeTab === 'all' ? memberAllClients
+        : memberClients;
   const filtered = sourceList.filter((c) => {
     const q = searchQuery.toLowerCase();
     const matchesSearch =
@@ -264,11 +281,11 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
 
   const statusColor = (s) =>
     ({
-      active: { bg: '#dcfce7', color: '#16a34a' },
-      inactive: { bg: '#f1f5f9', color: '#64748b' },
-      on_hold: { bg: '#fef3c7', color: '#d97706' },
-      discharged: { bg: '#fee2e2', color: '#dc2626' },
-    }[s] || { bg: '#f1f5f9', color: '#64748b' });
+      active: { bg: '#dcfce7', color: '#2f7d5f' },
+      inactive: { bg: '#f1f5f9', color: '#ffffff' },
+      on_hold: { bg: '#fef3c7', color: '#734e12' },
+      discharged: { bg: '#fee2e2', color: '#8c322d' },
+    }[s] || { bg: '#f1f5f9', color: '#ffffff' });
 
   const openView = (client) => {
     navigation.navigate('TherapistClientDetail', { clientId: client.id });
@@ -295,11 +312,17 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topSection}>
-        {isAdmin && (
-          <View style={styles.segmentWrap}>
+        {/* The tab strip always shows. Hiding "Second opinion" when the count
+            was zero made it look like the feature did not exist — you cannot
+            tell an empty tab from a missing one. An empty tab with a count of 0
+            says "no second-opinion cases right now", which is information. */}
+        <View style={styles.segmentWrap}>
             {[
-              { key: 'my', label: 'My clients', count: clients.length },
-              { key: 'all', label: 'All clients', count: allSystemClients.length },
+              { key: 'my', label: 'My clients', count: memberClients.length },
+              ...(isAdmin
+                ? [{ key: 'all', label: 'All clients', count: memberAllClients.length }]
+                : []),
+              { key: 'secondOpinion', label: 'Second opinion', count: secondOpinionCount },
             ].map((t) => {
               const active = activeTab === t.key;
               return (
@@ -316,11 +339,14 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
                 </TouchableOpacity>
               );
             })}
-          </View>
-        )}
+        </View>
 
         <View style={[styles.pageHeader, !isAdmin && styles.pageHeaderNoTabs]}>
-          <Text style={styles.pageTitle}>{activeTab === 'all' ? 'All clients' : 'My clients'}</Text>
+          <Text style={styles.pageTitle}>
+            {activeTab === 'secondOpinion'
+              ? 'Second opinion'
+              : activeTab === 'all' ? 'All clients' : 'My clients'}
+          </Text>
           <Text style={styles.pageSubtitle}>
             {filtered.length} shown · {activeCount} active
           </Text>
@@ -518,7 +544,7 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
                 ].map((item) => (
                   <TouchableOpacity key={item.label} style={styles.menuItem} onPress={item.onPress}>
                     <Ionicons name={item.icon} size={18} color={item.danger ? '#dc2626' : '#334155'} />
-                    <Text style={[styles.menuItemText, item.danger && { color: '#dc2626' }]}>{item.label}</Text>
+                    <Text style={[styles.menuItemText, item.danger && { color: '#8c322d' }]}>{item.label}</Text>
                   </TouchableOpacity>
                 ))}
               </>
@@ -529,7 +555,10 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
 
       {/* Reassign modal */}
       <Modal visible={showReassignModal} transparent animationType="slide" onRequestClose={() => setShowReassignModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
           <View style={[styles.modalSheet, { maxHeight: '70%' }]}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
@@ -582,7 +611,7 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
     </SafeAreaView>
@@ -590,11 +619,11 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: '#f1f5f9' },
+  container: { flex: 1, backgroundColor: 'rgba(255,255,255,0.72)' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.72)' },
   loadingText: { color: TherapistColors.textSecondary, fontSize: 15 },
   topSection: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
@@ -609,7 +638,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 12,
     padding: 4,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 12,
   },
   segment: {
@@ -623,13 +652,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   segmentActive: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     ...Platform.select({
       ios: { shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.12, shadowRadius: 4 },
       android: { elevation: 2 },
     }),
   },
-  segmentText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  segmentText: { fontSize: 13, fontWeight: '600', color: '#4a4d57' },
   segmentTextActive: { color: TherapistColors.primary, fontWeight: '700' },
   segmentBadge: {
     minWidth: 22,
@@ -640,45 +669,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   segmentBadgeActive: { backgroundColor: '#eef2ff' },
-  segmentBadgeText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
+  segmentBadgeText: { fontSize: 11, fontWeight: '700', color: '#4a4d57' },
   segmentBadgeTextActive: { color: TherapistColors.primary },
   pageHeader: { paddingHorizontal: 16, paddingTop: 4 },
   pageHeaderNoTabs: { paddingTop: 16 },
-  pageTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a', letterSpacing: -0.3 },
-  pageSubtitle: { fontSize: 13, color: '#64748b', marginTop: 4 },
+  pageTitle: { fontSize: 22, fontWeight: '800', color: '#0d0d0d', letterSpacing: -0.3 },
+  pageSubtitle: { fontSize: 13, color: '#4a4d57', marginTop: 4 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginHorizontal: 16,
     marginTop: 14,
-    backgroundColor: '#f8fafc',
+    // White, not transparent: over the tinted ground a clear field with a
+    // hairline border read as decoration rather than something to type in.
+    backgroundColor: '#ffffff',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 11,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  searchInput: { flex: 1, fontSize: 15, color: TherapistColors.text, paddingVertical: 0 },
+  searchInput: { flex: 1, fontSize: 15, color: TherapistColors.text, paddingVertical: 0,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   filterRow: { paddingHorizontal: 16, paddingTop: 12, gap: 8, flexDirection: 'row' },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
   filterChipActive: { backgroundColor: TherapistColors.primary, borderColor: TherapistColors.primary },
-  filterChipText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  filterChipText: { fontSize: 13, fontWeight: '600', color: '#4a4d57' },
   filterChipTextActive: { color: '#fff' },
   listScroll: { flex: 1 },
   listContent: { padding: 16, paddingBottom: 28 },
   emptyState: { alignItems: 'center', paddingVertical: 56, gap: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#64748b', textAlign: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#0d0d0d', textAlign: 'center' },
   emptySubtitle: { fontSize: 13, color: TherapistColors.textLight, textAlign: 'center', padding: 24 },
   clientCard: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 16,
     marginBottom: 14,
     padding: 16,
@@ -702,16 +737,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  clientAvatarText: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  clientName: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  clientEmail: { fontSize: 13, color: '#64748b', marginTop: 3 },
+  clientAvatarText: { fontSize: 20, fontWeight: '800', color: '#ffffff' },
+  clientName: { fontSize: 16, fontWeight: '700', color: '#0d0d0d' },
+  clientEmail: { fontSize: 13, color: '#4a4d57', marginTop: 3 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   statusText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
   moreBtn: {
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -743,12 +778,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 10,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  metricValue: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
-  metricLabel: { fontSize: 11, color: '#64748b', fontWeight: '500' },
+  metricValue: { fontSize: 13, fontWeight: '700', color: '#0d0d0d' },
+  metricLabel: { fontSize: 11, color: '#4a4d57', fontWeight: '500' },
   clientActions: {
     flexDirection: 'row',
     gap: 8,
@@ -764,21 +799,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 5,
     paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
+    borderRadius: 999,
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
   actionBtnChat: { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' },
   actionBtnNote: { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' },
   actionBtnReassign: { backgroundColor: '#fffbeb', borderColor: '#fde68a' },
-  actionBtnText: { fontSize: 12, fontWeight: '700', color: '#475569' },
-  actionBtnTextChat: { color: '#059669' },
+  actionBtnText: { fontSize: 12, fontWeight: '700', color: TherapistColors.primary },
+  actionBtnTextChat: { color: '#2f7d5f' },
   actionBtnTextNote: { color: TherapistColors.primary },
-  actionBtnTextReassign: { color: '#d97706' },
+  actionBtnTextReassign: { color: '#734e12' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '88%',
@@ -804,7 +839,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
-  profileAvatarText: { fontSize: 26, fontWeight: '800', color: '#fff' },
+  profileAvatarText: { fontSize: 26, fontWeight: '800', color: '#ffffff' },
   profileName: { fontSize: 18, fontWeight: '800', color: TherapistColors.text },
   profileEmail: { fontSize: 14, color: TherapistColors.textLight },
   profileRow: {
@@ -828,7 +863,7 @@ const styles = StyleSheet.create({
   historyText: { fontSize: 13, color: '#78350f', lineHeight: 20 },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   menuSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingBottom: Platform.OS === 'ios' ? 28 : 16,
@@ -842,19 +877,19 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
   },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 16 },
-  menuItemText: { fontSize: 15, color: '#334155', fontWeight: '500' },
+  menuItemText: { fontSize: 15, color: '#0d0d0d', fontWeight: '500' },
   therapistRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderRadius: 12,
     padding: 14,
     marginBottom: 8,
     borderWidth: 1.5,
     borderColor: TherapistColors.border,
   },
-  therapistRowCurrent: { borderColor: TherapistColors.primary, backgroundColor: '#f0f7ff' },
+  therapistRowCurrent: { borderColor: TherapistColors.primary, backgroundColor: 'rgba(207,169,97,0.10)' },
   therapistAvatar: {
     width: 42,
     height: 42,
@@ -863,10 +898,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  therapistAvatarText: { fontSize: 17, fontWeight: '700', color: '#fff' },
+  therapistAvatarText: { fontSize: 17, fontWeight: '700', color: '#ffffff' },
   therapistName: { fontSize: 14, fontWeight: '700', color: TherapistColors.text },
   therapistSpec: { fontSize: 12, color: TherapistColors.textSecondary, marginTop: 2 },
-  currentBadge: { backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  currentBadge: { backgroundColor: 'rgba(207,169,97,0.12)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   currentBadgeText: { fontSize: 11, color: TherapistColors.primary, fontWeight: '700' },
 });
 

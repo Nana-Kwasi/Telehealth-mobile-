@@ -65,11 +65,11 @@ export default function TherapistVideoCallSessionScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#f1f5f9' },
-  errorText: { fontSize: 16, color: '#64748b', marginBottom: 16 },
-  backBtn: { backgroundColor: TherapistColors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 },
-  backBtnText: { color: '#fff', fontWeight: '700' },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: 'rgba(255,255,255,0.72)' },
+  errorText: { fontSize: 16, color: '#0d0d0d', marginBottom: 16 },
+  backBtn: { backgroundColor: TherapistColors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 999 },
+  backBtnText: { color: '#ffffff', fontWeight: '700' },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -79,15 +79,15 @@ const styles = StyleSheet.create({
     backgroundColor: TherapistColors.primaryDark,
   },
   iconBtn: { padding: 4 },
-  toolbarTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  toolbarSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 2 },
+  toolbarTitle: { color: '#0d0d0d', fontSize: 16, fontWeight: '700' },
+  toolbarSub: { color: '#0d0d0d', fontSize: 11, marginTop: 2 },
   webview: { flex: 1, backgroundColor: '#000' },
   loading: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
+    backgroundColor: 'transparent',
     gap: 12,
   },
-  loadingText: { color: '#94a3b8', fontSize: 14 },
+  loadingText: { color: '#3d3d3d', fontSize: 14 },
 });

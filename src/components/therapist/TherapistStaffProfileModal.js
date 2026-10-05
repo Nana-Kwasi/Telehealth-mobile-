@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TherapistColors } from '../../constants/colors';
+import { GlassScrim, GlassSheetSurface } from '../GlassSheet';
+import { resolveFileUrl } from '../../utils/mediaUrl';
 
 function Field({ label, value }) {
   if (!value && value !== 0) return null;
@@ -30,7 +32,8 @@ export default function TherapistStaffProfileModal({ visible, user, mode, isAdmi
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <GlassScrim />
+        <GlassSheetSurface style={styles.sheet}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{title}</Text>
@@ -44,7 +47,7 @@ export default function TherapistStaffProfileModal({ visible, user, mode, isAdmi
           <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
             <View style={styles.profileRow}>
               {user.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={styles.avatar} />
+                <Image source={{ uri: resolveFileUrl(user.photoURL)}} style={styles.avatar} />
               ) : (
                 <View style={styles.avatarPlaceholder}>
                   <Text style={styles.avatarText}>{(user.name || '?')[0].toUpperCase()}</Text>
@@ -75,7 +78,7 @@ export default function TherapistStaffProfileModal({ visible, user, mode, isAdmi
               </Text>
             ) : null}
           </ScrollView>
-        </View>
+        </GlassSheetSurface>
       </View>
     </Modal>
   );
@@ -88,7 +91,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '88%',
@@ -101,8 +103,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  title: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
+  title: { fontSize: 18, fontWeight: '800', color: '#0d0d0d' },
+  subtitle: { fontSize: 13, color: '#0d0d0d', marginTop: 2 },
   closeBtn: { padding: 4 },
   body: { padding: 18, paddingBottom: 32 },
   profileRow: { flexDirection: 'row', gap: 14, marginBottom: 20, alignItems: 'center' },
@@ -116,13 +118,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: { fontSize: 28, fontWeight: '800', color: '#fff' },
-  name: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  name: { fontSize: 18, fontWeight: '800', color: '#0d0d0d' },
   role: { fontSize: 13, color: TherapistColors.primary, fontWeight: '600', marginTop: 2 },
-  type: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  type: { fontSize: 12, color: '#0d0d0d', marginTop: 2 },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#94a3b8',
+    color: '#3d3d3d',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     marginTop: 16,
@@ -132,15 +134,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
   },
-  fieldLabel: { fontSize: 11, fontWeight: '600', color: '#94a3b8', marginBottom: 3 },
-  fieldValue: { fontSize: 15, color: '#1e293b' },
+  fieldLabel: { fontSize: 11, fontWeight: '600', color: '#3d3d3d', marginBottom: 3 },
+  fieldValue: { fontSize: 15, color: '#0d0d0d' },
   manageNote: {
     marginTop: 20,
     fontSize: 13,
-    color: '#64748b',
+    color: '#0d0d0d',
     lineHeight: 20,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     padding: 12,
     borderRadius: 10,
   },

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TherapistColors } from '../../constants/colors';
+import { GlassScrim, GlassSheetSurface } from '../GlassSheet';
 
 const MOOD_OPTIONS = ['Anxious', 'Calm', 'Sad', 'Hopeful', 'Angry', 'Excited', 'Neutral', 'Depressed', 'Optimistic', 'Stressed'];
 const PROGRESS_OPTIONS = ['Significantly Improved', 'Improved', 'Slight Improvement', 'No Change', 'Slight Decline', 'Worsened'];
@@ -58,8 +59,12 @@ export default function TherapyNoteModal({ visible, client, onClose, onSave }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
+        <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <GlassScrim />
+          <GlassSheetSurface style={styles.sheet}>
             <View style={styles.header}>
               <Text style={styles.title}>Session Note — {clientName}</Text>
               <TouchableOpacity onPress={handleClose} hitSlop={12}>
@@ -206,8 +211,8 @@ export default function TherapyNoteModal({ visible, client, onClose, onSave }) {
                 </TouchableOpacity>
               </View>
             </ScrollView>
-          </View>
-        </View>
+          </GlassSheetSurface>
+        </KeyboardAvoidingView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -224,7 +229,7 @@ function Field({ label, children }) {
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%' },
+  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -244,25 +249,30 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 8,
   },
-  field: { marginBottom: 14 },
-  label: { fontSize: 12, fontWeight: '600', color: '#475569', marginBottom: 6 },
+  field: { marginBottom: 14,
+  },
+  label: { fontSize: 12, fontWeight: '600', color: '#0d0d0d', marginBottom: 6 },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(16,16,16,0.16)',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
     color: TherapistColors.text,
   },
-  textArea: { minHeight: 80, textAlignVertical: 'top' },
+  textArea: { minHeight: 80, textAlignVertical: 'top',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(16,16,16,0.16)',
+  },
   chipRow: { flexDirection: 'row', marginBottom: 4 },
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     marginRight: 8,
     marginBottom: 6,
   },
@@ -274,7 +284,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -285,16 +295,16 @@ const styles = StyleSheet.create({
   cancelBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: 999,
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
     alignItems: 'center',
   },
-  cancelBtnText: { fontWeight: '600', color: '#475569' },
+  cancelBtnText: { fontWeight: '600', color: '#0d0d0d' },
   saveBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: 999,
     backgroundColor: TherapistColors.primary,
     alignItems: 'center',
   },

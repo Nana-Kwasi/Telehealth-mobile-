@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useLayoutEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useLayoutEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,10 +29,18 @@ import {
   syncLocalCoupleDraftFromServer,
 } from '../../services/coupleTherapyService';
 import { useCoupleSignOutHeader } from '../../hooks/useCoupleSignOutHeader';
+import { api } from '../../services/apiClient';
+import { updateFlow } from '../../services/medpsychFlow';
 
 export default function CoupleIntakeScreen({ navigation, route }) {
   useCoupleSignOutHeader(navigation);
   const initialCoupleId = route.params?.coupleId;
+  // DRAFT MODE. When the couple sign-up has not been paid for yet there is no
+  // account and no couple record — only a server-side draft keyed by this
+  // token. The questions and validation are identical; only where the answers
+  // go differs, so the two modes cannot drift apart.
+  const draftToken = route.params?.draftToken || null;
+  const isDraft = Boolean(draftToken);
   const initialRole = route.params?.partnerRole || 'partnerA';
 
   const [activeCoupleId, setActiveCoupleId] = useState(initialCoupleId);
@@ -47,6 +55,9 @@ export default function CoupleIntakeScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bootstrapped, setBootstrapped] = useState(false);
+  // Draft mode keeps the answers grouped by section as well as merged: the
+  // client profile wants one blob, couple_intakes wants a row per section.
+  const draftSectionsRef = useRef({});
   const [bootstrapError, setBootstrapError] = useState('');
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
 
@@ -96,6 +107,17 @@ export default function CoupleIntakeScreen({ navigation, route }) {
     (async () => {
       setLoading(true);
       setBootstrapError('');
+
+      // Draft mode has no session and no couple record to resolve — that is the
+      // point. The bootstrap below exists to claim a seat on an existing couple
+      // as a signed-in user; running it here would fail and bounce the person
+      // straight back out of a sign-up they are halfway through.
+      if (isDraft) {
+        setActivePartnerKey(initialRole === 'partnerB' ? 'partnerB' : 'partnerA');
+        setLoading(false);
+        return;
+      }
+
       try {
         const authHints = await getAuthCoupleHints();
         const storedCoupleId =
@@ -183,6 +205,15 @@ export default function CoupleIntakeScreen({ navigation, route }) {
             consentDate: new Date().toISOString().split('T')[0],
           }
         : form;
+
+    // In draft mode there is nothing to save to yet — no couple, no account.
+    // Answers are held here and sent once, on the last section, so an abandoned
+    // sign-up leaves nothing behind.
+    if (isDraft) {
+      draftSectionsRef.current = { ...draftSectionsRef.current, [section.id]: payload };
+      return;
+    }
+
     await savePartnerSection(activeCoupleId, activePartnerKey, section.id, payload);
   };
 
@@ -211,6 +242,53 @@ export default function CoupleIntakeScreen({ navigation, route }) {
         setSectionIndex((i) => i + 1);
         setErrors({});
         setLoading(true);
+        return;
+      }
+
+      if (isDraft) {
+        // One write, at the end: the whole intake onto the draft.
+        const res = await api('/api/v1/couples/drafts/intake', {
+          method: 'POST',
+          authenticated: false,
+          body: {
+            token: draftToken,
+            partnerRole: activePartnerKey,
+            answers: { ...form, therapyType: 'couples' },
+            sections: draftSectionsRef.current,
+          },
+        });
+        await AsyncStorage.setItem(COUPLE_STORAGE_KEYS.myIntakeComplete, 'true');
+
+        // Partner B is always done here — A is the one who books and pays.
+        if (activePartnerKey !== 'partnerA') {
+          navigation.replace('CoupleWaitingPartner', { draftToken });
+          return;
+        }
+
+        // A may only go on to pay once B has accepted AND finished their own
+        // intake. Sending A to checkout early meant Paystack took the money and
+        // the commit then refused it — the card charged, no accounts created.
+        // The server decides this; the client never assumes it.
+        if (!res?.readyToPay) {
+          navigation.replace('CoupleWaitingPartner', { draftToken });
+          return;
+        }
+
+        // A picks a therapist and books, which is where the money and the
+        // commit happen. That funnel reads the medpsych flow and bounces to
+        // sign-up without an email on it, so seed it — deliberately WITHOUT a
+        // password: that lives on the server-side draft and must never be put
+        // in device storage.
+        await updateFlow({
+          serviceType: 'medpsych',
+          therapyType: 'couples',
+          step: 'therapist',
+          details: {
+            fullName: (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.myPartnerName)) || '',
+            email: (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.myRegistrationEmail)) || '',
+          },
+        });
+        navigation.replace('MedPsychPsychiatrists', { draftToken });
         return;
       }
 
