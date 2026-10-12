@@ -19,6 +19,7 @@ import { api, getStoredUserId } from '../../services/apiClient';
 import RecordGapsCard from '../../components/RecordGapsCard';
 import SmartDocumentCard from '../../components/SmartDocumentCard';
 import CodingAssistCard from '../../components/CodingAssistCard';
+import { PatientTranscriptsMobile } from '../../components/SessionTranscriptsMobile';
 import { DoctorColors } from '../../constants/colors';
 import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
 import { formatDate, formatDateTime, toDateSafe } from '../../utils/dateDisplay';
@@ -527,6 +528,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         {activeTab === 'Overview' && (
           <>
             {/* What is missing, by rule; and a document to read, name-check and file. */}
+            <PatientTranscriptsMobile patientId={patientId} accent={DoctorColors.primary} />
             <RecordGapsCard patientId={patientId} />
             <SmartDocumentCard patientId={patientId} accent={DoctorColors.primary} />
             <CodingAssistCard patientId={patientId} accent={DoctorColors.primary} />

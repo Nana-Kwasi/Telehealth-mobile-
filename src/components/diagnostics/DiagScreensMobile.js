@@ -10,6 +10,7 @@ import {
   FLAG_META, money, parseParams, toDate, diagRoutes,
 } from './diagUi';
 import { StagePill, PriorityPill, useCatalogMobile, useOrderActionsMobile } from './DiagActionsMobile';
+import { InsuranceBillMobile } from '../ProviderInsuranceMobile';
 
 const OPS = '/api/v1/diagnostics/operations';
 const TAT_STYLE = { ok: ['#dcfce7', '#166534'], soon: ['#fef3c7', '#92400e'], late: ['#fee2e2', '#b91c1c'], closed: ['#f1f5f9', '#475569'] };
@@ -212,6 +213,8 @@ export function DiagOrderDetailMobile({ type = 'lab', colors: C }) {
         </View>
         {stageOf(order.status) === 'REJECTED' ? <Text style={[st.body, { color: '#b91c1c', marginTop: 10 }]}>Rejected: {order.rejectReason || 'no reason recorded'}</Text> : null}
       </View>
+
+      <InsuranceBillMobile order={order} type={type} accent={C.primary} />
 
       <View style={st.card}>
         <Text style={st.section}>Details</Text>

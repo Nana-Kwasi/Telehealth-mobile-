@@ -32,6 +32,7 @@ import ZCGround from '../../components/ZCGround';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
 import TodaysMedsCardMobile from '../../components/TodaysMedsCardMobile';
 import PhoneVerifyBannerMobile from '../../components/PhoneVerifyBannerMobile';
+import { ClaimConfirmationsMobile } from '../../components/InsuranceMobile';
 import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
 import { ZC } from '../../constants/zencare';
 import GlassFill, { glassStyle } from '../../components/GlassFill';
@@ -641,6 +642,7 @@ const ClientHomeScreen = ({ navigation }) => {
       </View>
       {/* Until their phone is verified (only while SMS is set up). */}
       <PhoneVerifyBannerMobile />
+      <ClaimConfirmationsMobile />
       {/* Medication reminders set in My Care, with today's doses. */}
       <TodaysMedsCardMobile navigation={navigation} careRoute="TherapyCare" accent="#5046bd" />
 

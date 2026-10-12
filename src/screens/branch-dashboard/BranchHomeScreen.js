@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import RoleAssistantMobile from '../../components/RoleAssistantMobile';
 
 export default function BranchHomeScreen({ profile, navigation }) {
   const [stats, setStats] = useState({ incoming: 0, active: 0, ready: 0, delivered: 0 });
@@ -62,6 +63,7 @@ export default function BranchHomeScreen({ profile, navigation }) {
         )}
         <View style={{ height: 32 }} />
       </ScrollView>
+      <RoleAssistantMobile kind="pharmacy" accent={C.primary} />
     </>
   );
 }

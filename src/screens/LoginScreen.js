@@ -247,6 +247,13 @@ const LoginScreen = ({ navigation, route }) => {
         'client', 'patient', 'therapist', 'admin', 'doctor',
         'pharmacy', 'branch_user', 'lab', 'lab_branch', 'scan', 'scan_branch', 'homecare_nurse',
       ];
+      if (role === 'insurer' || role === 'facility') {
+        // Insurer staff and facilities (clinic, hospital, dental, optical, physio) work on the web dashboard.
+        setError(role === 'insurer'
+          ? 'Insurer accounts use the NessaHub web dashboard. Please sign in at nessahub.com on a computer.'
+          : 'Facility accounts use the NessaHub web dashboard. Please sign in at nessahub.com on a computer.');
+        return;
+      }
       if (!allowedRoles.includes(role)) {
         setError('Unable to determine your account type. Please contact support.');
         return;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LicenceCardMobile } from '../../components/ProviderInsuranceMobile';
 import {
   View,
   Text,
@@ -324,6 +325,7 @@ export default function DoctorSettingsScreen() {
       {/* Profile Tab */}
       {tab === 'Profile' && (
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          <LicenceCardMobile accent={DoctorColors.primary} />
           {/* Header */}
           <View style={styles.profileHeader}>
             <View style={styles.avatarWrapper}>

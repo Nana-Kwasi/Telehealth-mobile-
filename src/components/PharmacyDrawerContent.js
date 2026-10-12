@@ -15,6 +15,8 @@ const PHARMACY_NAV = [
   { name: 'PharmacyWalkIn',        label: 'Walk-in Verify',icon: 'search-outline' },
   { name: 'PharmacyActivity',      label: 'Activity',      icon: 'receipt-outline' },
   { name: 'PharmacyReports',       label: 'Reports',       icon: 'stats-chart-outline' },
+  { name: 'PharmacyInsuranceClaims', label: 'Insurance claims', icon: 'shield-checkmark-outline' },
+  { name: 'PharmacyPreauth', label: 'Pre-authorisations', icon: 'checkmark-done-outline' },
   { name: 'PharmacyReportIssue',   label: 'Report Issue',  icon: 'mail-outline' },
   { name: 'PharmacyPreferences',   label: 'Settings',      icon: 'settings-outline' },
 ];
@@ -27,6 +29,8 @@ const BRANCH_NAV = [
   { name: 'BranchTransfers',     label: 'Transfers',     icon: 'swap-horizontal-outline' },
   { name: 'BranchActivity',      label: 'Activity',      icon: 'receipt-outline' },
   { name: 'BranchReports',       label: 'Reports',       icon: 'stats-chart-outline' },
+  { name: 'BranchInsuranceClaims', label: 'Insurance claims', icon: 'shield-checkmark-outline' },
+  { name: 'BranchPreauth', label: 'Pre-authorisations', icon: 'checkmark-done-outline' },
   { name: 'BranchReportIssue',   label: 'Report Issue',  icon: 'mail-outline' },
   { name: 'BranchPreferences',   label: 'Settings',      icon: 'settings-outline' },
 ];

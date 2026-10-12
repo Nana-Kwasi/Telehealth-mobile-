@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { performLogout, wipeLocalData } from '../../services/authService';
 import { ChangePasswordCard } from '../../components/AccountSecurityExtras';
+import { InsuranceNetworksMobile } from '../../components/InsuranceMobile';
 
 /**
  * Lab / scan Settings on mobile — same sections as web Diagnostic/DiagSettings:
@@ -22,7 +23,7 @@ const SERVICES = {
   scan: ['X-ray', 'Ultrasound', 'CT', 'MRI', 'Mammography', 'Echocardiography', 'Doppler', 'Fluoroscopy', 'Bone densitometry (DEXA)'],
 };
 const PAYMENTS = ['Cash', 'Mobile money', 'Card', 'NHIS', 'Private insurance', 'Corporate account'];
-const SECTIONS = [['overview', 'Overview'], ['profile', 'Profile'], ['operations', 'Operations'], ['security', 'Security'], ['session', 'Session']];
+const SECTIONS = [['overview', 'Overview'], ['profile', 'Profile'], ['operations', 'Operations'], ['insurance', 'Insurance'], ['security', 'Security'], ['session', 'Session']];
 const statusLabel = (s) => ({ APPROVED: 'Active', REJECTED: 'Suspended', PENDING: 'Pending review', PENDING_REVIEW: 'Pending review' }[String(s || '').toUpperCase()] || s || '—');
 
 // Module-level so inputs keep focus while typing (an inline component remounts each render).
@@ -216,6 +217,8 @@ export default function DiagnosticSettingsScreen({ profile, type = 'lab', isBran
             <TouchableOpacity onPress={saveOps} disabled={saving} style={[s.primaryBtn, { backgroundColor: accent }, saving && s.dim]}><Text style={s.primaryText}>{saving ? 'Saving…' : 'Save operations'}</Text></TouchableOpacity>
           </>
         )}
+
+        {section === 'insurance' && <InsuranceNetworksMobile accent={accent} />}
 
         {section === 'security' && (
           <>

@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import HeroArt from '../../components/HeroArt';
 import DailyBriefCard from '../../components/DailyBriefCard';
 import InboxTriageCard from '../../components/InboxTriageCard';
+import { SessionsToReviewMobile } from '../../components/SessionTranscriptsMobile';
 import PracticeAnalyticsCard from '../../components/PracticeAnalyticsCard';
 import ClinicianStatusBadge, { clinicianStatusOf } from '../../components/ClinicianStatusBadge';
 import Svg, { Polyline } from 'react-native-svg';
@@ -764,6 +765,9 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
           followups_to_review: 'TherapistCheckIns',
         }[key])}
       />
+
+      {/* Transcribed sessions whose notes are not saved yet. */}
+      <View style={{ paddingHorizontal: 16 }}><SessionsToReviewMobile accent={TherapistColors.primary} /></View>
 
       {/* The companion to the brief's unread count: which of them need you
           first. Sorted on request, because it costs a model call per message. */}

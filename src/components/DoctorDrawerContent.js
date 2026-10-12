@@ -28,6 +28,7 @@ const drawerItems = [
   { screen: 'DoctorReferrals',          icon: 'share-social-outline',    label: 'Referrals' },
   { stackScreen: 'DoctorDiagnosticOrder', icon: 'add-circle-outline',    label: 'Order Lab / Scan' },
   { screen: 'DoctorDiagnosticResults',  icon: 'flask-outline',           label: 'Lab & Scan Results' },
+  { screen: 'DoctorPreauth',            icon: 'checkmark-done-outline',  label: 'Insurer approvals' },
   { screen: 'DoctorReviews',            icon: 'star-outline',            label: 'Reviews' },
   { screen: 'DoctorAnalytics',          icon: 'bar-chart-outline',       label: 'Analytics' },
   { screen: 'DoctorSettings',           icon: 'settings-outline',        label: 'Profile & Settings' },

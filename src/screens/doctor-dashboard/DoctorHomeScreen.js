@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import HeroArt from '../../components/HeroArt';
 import DailyBriefCard from '../../components/DailyBriefCard';
 import InboxTriageCard from '../../components/InboxTriageCard';
+import { SessionsToReviewMobile } from '../../components/SessionTranscriptsMobile';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
@@ -504,6 +505,9 @@ export default function DoctorHomeScreen({ navigation }) {
           new_results: 'DoctorDiagnosticResults',
         }[key])}
       />
+
+      {/* Transcribed sessions whose notes are not saved yet. */}
+      <View style={{ paddingHorizontal: 16 }}><SessionsToReviewMobile accent={DoctorColors.primary} /></View>
 
       {/* The companion to the brief's unread count: which of them need you
           first. Sorted on request, because it costs a model call per message. */}

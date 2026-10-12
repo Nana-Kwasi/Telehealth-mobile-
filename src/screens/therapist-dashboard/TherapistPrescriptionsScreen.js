@@ -4,6 +4,7 @@
 // routing, safety checks and approvals. Differences are marked "Psychiatry:".
 // Keep fixes to the shared flow in step with DoctorPrescriptionsScreen.js.
 import React, { useState, useCallback, useEffect } from 'react';
+import { RxAdviceMobile, RxInsurancePickerMobile, attachRxCardMobile } from '../../components/ProviderInsuranceMobile';
 import {
   View,
   Text,
@@ -134,6 +135,8 @@ export default function TherapistPrescriptionsScreen() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Insurance card chosen for this prescription ('' = self-pay).
+  const [rxCardId, setRxCardId] = useState(undefined);
   // Set when this form is approving a patient's prescription request.
   const [requestId, setRequestId] = useState(null);
   const [doctorProfile, setDoctorProfile] = useState(null);
@@ -444,6 +447,8 @@ export default function TherapistPrescriptionsScreen() {
             // Approving a request: the server links it and enforces the formulary check.
             ...(requestId ? { requestId, safetyAcknowledged: ack === true } : {}) },
         });
+        // Insured e-prescription: link the card; the patient is sent the estimate.
+        if (rxCardId && newRx?.id) attachRxCardMobile(newRx.id, rxCardId);
         api('/api/v1/patient-timeline', {
           method: 'POST',
           body: {
@@ -1090,6 +1095,10 @@ export default function TherapistPrescriptionsScreen() {
                 )}
               </View>
 
+              {/* Insurance cover, cheaper same-ingredient options, diagnosis fit. */}
+              {!editing && <RxInsurancePickerMobile patientId={form.patientId} value={rxCardId} onChange={setRxCardId} accent={'#5046bd'} />}
+              <RxAdviceMobile patientId={form.patientId} patientName={form.patientName} medications={form.medications} diagnosis={form.diagnosis} accent={'#5046bd'}
+                onSwitch={(i, name, strength) => i >= 0 && setForm(p => ({ ...p, medications: p.medications.map((m, j) => (j === i ? { ...m, name, strength: strength || m.strength } : m)) }))} />
               {/* Medications */}
               <View style={styles.fieldGroup}>
                 <View style={styles.sectionHeader}>

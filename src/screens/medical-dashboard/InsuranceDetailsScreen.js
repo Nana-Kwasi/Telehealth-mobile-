@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { InsuranceCardsMobile } from '../../components/InsuranceMobile';
 import {
   View,
   Text,
@@ -92,6 +93,8 @@ const InsuranceDetailsScreen = () => {
       // resizes the window (app.json softwareKeyboardLayoutMode default).
       automaticallyAdjustKeyboardInsets
       keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.content}>
+      {/* Cards checked live with an insurer connected to NessaHub. */}
+      <InsuranceCardsMobile accent={MedicalColors.primary} />
       {/* Header */}
       <View style={styles.headerCard}>
         <View style={styles.headerIcon}>

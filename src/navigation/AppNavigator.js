@@ -162,6 +162,8 @@ import LabOrdersScreen from '../screens/lab-dashboard/LabOrdersScreen';
 import LabVerifyScreen from '../screens/lab-dashboard/LabVerifyScreen';
 import LabResultsScreen from '../screens/lab-dashboard/LabResultsScreen';
 import LabCatalogScreen from '../screens/lab-dashboard/LabCatalogScreen';
+import InsuranceClaimsScreen from '../screens/shared/InsuranceClaimsScreen';
+import PreauthScreen from '../screens/shared/PreauthScreen';
 
 // Scan dashboard screens
 import ScanHomeScreen from '../screens/scan-dashboard/ScanHomeScreen';
@@ -300,6 +302,12 @@ const PharmacyDrawerNavigator = ({ profile }) => (
     <PharmacyDrawer.Screen name="PharmacyReports" options={{ title: 'Reports' }}>
       {() => <PharmacyReportsScreen profile={profile} isBranch={false} />}
     </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyInsuranceClaims" options={{ title: 'Insurance claims' }}>
+      {() => <InsuranceClaimsScreen accent={PharmacyColors.primary} />}
+    </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyPreauth" options={{ title: 'Pre-authorisations' }}>
+      {() => <PreauthScreen accent={PharmacyColors.primary} />}
+    </PharmacyDrawer.Screen>
     <PharmacyDrawer.Screen name="PharmacyReportIssue" options={{ title: 'Report Issue' }}>
       {() => <ReportIssueScreen profile={profile} reporterType="pharmacy_parent" accent={PharmacyColors.primary} />}
     </PharmacyDrawer.Screen>
@@ -355,6 +363,12 @@ const BranchDrawerNavigator = ({ profile }) => (
     <BranchDrawer.Screen name="BranchReports" options={{ title: 'Reports' }}>
       {() => <PharmacyReportsScreen profile={profile} isBranch={true} />}
     </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchInsuranceClaims" options={{ title: 'Insurance claims' }}>
+      {() => <InsuranceClaimsScreen accent={PharmacyColors.primary} />}
+    </BranchDrawer.Screen>
+    <BranchDrawer.Screen name="BranchPreauth" options={{ title: 'Pre-authorisations' }}>
+      {() => <PreauthScreen accent={PharmacyColors.primary} />}
+    </BranchDrawer.Screen>
     <BranchDrawer.Screen name="BranchReportIssue" options={{ title: 'Report Issue' }}>
       {() => <ReportIssueScreen profile={profile} reporterType="pharmacy_branch" accent={PharmacyColors.primary} />}
     </BranchDrawer.Screen>
@@ -397,6 +411,12 @@ const LabDrawerNavigator = ({ profile }) => (
     </LabDrawer.Screen>
     <LabDrawer.Screen name="LabResults" options={{ title: 'Results' }}>
       {() => <LabResultsScreen profile={profile} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabInsuranceClaims" options={{ title: 'Insurance claims' }}>
+      {() => <InsuranceClaimsScreen accent={LabColors.primary} />}
+    </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabPreauth" options={{ title: 'Pre-authorisations' }}>
+      {() => <PreauthScreen accent={LabColors.primary} />}
     </LabDrawer.Screen>
     <LabDrawer.Screen name="LabCatalog" options={{ title: 'Test Catalog' }}>
       {() => <LabCatalogScreen profile={profile} />}
@@ -450,6 +470,12 @@ const LabBranchDrawerNavigator = ({ profile }) => (
     <LabBranchDrawer.Screen name="LabBranchResults" options={{ title: 'Results' }}>
       {() => <LabResultsScreen profile={profile} />}
     </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchInsuranceClaims" options={{ title: 'Insurance claims' }}>
+      {() => <InsuranceClaimsScreen accent={LabColors.primary} />}
+    </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchPreauth" options={{ title: 'Pre-authorisations' }}>
+      {() => <PreauthScreen accent={LabColors.primary} />}
+    </LabBranchDrawer.Screen>
     <LabBranchDrawer.Screen name="LabBranchCatalog" options={{ title: 'Test Catalog' }}>
       {() => <LabCatalogScreen profile={profile} />}
     </LabBranchDrawer.Screen>
@@ -495,6 +521,12 @@ const ScanDrawerNavigator = ({ profile }) => (
     </ScanDrawer.Screen>
     <ScanDrawer.Screen name="ScanResults" options={{ title: 'Reports' }}>
       {() => <ScanResultsScreen profile={profile} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanInsuranceClaims" options={{ title: 'Insurance claims' }}>
+      {() => <InsuranceClaimsScreen accent={ScanColors.primary} />}
+    </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanPreauth" options={{ title: 'Pre-authorisations' }}>
+      {() => <PreauthScreen accent={ScanColors.primary} />}
     </ScanDrawer.Screen>
     <ScanDrawer.Screen name="ScanCatalog" options={{ title: 'Scan Catalog' }}>
       {() => <ScanCatalogScreen profile={profile} />}
@@ -547,6 +579,12 @@ const ScanBranchDrawerNavigator = ({ profile }) => (
     </ScanBranchDrawer.Screen>
     <ScanBranchDrawer.Screen name="ScanBranchResults" options={{ title: 'Reports' }}>
       {() => <ScanResultsScreen profile={profile} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchInsuranceClaims" options={{ title: 'Insurance claims' }}>
+      {() => <InsuranceClaimsScreen accent={ScanColors.primary} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchPreauth" options={{ title: 'Pre-authorisations' }}>
+      {() => <PreauthScreen accent={ScanColors.primary} />}
     </ScanBranchDrawer.Screen>
     <ScanBranchDrawer.Screen name="ScanBranchCatalog" options={{ title: 'Scan Catalog' }}>
       {() => <ScanCatalogScreen profile={profile} />}
@@ -622,6 +660,7 @@ const DoctorDrawerNavigator = ({ profile }) => {
         {(props) => <ReferralComposerScreen {...props} role="DOCTOR" />}
       </DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorDiagnosticResults"  component={DoctorDiagnosticResultsScreen}  options={{ title: 'Lab & Scan Results' }} />
+      <DoctorDrawer.Screen name="DoctorPreauth" options={{ title: 'Insurer approvals' }}>{() => <PreauthScreen accent={DoctorColors.primary} />}</DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorReviews"            component={DoctorReviewsScreen}            options={{ title: 'Reviews' }} />
       <DoctorDrawer.Screen name="DoctorAnalytics"          component={DoctorAnalyticsScreen}          options={{ title: 'Analytics' }} />
       <DoctorDrawer.Screen name="DoctorSettings"           component={DoctorSettingsScreen}           options={{ title: 'Profile & Settings' }} />

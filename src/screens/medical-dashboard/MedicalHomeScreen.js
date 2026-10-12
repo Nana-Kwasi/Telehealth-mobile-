@@ -16,6 +16,7 @@ import { mergeLocationProfile } from '../../utils/locationProfile';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
 import TodaysMedsCardMobile from '../../components/TodaysMedsCardMobile';
 import PhoneVerifyBannerMobile from '../../components/PhoneVerifyBannerMobile';
+import { ClaimConfirmationsMobile } from '../../components/InsuranceMobile';
 import { dateMillis, formatDate } from '../../utils/dateDisplay';
 import { resolveFileUrl } from '../../utils/mediaUrl';
 import AiAssistantFab from '../../components/AiAssistantFab';
@@ -564,6 +565,7 @@ const MedicalHomeScreen = ({ navigation }) => {
 
       {/* Until their phone is verified (only while SMS is set up). */}
       <PhoneVerifyBannerMobile />
+      <ClaimConfirmationsMobile />
       {/* Medication reminders set in My Care, with today's doses. */}
       <TodaysMedsCardMobile navigation={navigation} careRoute="MedicalCare" accent="#1e6bb8" />
 

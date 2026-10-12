@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import RoleAssistantMobile from '../../components/RoleAssistantMobile';
 
 export default function PharmacyHomeScreen({ profile, navigation }) {
   const [stats, setStats] = useState({ branches: 0, incoming: 0, active: 0, ready: 0, delivered: 0 });
@@ -44,32 +45,35 @@ export default function PharmacyHomeScreen({ profile, navigation }) {
   ];
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadStats(); }} tintColor={C.primary} />}
-    >
-      <View style={styles.welcome}>
-        <Text style={styles.welcomeTitle}>Welcome, {profile?.pharmacyName || 'Pharmacy'}</Text>
-        <Text style={styles.welcomeSub}>Here's your pharmacy overview</Text>
-      </View>
-      <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('PharmacySettings')} />
-
-      {loading ? (
-        <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
-      ) : (
-        <View style={styles.statsGrid}>
-          {STATS.map(s => (
-            <View key={s.label} style={styles.statCard}>
-              <Ionicons name={s.icon} size={24} color={s.color} />
-              <Text style={[styles.statValue, { color: s.color }]}>{s.value}</Text>
-              <Text style={styles.statLabel}>{s.label}</Text>
-            </View>
-          ))}
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        style={styles.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadStats(); }} tintColor={C.primary} />}
+      >
+        <View style={styles.welcome}>
+          <Text style={styles.welcomeTitle}>Welcome, {profile?.pharmacyName || 'Pharmacy'}</Text>
+          <Text style={styles.welcomeSub}>Here's your pharmacy overview</Text>
         </View>
-      )}
+        <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('PharmacySettings')} />
 
-      <View style={{ height: 32 }} />
-    </ScrollView>
+        {loading ? (
+          <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
+        ) : (
+          <View style={styles.statsGrid}>
+            {STATS.map(s => (
+              <View key={s.label} style={styles.statCard}>
+                <Ionicons name={s.icon} size={24} color={s.color} />
+                <Text style={[styles.statValue, { color: s.color }]}>{s.value}</Text>
+                <Text style={styles.statLabel}>{s.label}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+      <RoleAssistantMobile kind="pharmacy" accent={C.primary} />
+    </View>
   );
 }
 

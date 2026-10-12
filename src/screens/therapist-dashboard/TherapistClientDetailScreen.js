@@ -20,6 +20,7 @@ import { toDateSafe } from '../../utils/dateDisplay';
 import WeeklyCheckInCard from '../../components/WeeklyCheckInCard';
 import RecordGapsCard from '../../components/RecordGapsCard';
 import CodingAssistCard from '../../components/CodingAssistCard';
+import { PatientTranscriptsMobile } from '../../components/SessionTranscriptsMobile';
 import {
   getClientDisplayName,
   getClientPhone,
@@ -531,6 +532,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
 
         {/* Opt-in weekly check-in and this week's answers against last week's. */}
         <WeeklyCheckInCard clientId={clientId} accent={TherapistColors.primary} />
+        <PatientTranscriptsMobile patientId={clientId} accent={TherapistColors.primary} />
         <RecordGapsCard patientId={clientId} />
         <CodingAssistCard patientId={clientId} accent={TherapistColors.primary} />
 

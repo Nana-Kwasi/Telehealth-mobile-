@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { InsuranceNetworksMobile } from '../../components/InsuranceMobile';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch, Alert,
 } from 'react-native';
@@ -57,6 +58,8 @@ export default function PharmacySettingsScreen({ profile, isBranch = false, loca
       keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.sub}>{isBranch ? 'Branch preferences' : 'Pharmacy preferences'}</Text>
+
+      <InsuranceNetworksMobile accent={C.primary} />
 
       <View style={styles.card}>
         <View style={styles.row}>
