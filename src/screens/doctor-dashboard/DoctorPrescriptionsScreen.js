@@ -27,6 +27,7 @@ function generatePrescriptionRef() {
 }
 import { DoctorColors } from '../../constants/colors';
 import PrescriptionAssistCard from '../../components/PrescriptionAssistCard';
+import PrescriptionCodeCardMobile from '../../components/PrescriptionCodeCardMobile';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import { hasPendingDoctorNote, isRxDelivered } from '../../utils/pharmacyRxNotes';
 
@@ -78,6 +79,8 @@ const DURATION_OPTIONS = [
 const EMPTY_MED = {
   name: '', strength: '', drugForm: 'Tablet', dosage: '', frequency: 'Once per Day',
   direction: 'Scheduled', duration: '', specialInstructions: '',
+  // How much to supply (e.g. 30 tablets). Lets pharmacies record partial dispensing.
+  quantity: '', quantityUnit: '',
   prn: { indication: '', maxPerDay: '', interval: '' },
   refill: { allowed: false, count: '0', expiryDate: '' },
   schedule: [],
@@ -126,12 +129,15 @@ export default function DoctorPrescriptionsScreen() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Set when this form is approving a patient's prescription request.
+  const [requestId, setRequestId] = useState(null);
   const [doctorProfile, setDoctorProfile] = useState(null);
 
   const [form, setForm] = useState({
     patientId: '', patientName: '',
     pharmacyId: '', pharmacyName: '',
     branchId: '', branchName: '',
+    openToAll: false,
     diagnosis: '', instructions: '',
     followUpDate: '', status: 'active',
     medications: [{ ...EMPTY_MED }],
@@ -177,12 +183,15 @@ export default function DoctorPrescriptionsScreen() {
       pharmacyName: '',
       branchId: '',
       branchName: '',
+      openToAll: false,
       diagnosis: '',
       instructions: '',
       followUpDate: '',
       status: 'active',
-      medications: [{ ...EMPTY_MED }],
+      // From an approved prescription request: the medicines the patient named.
+      medications: p.presetMedications?.length ? p.presetMedications.map(m => ({ ...EMPTY_MED, ...m })) : [{ ...EMPTY_MED }],
     });
+    setRequestId(p.requestId || null);
     setWarnings([]);
     setShowModal(true);
 
@@ -190,6 +199,8 @@ export default function DoctorPrescriptionsScreen() {
       openRxForm: undefined,
       presetPatientId: undefined,
       presetPatientName: undefined,
+      presetMedications: undefined,
+      requestId: undefined,
     });
   }, [route.params?.openRxForm, route.params?.presetPatientId]);
 
@@ -263,8 +274,9 @@ export default function DoctorPrescriptionsScreen() {
   };
 
   const openNew = () => {
+    setRequestId(null);
     setEditing(null);
-    setForm({ patientId: '', patientName: '', pharmacyId: '', pharmacyName: '', branchId: '', branchName: '', diagnosis: '', instructions: '', followUpDate: '', status: 'active', medications: [{ ...EMPTY_MED }] });
+    setForm({ patientId: '', patientName: '', pharmacyId: '', pharmacyName: '', branchId: '', branchName: '', openToAll: false, diagnosis: '', instructions: '', followUpDate: '', status: 'active', medications: [{ ...EMPTY_MED }] });
     setWarnings([]);
     setShowModal(true);
   };
@@ -283,6 +295,7 @@ export default function DoctorPrescriptionsScreen() {
       pharmacyName: rx.pharmacyName || '',
       branchId: rx.branchId || '',
       branchName: rx.branchName || '',
+      openToAll: !!rx.openToAll,
       diagnosis: rx.diagnosis || '',
       instructions: rx.instructions || '',
       followUpDate: rx.followUpDate || '',
@@ -349,7 +362,7 @@ export default function DoctorPrescriptionsScreen() {
     return { ...p, medications: meds };
   });
 
-  const handleSave = async () => {
+  const handleSave = async (ack) => {
     if (!form.patientId) { Alert.alert('Validation', 'Please select a patient.'); return; }
     if (!form.diagnosis.trim()) { Alert.alert('Validation', 'Diagnosis is required.'); return; }
     if (!form.medications[0].name.trim()) { Alert.alert('Validation', 'At least one medication is required.'); return; }
@@ -373,10 +386,13 @@ export default function DoctorPrescriptionsScreen() {
       const payload = {
         patientId: form.patientId,
         patientName: form.patientName,
-        pharmacyId: form.pharmacyId || null,
-        pharmacyName: form.pharmacyName || null,
-        branchId: form.branchId || null,
-        branchName: form.branchName || null,
+        // Open to all pharmacies: no branch until one takes it.
+        openToAll: !!form.openToAll,
+        pharmacyId: form.openToAll ? null : (form.pharmacyId || null),
+        pharmacyName: form.openToAll ? null : (form.pharmacyName || null),
+        branchId: form.openToAll ? null : (form.branchId || null),
+        pharmacyBranchId: form.openToAll ? null : (form.branchId || null),
+        branchName: form.openToAll ? null : (form.branchName || null),
         prescriptionRef,
         diagnosis: form.diagnosis.trim(),
         instructions: form.instructions.trim(),
@@ -394,6 +410,8 @@ export default function DoctorPrescriptionsScreen() {
           prn: m.direction === 'As Needed (PRN)' ? { indication: m.prn?.indication || '', maxPerDay: m.prn?.maxPerDay || '', interval: m.prn?.interval || '' } : null,
           refill: m.refill?.allowed ? { allowed: true, count: parseInt(m.refill.count) || 0, expiryDate: m.refill.expiryDate || '' } : { allowed: false },
           schedule: m.schedule || [],
+          quantity: Number(m.quantity) > 0 ? Number(m.quantity) : null,
+          quantityUnit: m.quantityUnit?.trim() || '',
           ...(m.drugForm === 'Syrup' && { volumeUnit: m.volumeUnit || 'ml', shakeWell: m.shakeWell || false }),
           ...(m.drugForm === 'Injection' && { route: m.route || '', injectionSite: m.injectionSite?.trim() || '' }),
           ...(m.drugForm === 'Cream' && { applicationSite: m.applicationSite?.trim() || '' }),
@@ -408,7 +426,9 @@ export default function DoctorPrescriptionsScreen() {
       } else {
         const newRx = await api('/api/v1/medical/prescriptions', {
           method: 'POST',
-          body: { ...payload, doctorId: uid, doctorName: doctorProfile?.name || '', date: TODAY, pharmacyStatus: form.pharmacyId ? 'sent' : null },
+          body: { ...payload, doctorId: uid, doctorName: doctorProfile?.name || '', date: TODAY, pharmacyStatus: form.openToAll ? 'open' : (form.pharmacyId ? 'sent' : null),
+            // Approving a request: the server links it and enforces the formulary check.
+            ...(requestId ? { requestId, safetyAcknowledged: ack === true } : {}) },
         });
         api('/api/v1/patient-timeline', {
           method: 'POST',
@@ -422,8 +442,21 @@ export default function DoctorPrescriptionsScreen() {
       }
       setShowModal(false);
       await loadAll();
+      if (requestId && !editing) {
+        setRequestId(null);
+        Alert.alert('Request approved', 'The prescription has been issued and the patient notified.');
+        navigation.navigate('DoctorRxRequests');
+      }
     } catch (err) {
-      Alert.alert('Error', 'Could not save prescription. Please try again.');
+      // The formulary found something the prescriber must acknowledge first.
+      if (requestId && String(err?.message || '').startsWith('Safety check:')) {
+        Alert.alert('Safety check', `${err.message}\n\nIssue the prescription anyway?`, [
+          { text: 'Go back', style: 'cancel' },
+          { text: 'Issue anyway', onPress: () => handleSave(true) },
+        ]);
+      } else {
+        Alert.alert('Error', err?.message || 'Could not save prescription. Please try again.');
+      }
     } finally {
       setSaving(false);
     }
@@ -892,6 +925,8 @@ export default function DoctorPrescriptionsScreen() {
                   </View>
                 ))}
                 {viewingRx.instructions ? <Text style={[styles.altOriginalLabel, { marginTop: 8 }]}>Instructions: {viewingRx.instructions}</Text> : null}
+                {/* QR / collection code, dispensing so far, new code, cancel. */}
+                <PrescriptionCodeCardMobile prescription={viewingRx} canManage onChanged={() => { setViewingRx(null); loadAll(); }} />
               </ScrollView>
             )}
             <TouchableOpacity style={styles.rxViewAllBtn} onPress={() => setShowRxAll(v => !v)} activeOpacity={0.85}>
@@ -1356,6 +1391,14 @@ export default function DoctorPrescriptionsScreen() {
                       </ScrollView>
                     )}
 
+                    {/* Quantity to supply */}
+                    <View style={[styles.medFieldRow, { gap: 8 }]}>
+                      <TextInput style={[styles.input, { flex: 1 }]} keyboardType="numeric" placeholder="Quantity (e.g. 30)"
+                        placeholderTextColor="#94a3b8" value={String(med.quantity || '')} onChangeText={v => updateMed(i, 'quantity', v)} />
+                      <TextInput style={[styles.input, { flex: 1 }]} placeholder="Unit (tablets)" placeholderTextColor="#94a3b8"
+                        value={med.quantityUnit || ''} onChangeText={v => updateMed(i, 'quantityUnit', v)} />
+                    </View>
+
                     {/* Refill */}
                     <View style={[styles.medFieldRow, { alignItems: 'center' }]}>
                       <Text style={[styles.subLabel, { flex: 1 }]}>Allow Refills</Text>
@@ -1419,7 +1462,35 @@ export default function DoctorPrescriptionsScreen() {
 
               {/* E-pharmacy branch routing (optional); labels are branch-only */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>E-Pharmacy Branch (Optional)</Text>
+                <Text style={styles.fieldLabel}>E-Pharmacy</Text>
+                {/* Specific pharmacy (default) or open to every onboarded NessaHub pharmacy.
+                    Locked once a pharmacy has taken an open prescription. */}
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                  {[[false, 'Specific pharmacy'], [true, 'Open to all pharmacies']].map(([value, label]) => {
+                    const active = !!form.openToAll === value;
+                    const locked = !!editing?.claimedAt;
+                    return (
+                      <TouchableOpacity key={label} disabled={locked}
+                        onPress={() => setForm(p => ({ ...p, openToAll: value, ...(value ? { pharmacyId: '', pharmacyName: '', branchId: '', branchName: '' } : {}) }))}
+                        style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: active ? 2 : 1.5,
+                          borderColor: active ? '#0369a1' : '#bae6fd', backgroundColor: active ? '#e0f2fe' : '#fff', opacity: locked ? 0.6 : 1 }}>
+                        <Text style={{ fontSize: 12.5, fontWeight: '700', color: active ? '#0c4a6e' : '#64748b' }}>{label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {editing?.claimedAt ? (
+                  <Text style={{ fontSize: 12, color: '#92400e', marginBottom: 6 }}>
+                    Taken by {editing.branchName || editing.pharmacyName || 'a pharmacy'} — this can no longer be changed.
+                  </Text>
+                ) : null}
+                {form.openToAll ? (
+                  <Text style={{ fontSize: 12, color: '#0369a1' }}>
+                    Every approved NessaHub pharmacy will see this prescription. The first to take it prepares it; if it does not confirm in time, it is offered to the others again.
+                  </Text>
+                ) : (
+                <>
+                <Text style={[styles.fieldLabel, { fontSize: 12 }]}>Branch (optional)</Text>
                 <TouchableOpacity
                   style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
                   onPress={() => { if (!loadingBranchDirectory) setShowBranchDirectoryPicker(v => !v); }}
@@ -1467,6 +1538,8 @@ export default function DoctorPrescriptionsScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
+                )}
+                </>
                 )}
               </View>
             </ScrollView>

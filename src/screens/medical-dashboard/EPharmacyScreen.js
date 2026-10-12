@@ -85,16 +85,16 @@ export default function EPharmacyScreen() {
       if (!uid) { setLoadingRx(false); return; }
       const loadRx = async () => {
         try {
-          const rows = await api(`/api/v1/medical/prescriptions/patient/${uid}`).catch(() => []) || [];
-          const expiries = [];
-          rows.forEach((rx) => {
+          const fetched = await api(`/api/v1/medical/prescriptions/patient/${uid}`).catch(() => []) || [];
+          // Overdue transfer requests are expired by the server (TransferExpiryJob).
+          // Show them as expired straight away, but never write: a patient cannot
+          // PATCH a prescription, and the failed write used to skip setPrescriptions.
+          const rows = fetched.map((rx) => {
             const meds = Array.isArray(rx.medications) ? rx.medications : [];
-            if (meds.some(isTransferRequestExpired)) {
-              const nextMeds = meds.map(m => (isTransferRequestExpired(m) ? expirePendingTransferRequest(m) : m));
-              expiries.push(api(`/api/v1/medical/prescriptions/${rx.id}`, { method: 'PATCH', body: { medications: nextMeds, pharmacyStatus: deriveRxStatusFromMeds(nextMeds) } }).catch(() => {}));
-            }
+            if (!meds.some(isTransferRequestExpired)) return rx;
+            const nextMeds = meds.map(m => (isTransferRequestExpired(m) ? expirePendingTransferRequest(m) : m));
+            return { ...rx, medications: nextMeds, pharmacyStatus: deriveRxStatusFromMeds(nextMeds) };
           });
-          if (expiries.length) { await Promise.all(expiries); return; }
           const list = rows.filter(r => r.pharmacyId).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
           setPrescriptions(list);
         } catch {} finally {

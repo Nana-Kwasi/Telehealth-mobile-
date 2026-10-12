@@ -65,7 +65,7 @@ function normalizeCountryCode(country = '') {
   return table[key] || '';
 }
 
-function flagFromCountry(country = '') {
+export function flagFromCountry(country = '') {
   const cc = normalizeCountryCode(country);
   if (!cc) return '🏳️';
   const points = [...cc].map((c) => 127397 + c.charCodeAt(0));

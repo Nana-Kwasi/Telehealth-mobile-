@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.nessahub.client",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "NessaHub uses Face ID so you can sign in without typing your password. Your face data never leaves your device."
+        "NSFaceIDUsageDescription": "NessaHub uses Face ID so you can sign in without typing your password. Your face data never leaves your device.",
+        "NSLocalNetworkUsageDescription": "NessaHub connects to the NessaHub server on your local network to load your care information."
       }
     },
     "android": {

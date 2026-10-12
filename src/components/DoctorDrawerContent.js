@@ -22,6 +22,7 @@ const drawerItems = [
   { screen: 'DoctorNotificationPrefs', icon: 'notifications-outline', label: 'Notification settings' },
   { screen: 'DoctorNotes',              icon: 'document-text-outline',   label: 'Notes' },
   { screen: 'DoctorPrescriptions',      icon: 'medkit-outline',          label: 'Prescriptions' },
+  { screen: 'DoctorRxRequests',         icon: 'mail-unread-outline',     label: 'Prescription Requests' },
   { screen: 'DoctorCarePlans',          icon: 'clipboard-outline',       label: 'Care Plans' },
   { screen: 'DoctorDocuments',          icon: 'document-attach-outline', label: 'Documents' },
   { screen: 'DoctorReferrals',          icon: 'share-social-outline',    label: 'Referrals' },

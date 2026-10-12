@@ -8,9 +8,10 @@ import { ScanColors as C } from '../constants/colors';
 
 const SCAN_NAV = [
   { name: 'ScanHome',    label: 'Dashboard',     icon: 'grid-outline' },
-  { name: 'ScanOrders',  label: 'Orders',        icon: 'scan-outline' },
+  { name: 'ScanOrders',  label: 'Worklist',        icon: 'scan-outline' },
   { name: 'ScanVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'ScanResults', label: 'Reports',       icon: 'document-text-outline' },
+  { name: 'ScanCatalog', label: 'Scan Catalog', icon: 'pricetags-outline' },
   { name: 'ScanBranches',    label: 'Branches',      icon: 'business-outline' },
   { name: 'ScanReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
   { name: 'ScanPreferences', label: 'Settings',      icon: 'settings-outline' },
@@ -18,9 +19,10 @@ const SCAN_NAV = [
 
 const SCAN_BRANCH_NAV = [
   { name: 'ScanBranchHome',    label: 'Dashboard',     icon: 'grid-outline' },
-  { name: 'ScanBranchOrders',  label: 'Orders',        icon: 'scan-outline' },
+  { name: 'ScanBranchOrders',  label: 'Worklist',        icon: 'scan-outline' },
   { name: 'ScanBranchVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'ScanBranchResults', label: 'Reports',       icon: 'document-text-outline' },
+  { name: 'ScanBranchCatalog', label: 'Scan Catalog', icon: 'pricetags-outline' },
   { name: 'ScanBranchReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
   { name: 'ScanBranchPreferences', label: 'Settings',      icon: 'settings-outline' },
 ];

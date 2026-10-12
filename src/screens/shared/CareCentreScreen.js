@@ -4,9 +4,9 @@ import {
   ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRoute } from '@react-navigation/native';
 import ZCGround from '../../components/ZCGround';
-import GlassFill, { glassStyle } from '../../components/GlassFill';
-import { ZC, zcStyles } from '../../constants/zencare';
 import { api, getStoredUserId } from '../../services/apiClient';
 
 /**
@@ -19,6 +19,8 @@ import { api, getStoredUserId } from '../../services/apiClient';
  * Nothing here advises on a missed dose — that is a prescribing decision.
  */
 export default function CareCentreScreen() {
+  const route = useRoute();
+  const P = PALETTES[route?.name === 'TherapyCare' ? 'therapy' : 'medical'];
   const [reminders, setReminders] = useState([]);
   const [doses, setDoses]         = useState([]);
   const [followups, setFollowups] = useState([]);
@@ -141,13 +143,17 @@ export default function CareCentreScreen() {
   if (loading) {
     return (
       <ZCGround>
-        <View style={styles.centered}><ActivityIndicator color={ZC.accent} size="large" /></View>
+        <View style={styles.centered}><ActivityIndicator color={P.accent} size="large" /></View>
       </ZCGround>
     );
   }
 
   const pendingDoses = doses.filter((d) => d.status === 'pending');
   const activeReminders = reminders.filter((r) => r.active);
+  const todays = doses.filter((d) => sameDay(d.due_at));
+  const takenToday = todays.filter((d) => d.status === 'taken').length;
+  const timesOf = (r) => (Array.isArray(r.times_of_day) ? r.times_of_day
+    : String(r.times_of_day || '').replace(/[{}]/g, '').split(',')).filter(Boolean);
 
   return (
     <ZCGround>
@@ -160,11 +166,24 @@ export default function CareCentreScreen() {
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }}
-            tintColor={ZC.accent} />
+            tintColor={P.accent} />
         }
       >
-        <View style={zcStyles.badge}><Text style={zcStyles.badgeText}>My care</Text></View>
-        <Text style={[zcStyles.display, styles.title]}>Reminders & check-ins</Text>
+        {/* ── Header: today at a glance ── */}
+        <LinearGradient colors={[P.accent, P.accent2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+          <View style={styles.heroTop}>
+            <View style={styles.heroIcon}><Ionicons name="heart-circle" size={24} color="#fff" /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroTitle}>My Care</Text>
+              <Text style={styles.heroSub}>Reminders and check-ins from your care team</Text>
+            </View>
+          </View>
+          <View style={styles.stats}>
+            <Stat icon="medkit" value={activeReminders.length} label="Reminders" />
+            <Stat icon="checkmark-done" value={`${takenToday}/${todays.length}`} label="Taken today" />
+            <Stat icon="chatbubbles" value={followups.length} label="Check-ins" />
+          </View>
+        </LinearGradient>
 
         {urgent ? (
           <View style={styles.urgent}>
@@ -174,171 +193,255 @@ export default function CareCentreScreen() {
 
         {/* Check-ins first — someone is waiting on these. */}
         {followups.length ? (
-          <>
-            <Text style={[zcStyles.eyebrow, styles.heading]}>From your care team</Text>
+          <Section icon="chatbubbles" title="From your care team" count={followups.length} P={P}>
             {followups.map((f) => {
               const a = answers[f.id] || {};
               if (f.kind === 'weekly_checkin') {
                 return (
-                  <WeeklyCheckIn key={f.id} prompt={f.prompt} a={a}
+                  <WeeklyCheckIn key={f.id} prompt={f.prompt} a={a} P={P}
                     set={(patch) => setAnswers({ ...answers, [f.id]: { ...a, ...patch } })}
                     send={() => sendFollowUp(f.id, true)} />
                 );
               }
               return (
-                <View key={f.id} style={[styles.card, glassStyle]}>
-                  <GlassFill />
+                <View key={f.id} style={[styles.item, { borderLeftWidth: 4, borderLeftColor: P.accent }]}>
                   <Text style={styles.prompt}>{f.prompt}</Text>
-                  <View style={styles.scale}>
-                    {[0,1,2,3,4,5,6,7,8,9,10].map((n) => (
-                      <TouchableOpacity key={n}
-                        onPress={() => setAnswers({ ...answers, [f.id]: { ...a, severity: n } })}
-                        style={[styles.scaleBtn, a.severity === n && styles.scaleBtnOn]}>
-                        <Text style={[styles.scaleText, a.severity === n && styles.scaleTextOn]}>{n}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  <Scale value={a.severity} onPick={(n) => setAnswers({ ...answers, [f.id]: { ...a, severity: n } })} P={P} />
                   <TextInput
-                    style={[zcStyles.input, styles.note]}
+                    style={[styles.input, styles.note]}
                     placeholder="Anything you'd like to add? (optional)"
-                    placeholderTextColor={ZC.ink4}
+                    placeholderTextColor="#94a3b8"
                     value={a.response || ''}
                     onChangeText={(t) => setAnswers({ ...answers, [f.id]: { ...a, response: t } })}
                     multiline
                   />
-                  <TouchableOpacity style={zcStyles.btnPrimary} onPress={() => sendFollowUp(f.id)}>
-                    <Text style={zcStyles.btnPrimaryText}>Send to my care team</Text>
+                  <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: P.accent }]} onPress={() => sendFollowUp(f.id)}>
+                    <Text style={styles.btnPrimaryText}>Send to my care team</Text>
                   </TouchableOpacity>
                 </View>
               );
             })}
-          </>
-        ) : null}
-
-        {/* Follow-ups the clinician planned. */}
-        {plans.length ? (
-          <>
-            <Text style={[zcStyles.eyebrow, styles.heading]}>Upcoming follow-ups</Text>
-            {plans.map((p) => (
-              <View key={p.id} style={[styles.card, glassStyle]}>
-                <GlassFill />
-                <Text style={styles.medName}>
-                  {new Date(`${p.due_on}T00:00:00`).toLocaleDateString(undefined,
-                    { weekday: 'short', day: 'numeric', month: 'short' })}
-                  {p.clinician_name ? ` · ${p.clinician_name}` : ''}
-                </Text>
-                {p.reason ? <Text style={styles.medMeta}>{p.reason}</Text> : null}
-                {p.attending === null || p.attending === undefined ? (
-                  <View style={styles.doseActions}>
-                    <TouchableOpacity style={styles.doseTaken} onPress={() => setAttendance(p.id, true)}>
-                      <Text style={styles.doseTakenText}>I'll be there</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.doseGhost} onPress={() => setAttendance(p.id, false)}>
-                      <Text style={styles.doseGhostText}>I can't make it</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <Text style={styles.medMeta}>{p.attending ? 'Confirmed' : "You said you can't make it"}</Text>
-                )}
-              </View>
-            ))}
-          </>
+          </Section>
         ) : null}
 
         {/* Doses awaiting an answer. */}
         {pendingDoses.length ? (
-          <>
-            <Text style={[zcStyles.eyebrow, styles.heading]}>Did you take these?</Text>
+          <Section icon="time" title="Did you take these?" count={pendingDoses.length} P={P}>
             {pendingDoses.map((d) => (
-              <View key={d.id} style={[styles.card, glassStyle]}>
-                <GlassFill />
-                <Text style={styles.medName}>{d.medication} {d.dosage || ''}</Text>
-                <Text style={styles.medMeta}>Due {new Date(d.due_at).toLocaleString()}</Text>
-                <View style={styles.doseActions}>
-                  <TouchableOpacity style={styles.doseTaken} onPress={() => recordDose(d.id, 'taken')}>
-                    <Text style={styles.doseTakenText}>Taken</Text>
+              <View key={d.id} style={styles.item}>
+                <View style={styles.row}>
+                  <View style={[styles.timePill, { backgroundColor: P.soft }]}>
+                    <Text style={[styles.timePillText, { color: P.accent }]}>
+                      {new Date(d.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.medName} numberOfLines={1}>{d.medication}</Text>
+                    <Text style={styles.medMeta} numberOfLines={1}>
+                      {[d.dosage, new Date(d.due_at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.actions}>
+                  <TouchableOpacity style={[styles.btn, styles.btnFill, { backgroundColor: P.accent, borderColor: P.accent }]} onPress={() => recordDose(d.id, 'taken')}>
+                    <Ionicons name="checkmark" size={15} color="#fff" />
+                    <Text style={[styles.btnText, { color: '#fff' }]}>Taken</Text>
                   </TouchableOpacity>
                   {/* Equal weight, on purpose — a miss is information, not a failure. */}
-                  <TouchableOpacity style={styles.doseGhost} onPress={() => recordDose(d.id, 'missed')}>
-                    <Text style={styles.doseGhostText}>Missed</Text>
+                  <TouchableOpacity style={styles.btn} onPress={() => recordDose(d.id, 'missed')}>
+                    <Text style={styles.btnText}>Missed</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.doseGhost} onPress={() => recordDose(d.id, 'skipped')}>
-                    <Text style={styles.doseGhostText}>Skipped</Text>
+                  <TouchableOpacity style={styles.btn} onPress={() => recordDose(d.id, 'skipped')}>
+                    <Text style={styles.btnText}>Skipped</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ))}
-          </>
+          </Section>
         ) : null}
 
-        <View style={styles.headingRow}>
-          <Text style={[zcStyles.eyebrow, styles.heading]}>Medication reminders</Text>
-          {scripts.length ? (
-            <TouchableOpacity onPress={() => setAdding(!adding)} hitSlop={8}>
-              <Text style={styles.addLink}>{adding ? 'Cancel' : '+ Add'}</Text>
+        {/* Follow-ups the clinician planned. */}
+        {plans.length ? (
+          <Section icon="calendar" title="Upcoming follow-ups" count={plans.length} P={P}>
+            {plans.map((p) => {
+              const dt = new Date(`${p.due_on}T00:00:00`);
+              return (
+                <View key={p.id} style={styles.item}>
+                  <View style={styles.row}>
+                    <View style={[styles.dateTile, { borderColor: P.line }]}>
+                      <Text style={[styles.dateMonth, { backgroundColor: P.accent }]}>
+                        {dt.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}
+                      </Text>
+                      <Text style={styles.dateDay}>{dt.getDate()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.medName}>
+                        {dt.toLocaleDateString(undefined, { weekday: 'long' })}{p.clinician_name ? ` · ${p.clinician_name}` : ''}
+                      </Text>
+                      {p.reason ? <Text style={styles.medMeta}>{p.reason}</Text> : null}
+                    </View>
+                  </View>
+                  {p.attending === null || p.attending === undefined ? (
+                    <View style={styles.actions}>
+                      <TouchableOpacity style={[styles.btn, { backgroundColor: P.accent, borderColor: P.accent }]} onPress={() => setAttendance(p.id, true)}>
+                        <Text style={[styles.btnText, { color: '#fff' }]}>I'll be there</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.btn} onPress={() => setAttendance(p.id, false)}>
+                        <Text style={styles.btnText}>I can't make it</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={[styles.tag, p.attending && styles.tagOk]}>
+                      <Text style={[styles.tagText, p.attending && styles.tagTextOk]}>
+                        {p.attending ? 'Confirmed' : "You can't make it"}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </Section>
+        ) : null}
+
+        {/* ── Reminders ── */}
+        <Section
+          icon="notifications"
+          title="Medication reminders"
+          count={activeReminders.length}
+          P={P}
+          action={scripts.length ? (
+            <TouchableOpacity onPress={() => setAdding(!adding)} hitSlop={8}
+              style={[styles.addBtn, adding ? styles.btn : { backgroundColor: P.accent }]}>
+              {adding ? null : <Ionicons name="add" size={16} color="#fff" />}
+              <Text style={[styles.btnText, !adding && { color: '#fff' }]}>{adding ? 'Cancel' : 'Add'}</Text>
             </TouchableOpacity>
           ) : null}
-        </View>
-
-        {adding ? (
-          <View style={[styles.card, glassStyle]}>
-            <GlassFill />
-            <Text style={styles.fieldLabel}>Which medication?</Text>
-            {scripts.map((sc) => (
-              <TouchableOpacity key={sc.id}
-                onPress={() => setPick((p) => ({ ...p, prescriptionId: sc.id }))}
-                style={[styles.option, pick.prescriptionId === sc.id && styles.optionOn]}>
-                <Text style={[styles.optionText, pick.prescriptionId === sc.id && styles.optionTextOn]}>
-                  {sc.medication} {sc.dosage || ''}
-                </Text>
+        >
+          {adding ? (
+            <View style={[styles.item, { backgroundColor: '#fff' }]}>
+              <Text style={styles.fieldLabel}>Which medication?</Text>
+              {scripts.map((sc) => {
+                const on = pick.prescriptionId === sc.id;
+                return (
+                  <TouchableOpacity key={sc.id}
+                    onPress={() => setPick((p) => ({ ...p, prescriptionId: sc.id }))}
+                    style={[styles.option, on && { backgroundColor: P.soft, borderColor: P.accent }]}>
+                    <Ionicons name={on ? 'radio-button-on' : 'radio-button-off'} size={18} color={on ? P.accent : '#94a3b8'} />
+                    <Text style={[styles.optionText, on && { color: P.accent }]}>{sc.medication} {sc.dosage || ''}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <Text style={[styles.fieldLabel, { marginTop: 10 }]}>When?</Text>
+              <View style={styles.timeGrid}>
+                {TIMES.map(([t, label, icon]) => {
+                  const on = pick.times.includes(t);
+                  return (
+                    <TouchableOpacity key={t} onPress={() => toggleTime(t)}
+                      style={[styles.timeOpt, on && { backgroundColor: P.accent, borderColor: P.accent }]}>
+                      <Ionicons name={icon} size={18} color={on ? '#fff' : P.accent} />
+                      <Text style={[styles.timeOptLabel, on && { color: '#fff' }]}>{label}</Text>
+                      <Text style={[styles.timeOptTime, on && { color: 'rgba(255,255,255,0.85)' }]}>{t}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: P.accent, marginTop: 12 }]} onPress={createReminder}>
+                <Ionicons name="notifications" size={16} color="#fff" />
+                <Text style={styles.btnPrimaryText}>Set reminder</Text>
               </TouchableOpacity>
-            ))}
-            <Text style={[styles.fieldLabel, { marginTop: 8 }]}>When?</Text>
-            <View style={styles.scale}>
-              {TIMES.map(([t, label]) => (
-                <TouchableOpacity key={t} onPress={() => toggleTime(t)}
-                  style={[styles.option, pick.times.includes(t) && styles.optionOn]}>
-                  <Text style={[styles.optionText, pick.times.includes(t) && styles.optionTextOn]}>
-                    {label} · {t}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              <Text style={[styles.medMeta, { textAlign: 'center', marginTop: 6 }]}>You'll get each reminder in the app and by email.</Text>
             </View>
-            <TouchableOpacity style={zcStyles.btnPrimary} onPress={createReminder}>
-              <Text style={zcStyles.btnPrimaryText}>Set reminder</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
+          ) : null}
 
-        {activeReminders.length === 0 && !adding ? (
-          <View style={[styles.card, glassStyle]}>
-            <GlassFill />
-            <Text style={zcStyles.body}>
-              {scripts.length
-                ? 'No reminders set. Tap “+ Add” to be reminded about one of your prescriptions.'
-                : 'No reminders set. Reminders are made from a prescription, so they always match what you were prescribed.'}
-            </Text>
-          </View>
-        ) : activeReminders.map((r) => (
-          <View key={r.id} style={[styles.card, glassStyle, styles.reminderRow]}>
-            <GlassFill />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.medName}>{r.medication} {r.dosage || ''}</Text>
-              <Text style={styles.medMeta}>
-                {String(r.times_of_day).replace(/[{}]/g, '').split(',').join(' · ')}
+          {activeReminders.length === 0 && !adding ? (
+            <View style={styles.empty}>
+              <View style={[styles.emptyIcon, { backgroundColor: P.soft }]}><Ionicons name="medkit-outline" size={26} color={P.accent} /></View>
+              <Text style={styles.emptyTitle}>No reminders yet</Text>
+              <Text style={styles.emptyText}>
+                {scripts.length
+                  ? 'Tap Add to be reminded about one of your prescriptions.'
+                  : 'Reminders are made from a prescription, so they always match what you were prescribed.'}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => stopReminder(r.id, r.medication)} hitSlop={10}>
-              <Ionicons name="close-circle-outline" size={22} color={ZC.ink3} />
-            </TouchableOpacity>
-          </View>
-        ))}
+          ) : activeReminders.map((r) => (
+            <View key={r.id} style={[styles.item, { backgroundColor: '#fff' }]}>
+              <View style={styles.row}>
+                <View style={[styles.pillIcon, { backgroundColor: P.soft }]}><Ionicons name="medkit" size={18} color={P.accent} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.medName} numberOfLines={1}>{r.medication}</Text>
+                  {r.dosage ? <Text style={styles.medMeta} numberOfLines={1}>{r.dosage}</Text> : null}
+                </View>
+                <TouchableOpacity onPress={() => stopReminder(r.id, r.medication)} hitSlop={10} accessibilityLabel={`Stop reminder for ${r.medication}`}>
+                  <Ionicons name="close-circle" size={22} color="#cbd5e1" />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.chips}>
+                {timesOf(r).map((t) => (
+                  <View key={t} style={[styles.chip, { backgroundColor: P.soft }]}>
+                    <Ionicons name="time-outline" size={12} color={P.accent} />
+                    <Text style={[styles.chipText, { color: P.accent }]}>{t}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))}
+        </Section>
       </ScrollView>
     </ZCGround>
   );
 }
 
-const TIMES = [['08:00', 'Morning'], ['13:00', 'Midday'], ['18:00', 'Evening'], ['22:00', 'Night']];
+function sameDay(iso) {
+  const d = new Date(iso);
+  const n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+}
+
+function Stat({ icon, value, label }) {
+  return (
+    <View style={styles.stat}>
+      <Ionicons name={icon} size={15} color="rgba(255,255,255,0.9)" />
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
+
+function Section({ icon, title, count, action, P, children }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <View style={[styles.sectionIcon, { backgroundColor: P.soft }]}><Ionicons name={icon} size={16} color={P.accent} /></View>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {count ? <View style={[styles.count, { backgroundColor: P.soft }]}><Text style={[styles.countText, { color: P.accent }]}>{count}</Text></View> : null}
+        <View style={{ flex: 1 }} />
+        {action}
+      </View>
+      <View style={{ gap: 10 }}>{children}</View>
+    </View>
+  );
+}
+
+function Scale({ value, onPick, P }) {
+  return (
+    <View style={styles.scale}>
+      {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+        <TouchableOpacity key={n} onPress={() => onPick(n)}
+          style={[styles.scaleBtn, value === n && { backgroundColor: P.accent, borderColor: P.accent }]}>
+          <Text style={[styles.scaleText, value === n && styles.scaleTextOn]}>{n}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+const TIMES = [['08:00', 'Morning', 'sunny-outline'], ['13:00', 'Midday', 'partly-sunny-outline'], ['18:00', 'Evening', 'cloudy-night-outline'], ['22:00', 'Night', 'moon-outline']];
+
+/** Therapy purple or medical blue, from the menu that opened the screen. */
+const PALETTES = {
+  therapy: { accent: '#5046bd', accent2: '#3f37a0', soft: '#eeedfb', line: '#c9c5f2' },
+  medical: { accent: '#1e6bb8', accent2: '#155a9c', soft: '#e8f1fb', line: '#bfdbfe' },
+};
 
 /** The weekly questions. Each is optional: a partial answer is still an answer. */
 const WEEKLY_FIELDS = [
@@ -348,44 +451,36 @@ const WEEKLY_FIELDS = [
   { key: 'energy',  label: 'Energy',  hint: '0 exhausted · 10 full of energy' },
 ];
 
-function WeeklyCheckIn({ prompt, a, set, send }) {
+function WeeklyCheckIn({ prompt, a, set, send, P }) {
   return (
-    <View style={[styles.card, glassStyle]}>
-      <GlassFill />
+    <View style={[styles.item, { borderLeftWidth: 4, borderLeftColor: P.accent, backgroundColor: '#fff' }]}>
       <Text style={styles.prompt}>{prompt}</Text>
       <Text style={styles.medMeta}>Your weekly check-in. Every question is optional.</Text>
       {WEEKLY_FIELDS.map((w) => (
-        <View key={w.key} style={{ marginTop: 6 }}>
+        <View key={w.key} style={{ marginTop: 8 }}>
           <Text style={styles.fieldLabel}>{w.label} <Text style={styles.hint}>{w.hint}</Text></Text>
-          <View style={styles.scale}>
-            {[0,1,2,3,4,5,6,7,8,9,10].map((n) => (
-              <TouchableOpacity key={n} onPress={() => set({ [w.key]: n })}
-                style={[styles.scaleBtn, a[w.key] === n && styles.scaleBtnOn]}>
-                <Text style={[styles.scaleText, a[w.key] === n && styles.scaleTextOn]}>{n}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Scale value={a[w.key]} onPick={(n) => set({ [w.key]: n })} P={P} />
         </View>
       ))}
-      <Text style={[styles.fieldLabel, { marginTop: 6 }]}>Sleep (hours a night)</Text>
-      <TextInput style={[zcStyles.input, { width: 110 }]} keyboardType="decimal-pad"
+      <Text style={[styles.fieldLabel, { marginTop: 10 }]}>Sleep (hours a night)</Text>
+      <TextInput style={[styles.input, { width: 110 }]} keyboardType="decimal-pad"
         value={a.sleepHours ? String(a.sleepHours) : ''} placeholder="e.g. 6"
-        placeholderTextColor={ZC.ink4}
+        placeholderTextColor="#94a3b8"
         onChangeText={(t) => set({ sleepHours: t.replace(',', '.') })} />
-      <Text style={[styles.fieldLabel, { marginTop: 6 }]}>Medication this week</Text>
-      <View style={styles.scale}>
+      <Text style={[styles.fieldLabel, { marginTop: 10 }]}>Medication this week</Text>
+      <View style={styles.actions}>
         {[['yes', 'Taken'], ['no', 'Missed some'], ['na', 'Not on any']].map(([v, t]) => (
           <TouchableOpacity key={v} onPress={() => set({ medication: v })}
-            style={[styles.option, a.medication === v && styles.optionOn]}>
-            <Text style={[styles.optionText, a.medication === v && styles.optionTextOn]}>{t}</Text>
+            style={[styles.btn, a.medication === v && { backgroundColor: P.soft, borderColor: P.accent }]}>
+            <Text style={[styles.btnText, a.medication === v && { color: P.accent }]}>{t}</Text>
           </TouchableOpacity>
         ))}
       </View>
-      <TextInput style={[zcStyles.input, styles.note]} multiline
-        placeholder="Anything important happen this week? (optional)" placeholderTextColor={ZC.ink4}
+      <TextInput style={[styles.input, styles.note, { marginTop: 10 }]} multiline
+        placeholder="Anything important happen this week? (optional)" placeholderTextColor="#94a3b8"
         value={a.events || ''} onChangeText={(t) => set({ events: t })} />
-      <TouchableOpacity style={zcStyles.btnPrimary} onPress={send}>
-        <Text style={zcStyles.btnPrimaryText}>Send to my therapist</Text>
+      <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: P.accent }]} onPress={send}>
+        <Text style={styles.btnPrimaryText}>Send to my therapist</Text>
       </TouchableOpacity>
     </View>
   );
@@ -393,47 +488,89 @@ function WeeklyCheckIn({ prompt, a, set, send }) {
 
 const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 20, paddingBottom: 40, gap: 10 },
-  title: { marginTop: 12, marginBottom: 4 },
-  heading: { marginTop: 18, marginBottom: 2 },
-  card: { borderRadius: 18, padding: 16, gap: 8 },
-  prompt: { fontSize: 15, fontWeight: '700', color: ZC.ink, lineHeight: 21 },
-  scale: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  content: { padding: 16, paddingBottom: 48, gap: 14 },
+
+  hero: { borderRadius: 22, padding: 18, shadowColor: '#0f172a', shadowOpacity: 0.15, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  heroIcon: { width: 46, height: 46, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  heroTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 2 },
+  stats: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  stat: { flex: 1, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
+  statValue: { color: '#fff', fontSize: 18, fontWeight: '800', marginTop: 4 },
+  statLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 11.5 },
+
+  section: {
+    backgroundColor: '#fff', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: '#e2e8f0',
+    shadowColor: '#0f172a', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 1,
+  },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: 15.5, fontWeight: '800', color: '#0f172a' },
+  count: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  countText: { fontSize: 12, fontWeight: '800' },
+
+  item: { borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#edf0f5', backgroundColor: '#fbfcfe', gap: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  prompt: { fontSize: 15, fontWeight: '700', color: '#0f172a', lineHeight: 21 },
+  medName: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  medMeta: { fontSize: 12.5, color: '#64748b', marginTop: 2 },
+
+  timePill: { borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10 },
+  timePillText: { fontWeight: '800', fontSize: 14 },
+  dateTile: { width: 50, borderRadius: 12, borderWidth: 1, overflow: 'hidden', backgroundColor: '#fff', alignItems: 'center' },
+  dateMonth: { alignSelf: 'stretch', textAlign: 'center', color: '#fff', fontSize: 10.5, fontWeight: '800', paddingVertical: 2 },
+  dateDay: { fontSize: 19, fontWeight: '800', color: '#0f172a', paddingVertical: 3 },
+  pillIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  chipText: { fontSize: 12.5, fontWeight: '700' },
+  tag: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#f1f5f9' },
+  tagOk: { backgroundColor: '#dcfce7' },
+  tagText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  tagTextOk: { color: '#15803d' },
+
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  btn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#d5dbe5', borderRadius: 10,
+    paddingVertical: 8, paddingHorizontal: 14, backgroundColor: '#fff',
+  },
+  btnFill: {},
+  btnText: { color: '#334155', fontWeight: '700', fontSize: 13.5 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 },
+  btnPrimary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 13 },
+  btnPrimaryText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+
+  input: { borderWidth: 1.5, borderColor: '#dbe2ea', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#0f172a', backgroundColor: '#fff' },
+  note: { minHeight: 64, paddingTop: 10, textAlignVertical: 'top' },
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: '#334155' },
+  hint: { fontSize: 11.5, fontWeight: '500', color: '#64748b' },
+  option: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, backgroundColor: '#fff',
+  },
+  optionText: { fontSize: 14, fontWeight: '600', color: '#334155', flex: 1 },
+  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  timeOpt: { width: '48%', flexGrow: 1, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 10, backgroundColor: '#fff', gap: 2 },
+  timeOptLabel: { fontSize: 14, fontWeight: '700', color: '#0f172a', marginTop: 2 },
+  timeOptTime: { fontSize: 12, color: '#64748b' },
+
+  scale: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   scaleBtn: {
     width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(13,13,13,0.16)', backgroundColor: '#ffffff',
+    borderWidth: 1, borderColor: '#d5dbe5', backgroundColor: '#ffffff',
   },
-  scaleBtnOn: { backgroundColor: ZC.accent, borderColor: ZC.accent },
-  scaleText: { fontSize: 12.5, fontWeight: '600', color: ZC.ink2 },
+  scaleText: { fontSize: 12.5, fontWeight: '700', color: '#475569' },
   scaleTextOn: { color: '#ffffff' },
-  note: { minHeight: 60, paddingTop: 10 },
-  medName: { fontSize: 15, fontWeight: '700', color: ZC.ink },
-  medMeta: { fontSize: 12.5, color: ZC.ink3, marginTop: 2 },
-  doseActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  doseTaken: {
-    backgroundColor: ZC.accent, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 18,
-  },
-  doseTakenText: { color: '#ffffff', fontWeight: '700', fontSize: 13.5 },
-  doseGhost: {
-    borderWidth: 1, borderColor: 'rgba(13,13,13,0.16)', borderRadius: 10,
-    paddingVertical: 9, paddingHorizontal: 16, backgroundColor: '#ffffff',
-  },
-  doseGhostText: { color: ZC.ink2, fontWeight: '600', fontSize: 13.5 },
-  reminderRow: { flexDirection: 'row', alignItems: 'center' },
-  headingRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  addLink: { fontSize: 14, fontWeight: '700', color: ZC.accent, marginBottom: 2 },
-  fieldLabel: { fontSize: 13, fontWeight: '700', color: ZC.ink2 },
-  hint: { fontSize: 11.5, fontWeight: '500', color: ZC.ink3 },
-  option: {
-    borderWidth: 1, borderColor: 'rgba(13,13,13,0.16)', borderRadius: 10,
-    paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#ffffff', marginTop: 4,
-  },
-  optionOn: { backgroundColor: ZC.accent, borderColor: ZC.accent },
-  optionText: { fontSize: 13, fontWeight: '600', color: ZC.ink2 },
-  optionTextOn: { color: '#ffffff' },
+
+  empty: { alignItems: 'center', paddingVertical: 18, paddingHorizontal: 10 },
+  emptyIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  emptyTitle: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
+  emptyText: { fontSize: 13, color: '#64748b', textAlign: 'center', marginTop: 4, lineHeight: 19 },
+
   urgent: {
     backgroundColor: '#fff7ed', borderWidth: 2, borderColor: '#fdba74',
-    borderRadius: 14, padding: 14, marginTop: 8,
+    borderRadius: 14, padding: 14,
   },
   urgentText: { fontSize: 14, lineHeight: 21, color: '#7c2d12' },
 });

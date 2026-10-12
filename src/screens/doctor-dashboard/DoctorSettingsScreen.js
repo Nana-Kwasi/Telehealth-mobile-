@@ -22,7 +22,10 @@ import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 import { resolveFileUrl } from '../../utils/mediaUrl';
 import SecuritySettingsSection from '../../components/SecuritySettingsSection';
 
-const TABS = ['Profile', 'Availability'];
+import ConsentHistory from '../../components/ConsentHistory';
+import NotificationTogglesSection from '../../components/NotificationTogglesSection';
+import { ChangePasswordCard, ClinicianAccountNote } from '../../components/AccountSecurityExtras';
+const TABS = ['Profile', 'Security', 'Availability', 'Notifications', 'Legal'];
 
 export default function DoctorSettingsScreen() {
   const [tab, setTab] = useState('Profile');
@@ -298,7 +301,8 @@ export default function DoctorSettingsScreen() {
   return (
     <View style={styles.container}>
       {/* Tab Bar */}
-      <View style={styles.tabBar}>
+      {/* Scrolls sideways: five tabs no longer fit as equal-width columns. */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
         {TABS.map(t => (
           <TouchableOpacity
             key={t}
@@ -308,7 +312,7 @@ export default function DoctorSettingsScreen() {
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       {successMsg ? (
         <View style={styles.successBanner}>
@@ -320,10 +324,6 @@ export default function DoctorSettingsScreen() {
       {/* Profile Tab */}
       {tab === 'Profile' && (
         <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Shared with every role. 2FA and biometric sign-in existed
-            only in the medical patient screen, so a clinician could not
-            reach either. */}
-        <SecuritySettingsSection accent={DoctorColors.primary} />
           {/* Header */}
           <View style={styles.profileHeader}>
             <View style={styles.avatarWrapper}>
@@ -463,6 +463,28 @@ export default function DoctorSettingsScreen() {
         </ScrollView>
       )}
 
+      {/* Security Tab — two-step sign-in and biometrics, shared with every role
+          (was squeezed in above the profile header). */}
+      {tab === 'Security' && (
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <SecuritySettingsSection accent={DoctorColors.primary} />
+          <ChangePasswordCard accent={DoctorColors.primary} />
+          <ClinicianAccountNote />
+        </ScrollView>
+      )}
+
+      {tab === 'Notifications' && (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <NotificationTogglesSection accent={DoctorColors.primary} />
+        </ScrollView>
+      )}
+
+      {tab === 'Legal' && (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <ConsentHistory />
+        </ScrollView>
+      )}
+
       {/* Availability Tab */}
       {tab === 'Availability' && (
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -564,10 +586,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: DoctorColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   tabBar: {
-    flexDirection: 'row', backgroundColor: '#fff',
+    flexGrow: 0, backgroundColor: '#fff',
     borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
   },
-  tabItem: { flex: 1, paddingVertical: 14, alignItems: 'center' },
+  tabBarContent: { flexDirection: 'row', paddingHorizontal: 8 },
+  tabItem: { paddingVertical: 14, paddingHorizontal: 16, alignItems: 'center' },
   tabItemActive: { borderBottomWidth: 2, borderBottomColor: DoctorColors.primary },
   tabText: { fontSize: 14, fontWeight: '600', color: DoctorColors.textSecondary },
   tabTextActive: { color: DoctorColors.primary },

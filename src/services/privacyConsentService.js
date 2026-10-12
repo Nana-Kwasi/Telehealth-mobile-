@@ -73,15 +73,38 @@ export async function syncPrivacyConsentToUser({ userId, role, profileId }) {
   try {
     const deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
     if (deviceId) {
-      await api(`/api/v1/consent/device/${deviceId}/link-user`, {
-        method: 'PATCH',
-        authenticated: false,
-        body: { userId: profileId || userId },
-      });
+      // Signed in, and the server uses the signed-in account: the old
+      // link-user call was unauthenticated and attached consents to whatever
+      // id was sent (and the profile id it sent was not the account id).
+      await api(`/api/v1/consents/device/${encodeURIComponent(deviceId)}/link`, { method: 'POST' });
     }
   } catch (e) {
     console.warn('syncPrivacyConsentToUser:', e?.message);
   }
+  recordPendingTeenConsent().catch(() => {});
+}
+
+/**
+ * Parent/guardian consent for teen therapy is collected before the account
+ * exists and was kept only on the phone. Once signed in, record it in the
+ * append-only consent ledger (context teen_registration), once.
+ */
+async function recordPendingTeenConsent() {
+  let consent = null;
+  try { consent = JSON.parse((await AsyncStorage.getItem('th.parentConsent')) || 'null'); } catch { consent = null; }
+  if (!consent || !consent.signedAt || consent.recordedAt) return;
+  const { TEEN_CONSENT_ITEMS } = require('../constants/teenTherapyConfig');
+  const signer = consent.signature ? ` — signed by ${consent.signature}` : '';
+  const items = TEEN_CONSENT_ITEMS
+    .filter((c) => consent[c.key] === true)
+    .map((c) => ({
+      key: `teen_${c.key.replace(/Consent$/, '').replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)}`,
+      title: `${c.title}${signer}`,
+      version: POLICY_VERSION,
+    }));
+  if (!items.length) return;
+  await api('/api/v1/consents', { method: 'POST', body: { context: 'teen_registration', platform: Platform.OS, items } });
+  await AsyncStorage.setItem('th.parentConsent', JSON.stringify({ ...consent, recordedAt: new Date().toISOString() }));
 }
 
 export async function acceptPrivacyOnDevice() {

@@ -26,6 +26,8 @@ const drawerItems = [
   { screen: 'TherapistAppointments', icon: 'checkmark-circle-outline', label: 'Appointments' },
   { screen: 'TherapistSchedule',  icon: 'calendar-outline',        label: 'Calendar' },
   { screen: 'TherapistNotes',     icon: 'document-text-outline',   label: 'Notes' },
+  { screen: 'TherapistPrescriptions', icon: 'medkit-outline',      label: 'Prescriptions' },
+  { screen: 'TherapistRxRequests',   icon: 'mail-unread-outline',  label: 'Prescription Requests' },
   { screen: 'TherapistCarePlans', icon: 'clipboard-outline',       label: 'Care Plans' },
   { screen: 'TherapistDocuments', icon: 'document-attach-outline', label: 'Documents' },
   { screen: 'TherapistReferrals', icon: 'share-social-outline',    label: 'Referrals' },

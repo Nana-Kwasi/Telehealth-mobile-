@@ -30,6 +30,7 @@ import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobil
 import ZCGround from '../../components/ZCGround';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
 import TherapistScheduleCallModal from '../../components/therapist/TherapistScheduleCallModal';
+import ClientEPharmacyModal from './ClientEPharmacyModal';
 import { loadTherapistCalendarClients } from '../../services/therapistCalendarService';
 import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
 import { ZC } from '../../constants/zencare';
@@ -41,6 +42,7 @@ import GlassFill, { glassStyle } from '../../components/GlassFill';
 import { resolveFileUrl } from '../../utils/mediaUrl';
 import AiAssistantFab from '../../components/AiAssistantFab';
 
+import FaqSection from '../../components/FaqSection';
 const { width } = Dimensions.get('window');
 const CHART_W = width - 64;
 const KPI_CARD_W = 132;
@@ -158,6 +160,8 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
   const [completingId, setCompletingId] = useState(null);
   const [activitiesExpanded, setActivitiesExpanded] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  // Psychiatry: the doctor home's E-Pharmacy action, for psychiatry clients.
+  const [showEPharmacy, setShowEPharmacy] = useState(false);
   const [scheduleModalDate, setScheduleModalDate] = useState(null);
   const [scheduleClients, setScheduleClients] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -740,14 +744,11 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
             onEdit={() => navigation.navigate('TherapistSettings')}
           />
         </View>
-        <View style={styles.metaDivider} />
-        <View style={styles.metaCardRight}>
-          <WeatherCardMobile
-            embedded
-            profile={locationProfile || mergeLocationProfile(profile, therapistProfile)}
-          />
-        </View>
       </View>
+
+      {/* Full width under the location card: squeezed into half the row it
+          wrapped the temperature and condition one letter per line. */}
+      <WeatherCardMobile profile={locationProfile || mergeLocationProfile(profile, therapistProfile)} />
 
       {/* Counted server-side; the model only writes the sentence over those
           figures, so the card is right even when the model is not there. The
@@ -770,6 +771,20 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
         accent={TherapistColors.primary}
         onOpen={() => navigation.navigate('TherapistMessages')}
       />
+
+      {/* Psychiatry: the same Prescriptions / E-Pharmacy shortcuts as the doctor home. */}
+      <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 12 }}>
+        {[
+          { label: 'Prescriptions', icon: 'medkit-outline', onPress: () => navigation.navigate('TherapistPrescriptions') },
+          { label: 'E-Pharmacy', icon: 'storefront-outline', onPress: () => setShowEPharmacy(true) },
+        ].map(a => (
+          <TouchableOpacity key={a.label} onPress={a.onPress} activeOpacity={0.85}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 14, backgroundColor: '#ffffff', borderWidth: 1, borderColor: 'rgba(80,70,189,0.22)' }}>
+            <Ionicons name={a.icon} size={18} color={TherapistColors.primary} />
+            <Text style={{ fontSize: 14, fontWeight: '700', color: TherapistColors.primary }}>{a.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {/* Therapists have no analytics screen; this is their period-on-period
           view, counted from scheduled sessions and clinical notes. */}
@@ -1161,6 +1176,12 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
         </View>
       )}
 
+      <ClientEPharmacyModal
+        visible={showEPharmacy}
+        onClose={() => setShowEPharmacy(false)}
+        therapistId={myId}
+      />
+
       <TherapistScheduleCallModal
         visible={showScheduleModal}
         initialDate={scheduleModalDate}
@@ -1207,6 +1228,8 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
         </Pressable>
       </Modal>
 
+      {/* Shared FAQ (backend /api/v1/faq) — same answers as the website. */}
+      <FaqSection compact audience="clinician" />
       <View style={{ height: 24 }} />
     </ScrollView>
       <AiAssistantFab clinician />

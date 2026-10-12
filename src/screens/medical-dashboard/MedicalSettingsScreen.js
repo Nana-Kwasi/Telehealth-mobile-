@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   Alert, Switch, ActivityIndicator, Share, Modal, Platform,
@@ -13,6 +13,7 @@ import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 import { wipeLocalData } from '../../services/authService';
 import { enableBiometricLogin, disableBiometricLogin, biometricCapability } from '../../services/biometricAuth';
 
+import ConsentHistory from '../../components/ConsentHistory';
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 const TABS = [
@@ -24,16 +25,76 @@ const TABS = [
   { key: 'discharge', label: 'Discharge',  icon: 'exit-outline', danger: true },
 ];
 
+/**
+ * One settings screen for medical patients AND therapy clients (variant
+ * 'therapy'). The client screen was a separate, older layout that drifted —
+ * fewer sections, and a security card rendered inside its tab strip — so
+ * clients now get this screen with the medical-only parts swapped out.
+ */
+const VARIANTS = {
+  medical: {
+    who: 'doctor',
+    tabs: TABS,
+    quickLinks: ['InsuranceDetails', 'EmergencyContact', 'HealthRecords'],
+    sharing: ['records', 'prescriptions', 'appointments', 'labResults'],
+    billingScreen: 'MedicalBilling',
+    dataSharingLabel: 'Doctor–Patient Data Sharing',
+  },
+  therapy: {
+    who: 'therapist',
+    // No Discharge: clients have no discharge-request flow (the endpoint is
+    // patient-only). Therapy shows the intake answers instead.
+    tabs: [
+      TABS[0],
+      { key: 'therapy', label: 'Therapy', icon: 'heart-outline' },
+      ...TABS.slice(1).filter((t) => t.key !== 'discharge'),
+    ],
+    quickLinks: ['EmergencyContact'],
+    sharing: ['records', 'appointments'],
+    billingScreen: 'Billing',
+    dataSharingLabel: 'Therapist–Client Data Sharing',
+  },
+};
+
+const THERAPY_COLORS = { ...MedicalColors, primary: '#5046bd', primaryDark: '#3f3796', primaryLight: '#eeecfb' };
+
+const QUICK_LINKS = {
+  InsuranceDetails: { icon: 'shield-checkmark-outline', label: 'Insurance Details', color: '#1e6bb8' },
+  EmergencyContact: { icon: 'call-outline', label: 'Emergency Contacts', color: '#ea580c' },
+  HealthRecords: { icon: 'documents-outline', label: 'Health Records', color: '#059669' },
+};
+
+const SHARING = {
+  records:       { label: 'Records',        icon: 'documents-outline', color: '#059669' },
+  prescriptions: { label: 'Prescriptions',  icon: 'medkit-outline',    color: '#7c3aed' },
+  appointments:  { label: 'Appointments',   icon: 'calendar-outline',  color: '#2563eb' },
+  labResults:    { label: 'Lab Results',    icon: 'flask-outline',     color: '#d97706' },
+};
+
+/** Intake answers shown read-only on the client's Therapy tab. */
+const THERAPY_FIELDS = [
+  ['therapyType', 'Therapy type'], ['sessionFrequency', 'Session frequency'],
+  ['sessionStructure', 'Session structure'], ['communicationPreference', 'Communication preference'],
+  ['reasonsForTherapy', 'Reasons for therapy'], ['therapyGoals', 'Therapy goals'],
+  ['phq', 'PHQ-9 score'], ['anxiety', 'Anxiety level'], ['depression', 'Depression level'],
+  ['physicalHealth', 'Physical health'], ['sleep', 'Sleep quality'], ['exercise', 'Exercise'],
+];
+
 const DEFAULT_PRIVACY = {
   dataSharing: { records: true, prescriptions: true, appointments: true, labResults: true },
   profileVisible: true,
 };
 const DEFAULT_SECURITY = { twoFAEnabled: false, biometricEnabled: false };
 const DEFAULT_EMERGENCY = { medicalNotes: '', organDonor: false, preferredHospital: '', emergencyAccess: true };
-const DEFAULT_LEGAL = { termsAccepted: false, privacyAccepted: false, hipaaAccepted: false, dataSharingConsent: true };
 
-export default function MedicalSettingsScreen({ navigation }) {
+export default function MedicalSettingsScreen({ navigation, variant = 'medical' }) {
+  const V = VARIANTS[variant] || VARIANTS.medical;
+  // Therapy clients get the therapy violet, not the medical blue.
+  const therapy = variant === 'therapy';
+  const C = therapy ? THERAPY_COLORS : MedicalColors;
+  const s = useMemo(() => makeStyles(C), [C]);
   const [activeTab, setActiveTab] = useState('profile');
+  const [therapyIntake, setTherapyIntake] = useState({});
   const [loading, setLoading] = useState(true);
 
   // Profile
@@ -80,8 +141,6 @@ export default function MedicalSettingsScreen({ navigation }) {
   const [insuranceInfo, setInsuranceInfo] = useState(null);
 
   // Legal
-  const [legal, setLegal] = useState(DEFAULT_LEGAL);
-  const [savingLegal, setSavingLegal] = useState(false);
   const [consentLogs, setConsentLogs] = useState([]);
 
   // Discharge
@@ -96,6 +155,11 @@ export default function MedicalSettingsScreen({ navigation }) {
       const uid = await getStoredUserId();
       if (!uid) return;
       const patData = await api(`/api/v1/patients/${uid}`).catch(() => null);
+      if (variant === 'therapy') {
+        // The signup questionnaire lives on the CLIENT profile (preferencesJson).
+        const cp = await api(`/api/v1/clients/${uid}`).catch(() => null);
+        try { setTherapyIntake(cp?.preferencesJson ? JSON.parse(cp.preferencesJson) || {} : {}); } catch { setTherapyIntake({}); }
+      }
       // Seed the avatar from whichever record carries one so an already-saved
       // picture shows on open, not only after a fresh upload.
       const roleProfile = await api(`/api/v1/auth/mobile/resolve-role/${uid}`).catch(() => null);
@@ -121,7 +185,6 @@ export default function MedicalSettingsScreen({ navigation }) {
         setSecurity(s => ({ ...s, ...(patData.security || {}) }));
         setPrivacy(p => ({ ...DEFAULT_PRIVACY, ...(patData.privacy || {}), dataSharing: { ...DEFAULT_PRIVACY.dataSharing, ...(patData.privacy?.dataSharing || {}) } }));
         setEmergency(e => ({ ...DEFAULT_EMERGENCY, ...(patData.emergency || {}) }));
-        setLegal(l => ({ ...DEFAULT_LEGAL, ...(patData.legal || {}) }));
         setConsentLogs(patData.legal?.consentLogs || []);
         setBillingHistory(patData.billingHistory || []);
         setInsuranceInfo(patData.insurance || null);
@@ -318,20 +381,6 @@ export default function MedicalSettingsScreen({ navigation }) {
   };
 
   // ── Legal ──────────────────────────────────────────────────────────────────
-  const saveLegal = async (updatedLegal) => {
-    setSavingLegal(true);
-    try {
-      const uid = await getStoredUserId();
-      const log = { action: 'Legal consent updated', timestamp: new Date().toISOString(), accepted: updatedLegal };
-      const updatedLogs = [...consentLogs.slice(-49), log];
-      setConsentLogs(updatedLogs);
-      await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { legal: { ...updatedLegal, consentLogs: updatedLogs } } });
-      Alert.alert('Saved', 'Legal preferences saved.');
-    } catch { Alert.alert('Error', 'Failed to save.'); }
-    finally { setSavingLegal(false); }
-  };
-
-  const toggleLegal = (key) => setLegal(l => ({ ...l, [key]: !l[key] }));
 
   // ── Self-Discharge ─────────────────────────────────────────────────────────
   const submitDischarge = async () => {
@@ -380,28 +429,40 @@ export default function MedicalSettingsScreen({ navigation }) {
   };
 
   if (loading) {
-    return <View style={s.centered}><ActivityIndicator size="large" color={MedicalColors.primary} /></View>;
+    return <View style={s.centered}><ActivityIndicator size="large" color={C.primary} /></View>;
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <View style={s.root}>
       {/* Tab bar */}
-      <ScrollView
-      // The keyboard covered whatever was being typed into: this screen had
-      // no keyboard handling at all. iOS insets the scroll view; Android
-      // resizes the window (app.json softwareKeyboardLayoutMode default).
-      automaticallyAdjustKeyboardInsets
-      keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
-        {TABS.map(t => (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
+        {V.tabs.map(t => (
           <TouchableOpacity key={t.key} style={[s.tab, activeTab === t.key && (t.danger ? s.tabActiveDanger : s.tabActive)]} onPress={() => setActiveTab(t.key)}>
-            <Ionicons name={t.icon} size={16} color={activeTab === t.key ? (t.danger ? '#dc2626' : MedicalColors.primary) : '#94a3b8'} />
+            <Ionicons name={t.icon} size={16} color={activeTab === t.key ? (t.danger ? '#dc2626' : C.primary) : '#94a3b8'} />
             <Text style={[s.tabText, activeTab === t.key && (t.danger ? s.tabTextDanger : s.tabTextActive)]}>{t.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      <ScrollView style={s.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/* The keyboard covered whatever was being typed into. iOS insets the
+          scroll view; Android resizes the window (app.json default). */}
+      <ScrollView style={s.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+
+        {/* ═══ THERAPY TAB (clients) ═══ */}
+        {activeTab === 'therapy' && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Your therapy details</Text>
+            <Text style={s.cardDesc}>From the questionnaire you completed when you joined. Ask your therapist to update anything that has changed.</Text>
+            {THERAPY_FIELDS.map(([key, label]) => {
+              const v = therapyIntake[key];
+              const text = Array.isArray(v) ? v.join(', ') : (v === 0 || v ? String(v) : 'Not specified');
+              return (
+                <Text key={key} style={s.infoRow}><Text style={s.infoKey}>{label}: </Text>{text}</Text>
+              );
+            })}
+          </View>
+        )}
 
         {/* ═══ PROFILE TAB ═══ */}
         {activeTab === 'profile' && (
@@ -413,7 +474,7 @@ export default function MedicalSettingsScreen({ navigation }) {
                 user={{ ...form, avatarUrl }}
                 size={58}
                 onPress={changeAvatar}
-                backgroundColor={MedicalColors.primary}
+                backgroundColor={C.primary}
               />
               <View style={{ flex: 1 }}>
                 <Text style={s.profileName}>{form.name || 'Patient'}</Text>
@@ -435,12 +496,12 @@ export default function MedicalSettingsScreen({ navigation }) {
               ].map(({ label, key, ...opts }) => (
                 <View key={key} style={s.fieldGroup}>
                   <Text style={s.label}>{label}</Text>
-                  <TextInput style={s.input} value={form[key]} onChangeText={v => setForm(f => ({ ...f, [key]: v }))} placeholderTextColor={MedicalColors.textLight} {...opts} />
+                  <TextInput style={s.input} value={form[key]} onChangeText={v => setForm(f => ({ ...f, [key]: v }))} placeholderTextColor={C.textLight} {...opts} />
                 </View>
               ))}
               <View style={s.fieldGroup}>
                 <Text style={s.label}>Email (read-only)</Text>
-                <TextInput style={[s.input, { backgroundColor: '#f8fafc', color: MedicalColors.textSecondary }]} value={form.email} editable={false} />
+                <TextInput style={[s.input, { backgroundColor: '#f8fafc', color: C.textSecondary }]} value={form.email} editable={false} />
               </View>
               <TouchableOpacity
                 style={[s.outlineBtn, { marginBottom: 10, alignSelf: 'flex-start' }]}
@@ -458,8 +519,8 @@ export default function MedicalSettingsScreen({ navigation }) {
                 })}
                 disabled={locating}
               >
-                <Ionicons name="locate-outline" size={16} color={MedicalColors.primary} />
-                <Text style={{ color: MedicalColors.primary, fontWeight: '700' }}>{locating ? 'Detecting location…' : 'Use current location'}</Text>
+                <Ionicons name="locate-outline" size={16} color={C.primary} />
+                <Text style={{ color: C.primary, fontWeight: '700' }}>{locating ? 'Detecting location…' : 'Use current location'}</Text>
               </TouchableOpacity>
               {!!locationMsg && <Text style={{ color: '#64748b', fontSize: 12, marginBottom: 10 }}>{locationMsg}</Text>}
               {[
@@ -472,42 +533,40 @@ export default function MedicalSettingsScreen({ navigation }) {
               ].map(({ label, key, placeholder }) => (
                 <View key={key} style={s.fieldGroup}>
                   <Text style={s.label}>{label}</Text>
-                  <TextInput style={s.input} value={String(form[key] || '')} onChangeText={v => setForm(f => ({ ...f, [key]: v }))} placeholder={placeholder} placeholderTextColor={MedicalColors.textLight} />
+                  <TextInput style={s.input} value={String(form[key] || '')} onChangeText={v => setForm(f => ({ ...f, [key]: v }))} placeholder={placeholder} placeholderTextColor={C.textLight} />
                 </View>
               ))}
             </View>
 
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Health Information</Text>
-              <Text style={s.label}>Blood Type</Text>
-              <View style={s.chipRow}>
-                {BLOOD_TYPES.map(bt => (
-                  <TouchableOpacity key={bt} style={[s.chip, form.bloodType === bt && s.chipSelected]} onPress={() => setForm(f => ({ ...f, bloodType: bt }))}>
-                    <Text style={[s.chipText, form.bloodType === bt && s.chipTextSelected]}>{bt}</Text>
-                  </TouchableOpacity>
-                ))}
+            {!therapy && (
+              <View style={s.card}>
+                <Text style={s.cardTitle}>Health Information</Text>
+                <Text style={s.label}>Blood Type</Text>
+                <View style={s.chipRow}>
+                  {BLOOD_TYPES.map(bt => (
+                    <TouchableOpacity key={bt} style={[s.chip, form.bloodType === bt && s.chipSelected]} onPress={() => setForm(f => ({ ...f, bloodType: bt }))}>
+                      <Text style={[s.chipText, form.bloodType === bt && s.chipTextSelected]}>{bt}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={s.fieldGroup}>
+                  <Text style={s.label}>Known Allergies</Text>
+                  <TextInput style={[s.input, { minHeight: 70, textAlignVertical: 'top' }]} value={form.allergies} onChangeText={v => setForm(f => ({ ...f, allergies: v }))} placeholder="e.g. Penicillin, Peanuts…" placeholderTextColor={C.textLight} multiline />
+                </View>
               </View>
-              <View style={s.fieldGroup}>
-                <Text style={s.label}>Known Allergies</Text>
-                <TextInput style={[s.input, { minHeight: 70, textAlignVertical: 'top' }]} value={form.allergies} onChangeText={v => setForm(f => ({ ...f, allergies: v }))} placeholder="e.g. Penicillin, Peanuts…" placeholderTextColor={MedicalColors.textLight} multiline />
-              </View>
-            </View>
+            )}
 
             <TouchableOpacity style={[s.btn, saving && { opacity: 0.65 }]} onPress={saveProfile} disabled={saving}>
               {saving ? <ActivityIndicator color="#fff" size="small" /> : <><Ionicons name="checkmark-circle-outline" size={18} color="#fff" /><Text style={s.btnText}>Save Changes</Text></>}
             </TouchableOpacity>
 
             <TouchableOpacity style={s.rowLink} onPress={() => setShowPwdModal(true)}>
-              <View style={[s.rowIcon, { backgroundColor: '#eff6ff' }]}><Ionicons name="lock-closed-outline" size={18} color="#2563eb" /></View>
+              <View style={[s.rowIcon, { backgroundColor: C.primaryLight }]}><Ionicons name="lock-closed-outline" size={18} color="#2563eb" /></View>
               <Text style={s.rowLinkText}>Change Password</Text>
               <Ionicons name="chevron-forward" size={16} color="#94a3b8" style={{ marginLeft: 'auto' }} />
             </TouchableOpacity>
 
-            {[
-              { icon: 'shield-checkmark-outline', label: 'Insurance Details', color: '#1e6bb8', screen: 'InsuranceDetails' },
-              { icon: 'call-outline', label: 'Emergency Contacts', color: '#ea580c', screen: 'EmergencyContact' },
-              { icon: 'documents-outline', label: 'Health Records', color: '#059669', screen: 'HealthRecords' },
-            ].map(({ icon, label, color, screen }) => (
+            {V.quickLinks.map((screen) => ({ ...QUICK_LINKS[screen], screen })).map(({ icon, label, color, screen }) => (
               <TouchableOpacity key={screen} style={s.rowLink} onPress={() => navigation.getParent()?.navigate(screen)}>
                 <View style={[s.rowIcon, { backgroundColor: color + '18' }]}><Ionicons name={icon} size={18} color={color} /></View>
                 <Text style={s.rowLinkText}>{label}</Text>
@@ -528,7 +587,7 @@ export default function MedicalSettingsScreen({ navigation }) {
             <View style={s.card}>
               <Text style={s.cardTitle}>Authentication</Text>
               {[
-                { key: 'twoFAEnabled', icon: 'mail-unread-outline', label: 'Two-factor authentication', desc: 'Require a code emailed to you when signing in', color: '#2563eb' },
+                { key: 'twoFAEnabled', icon: 'mail-unread-outline', label: 'Two-factor authentication', desc: 'Require a code emailed to you when signing in', color: C.primary },
                 { key: 'biometricEnabled', icon: 'finger-print-outline', label: 'Biometric Login', desc: 'Use Face ID or Fingerprint to sign in on this device', color: '#7c3aed' },
               ].map(({ key, icon, label, desc, color }) => (
                 <View key={key} style={s.toggleRow}>
@@ -537,7 +596,7 @@ export default function MedicalSettingsScreen({ navigation }) {
                     <Text style={s.toggleLabel}>{label}</Text>
                     <Text style={s.toggleDesc}>{desc}</Text>
                   </View>
-                  <Switch value={security[key]} onValueChange={() => toggleSecurity(key)} trackColor={{ true: MedicalColors.primary }} />
+                  <Switch value={security[key]} onValueChange={() => toggleSecurity(key)} trackColor={{ true: C.primary }} />
                 </View>
               ))}
 
@@ -559,20 +618,15 @@ export default function MedicalSettingsScreen({ navigation }) {
 
             <View style={s.card}>
               <Text style={s.cardTitle}>Data Sharing Permissions</Text>
-              <Text style={s.cardDesc}>Control what your doctor can access. Turning off a category hides it from your doctor's view.</Text>
-              {[
-                { key: 'records',       label: 'Health Records',   icon: 'documents-outline',     color: '#059669' },
-                { key: 'prescriptions', label: 'Prescriptions',    icon: 'medkit-outline',        color: '#7c3aed' },
-                { key: 'appointments',  label: 'Appointments',     icon: 'calendar-outline',      color: '#2563eb' },
-                { key: 'labResults',    label: 'Lab Results',      icon: 'flask-outline',         color: '#d97706' },
-              ].map(({ key, label, icon, color }) => (
+              <Text style={s.cardDesc}>Control what your {V.who} can access. Turning off a category hides it from your {V.who}'s view.</Text>
+              {V.sharing.map((key) => ({ key, ...SHARING[key] })).map(({ key, label, icon, color }) => (
                 <View key={key} style={s.toggleRow}>
                   <View style={[s.rowIcon, { backgroundColor: color + '18' }]}><Ionicons name={icon} size={18} color={color} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.toggleLabel}>{label}</Text>
-                    <Text style={s.toggleDesc}>{privacy.dataSharing[key] ? 'Visible to your doctor' : 'Hidden from your doctor'}</Text>
+                    <Text style={s.toggleDesc}>{privacy.dataSharing[key] ? `Visible to your ${V.who}` : `Hidden from your ${V.who}`}</Text>
                   </View>
-                  <Switch value={privacy.dataSharing[key]} onValueChange={() => toggleDataSharing(key)} trackColor={{ true: MedicalColors.primary }} />
+                  <Switch value={privacy.dataSharing[key]} onValueChange={() => toggleDataSharing(key)} trackColor={{ true: C.primary }} />
                 </View>
               ))}
             </View>
@@ -583,20 +637,20 @@ export default function MedicalSettingsScreen({ navigation }) {
                 <View style={[s.rowIcon, { backgroundColor: '#f0fdf4' }]}><Ionicons name="eye-outline" size={18} color="#059669" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.toggleLabel}>Profile Visibility</Text>
-                  <Text style={s.toggleDesc}>Allow your profile to be visible to assigned doctors</Text>
+                  <Text style={s.toggleDesc}>{`Allow your profile to be visible to your assigned ${V.who}`}</Text>
                 </View>
                 <Switch value={privacy.profileVisible} onValueChange={async () => {
                   const updated = { ...privacy, profileVisible: !privacy.profileVisible };
                   setPrivacy(updated);
                   await saveSecurity(null, updated);
-                }} trackColor={{ true: MedicalColors.primary }} />
+                }} trackColor={{ true: C.primary }} />
               </View>
             </View>
 
             <View style={s.card}>
               <Text style={s.cardTitle}>Your Data (GDPR)</Text>
               <TouchableOpacity style={s.rowLink} onPress={downloadMyData}>
-                <View style={[s.rowIcon, { backgroundColor: '#eff6ff' }]}><Ionicons name="download-outline" size={18} color="#2563eb" /></View>
+                <View style={[s.rowIcon, { backgroundColor: C.primaryLight }]}><Ionicons name="download-outline" size={18} color="#2563eb" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.toggleLabel}>Download My Data</Text>
                   <Text style={s.toggleDesc}>Export all your health data as a JSON file</Text>
@@ -621,56 +675,68 @@ export default function MedicalSettingsScreen({ navigation }) {
           <>
             <View style={s.infoBanner}>
               <Ionicons name="warning-outline" size={18} color="#d97706" />
-              <Text style={s.infoBannerText}>This information is shared with emergency responders and your doctor when emergency access is enabled.</Text>
+              <Text style={s.infoBannerText}>
+                {therapy
+                  ? 'If you are in danger or thinking of harming yourself, call 112 now. Keep an emergency contact here so your therapist can reach someone if you are at risk.'
+                  : 'This information is shared with emergency responders and your care team when emergency access is enabled.'}
+              </Text>
             </View>
 
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Emergency Medical Notes</Text>
-              <Text style={s.cardDesc}>Critical conditions doctors must know immediately (e.g., Asthmatic, Epileptic, Diabetic).</Text>
-              <TextInput
-                style={[s.input, { minHeight: 90, textAlignVertical: 'top', marginTop: 8 }]}
-                value={emergency.medicalNotes}
-                onChangeText={v => setEmergency(e => ({ ...e, medicalNotes: v }))}
-                placeholder="e.g., Asthmatic — uses Ventolin. Epileptic — seizure protocol applies. Allergic to Penicillin."
-                placeholderTextColor={MedicalColors.textLight}
-                multiline
-              />
-            </View>
-
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Critical Status</Text>
-              <View style={s.toggleRow}>
-                <View style={[s.rowIcon, { backgroundColor: '#fef2f2' }]}><Ionicons name="heart-outline" size={18} color="#dc2626" /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.toggleLabel}>Organ Donor</Text>
-                  <Text style={s.toggleDesc}>Mark yourself as a registered organ donor</Text>
-                </View>
-                <Switch value={emergency.organDonor} onValueChange={() => setEmergency(e => ({ ...e, organDonor: !e.organDonor }))} trackColor={{ true: '#dc2626' }} />
+            {!therapy && (
+              <View style={s.card}>
+                <Text style={s.cardTitle}>Emergency Medical Notes</Text>
+                <Text style={s.cardDesc}>Critical conditions doctors must know immediately (e.g., Asthmatic, Epileptic, Diabetic).</Text>
+                <TextInput
+                  style={[s.input, { minHeight: 90, textAlignVertical: 'top', marginTop: 8 }]}
+                  value={emergency.medicalNotes}
+                  onChangeText={v => setEmergency(e => ({ ...e, medicalNotes: v }))}
+                  placeholder="e.g., Asthmatic — uses Ventolin. Epileptic — seizure protocol applies. Allergic to Penicillin."
+                  placeholderTextColor={C.textLight}
+                  multiline
+                />
               </View>
-              <View style={s.toggleRow}>
-                <View style={[s.rowIcon, { backgroundColor: '#f0fdf4' }]}><Ionicons name="shield-checkmark-outline" size={18} color="#16a34a" /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.toggleLabel}>Emergency Doctor Access</Text>
-                  <Text style={s.toggleDesc}>Allow any doctor to view your profile in life-threatening emergencies</Text>
+            )}
+
+            {!therapy && (
+              <View style={s.card}>
+                <Text style={s.cardTitle}>Critical Status</Text>
+                <View style={s.toggleRow}>
+                  <View style={[s.rowIcon, { backgroundColor: '#fef2f2' }]}><Ionicons name="heart-outline" size={18} color="#dc2626" /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.toggleLabel}>Organ Donor</Text>
+                    <Text style={s.toggleDesc}>Mark yourself as a registered organ donor</Text>
+                  </View>
+                  <Switch value={emergency.organDonor} onValueChange={() => setEmergency(e => ({ ...e, organDonor: !e.organDonor }))} trackColor={{ true: '#dc2626' }} />
                 </View>
-                <Switch value={emergency.emergencyAccess} onValueChange={() => setEmergency(e => ({ ...e, emergencyAccess: !e.emergencyAccess }))} trackColor={{ true: '#16a34a' }} />
+                <View style={s.toggleRow}>
+                  <View style={[s.rowIcon, { backgroundColor: '#f0fdf4' }]}><Ionicons name="shield-checkmark-outline" size={18} color="#16a34a" /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.toggleLabel}>Emergency Doctor Access</Text>
+                    <Text style={s.toggleDesc}>Allow any doctor to view your profile in life-threatening emergencies</Text>
+                  </View>
+                  <Switch value={emergency.emergencyAccess} onValueChange={() => setEmergency(e => ({ ...e, emergencyAccess: !e.emergencyAccess }))} trackColor={{ true: '#16a34a' }} />
+                </View>
               </View>
-            </View>
+            )}
 
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Preferred Hospital</Text>
-              <TextInput
-                style={s.input}
-                value={emergency.preferredHospital}
-                onChangeText={v => setEmergency(e => ({ ...e, preferredHospital: v }))}
-                placeholder="e.g., St. Mary's General Hospital, Chicago, IL"
-                placeholderTextColor={MedicalColors.textLight}
-              />
-            </View>
+            {!therapy && (
+              <View style={s.card}>
+                <Text style={s.cardTitle}>Preferred Hospital</Text>
+                <TextInput
+                  style={s.input}
+                  value={emergency.preferredHospital}
+                  onChangeText={v => setEmergency(e => ({ ...e, preferredHospital: v }))}
+                  placeholder="e.g., St. Mary's General Hospital, Chicago, IL"
+                  placeholderTextColor={C.textLight}
+                />
+              </View>
+            )}
 
+{!therapy && (
             <TouchableOpacity style={[s.btn, savingEmergency && { opacity: 0.65 }]} onPress={saveEmergency} disabled={savingEmergency}>
               {savingEmergency ? <ActivityIndicator color="#fff" size="small" /> : <><Ionicons name="checkmark-circle-outline" size={18} color="#fff" /><Text style={s.btnText}>Save Emergency Info</Text></>}
             </TouchableOpacity>
+            )}
 
             <TouchableOpacity style={s.rowLink} onPress={() => navigation.getParent()?.navigate('EmergencyContact')}>
               <View style={[s.rowIcon, { backgroundColor: '#fff7ed' }]}><Ionicons name="call-outline" size={18} color="#ea580c" /></View>
@@ -683,29 +749,31 @@ export default function MedicalSettingsScreen({ navigation }) {
         {/* ═══ BILLING & INSURANCE TAB ═══ */}
         {activeTab === 'billing' && (
           <>
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Insurance</Text>
-              {insuranceInfo ? (
-                <View style={s.infoBlock}>
-                  <Text style={s.infoRow}><Text style={s.infoKey}>Provider: </Text>{insuranceInfo.provider || '—'}</Text>
-                  <Text style={s.infoRow}><Text style={s.infoKey}>Plan: </Text>{insuranceInfo.planType || '—'}</Text>
-                  <Text style={s.infoRow}><Text style={s.infoKey}>Policy #: </Text>{insuranceInfo.policyNumber || '—'}</Text>
-                  <Text style={s.infoRow}><Text style={s.infoKey}>Member ID: </Text>{insuranceInfo.memberId || '—'}</Text>
-                  <Text style={s.infoRow}><Text style={s.infoKey}>Expires: </Text>{insuranceInfo.expiryDate || '—'}</Text>
-                </View>
-              ) : (
-                <Text style={s.cardDesc}>No insurance on file yet.</Text>
-              )}
-              <TouchableOpacity style={[s.outlineBtn, { marginTop: 10 }]} onPress={() => navigation.getParent()?.navigate('InsuranceDetails')}>
-                <Ionicons name="shield-checkmark-outline" size={16} color={MedicalColors.primary} />
-                <Text style={s.outlineBtnText}>{insuranceInfo ? 'Update Insurance' : 'Add Insurance'}</Text>
-              </TouchableOpacity>
-            </View>
+            {!therapy && (
+              <View style={s.card}>
+                <Text style={s.cardTitle}>Insurance</Text>
+                {insuranceInfo ? (
+                  <View style={s.infoBlock}>
+                    <Text style={s.infoRow}><Text style={s.infoKey}>Provider: </Text>{insuranceInfo.provider || '—'}</Text>
+                    <Text style={s.infoRow}><Text style={s.infoKey}>Plan: </Text>{insuranceInfo.planType || '—'}</Text>
+                    <Text style={s.infoRow}><Text style={s.infoKey}>Policy #: </Text>{insuranceInfo.policyNumber || '—'}</Text>
+                    <Text style={s.infoRow}><Text style={s.infoKey}>Member ID: </Text>{insuranceInfo.memberId || '—'}</Text>
+                    <Text style={s.infoRow}><Text style={s.infoKey}>Expires: </Text>{insuranceInfo.expiryDate || '—'}</Text>
+                  </View>
+                ) : (
+                  <Text style={s.cardDesc}>No insurance on file yet.</Text>
+                )}
+                <TouchableOpacity style={[s.outlineBtn, { marginTop: 10 }]} onPress={() => navigation.getParent()?.navigate('InsuranceDetails')}>
+                  <Ionicons name="shield-checkmark-outline" size={16} color={C.primary} />
+                  <Text style={s.outlineBtnText}>{insuranceInfo ? 'Update Insurance' : 'Add Insurance'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <View style={s.card}>
               <Text style={s.cardTitle}>Billing History</Text>
               {billingHistory.length === 0 ? (
-                <Text style={s.cardDesc}>No billing records yet.</Text>
+                <Text style={s.cardDesc}>{variant === 'therapy' ? 'Your session payments and receipts are in Billing below.' : 'No billing records yet.'}</Text>
               ) : (
                 billingHistory.slice(-10).reverse().map((b, i) => (
                   <View key={i} style={s.billingRow}>
@@ -723,8 +791,8 @@ export default function MedicalSettingsScreen({ navigation }) {
 
             <View style={s.card}>
               <Text style={s.cardTitle}>Payment Preferences</Text>
-              <TouchableOpacity style={s.rowLink} onPress={() => navigation.navigate('MedicalBilling')}>
-                <View style={[s.rowIcon, { backgroundColor: '#eff6ff' }]}><Ionicons name="card-outline" size={18} color="#2563eb" /></View>
+              <TouchableOpacity style={s.rowLink} onPress={() => navigation.navigate(V.billingScreen)}>
+                <View style={[s.rowIcon, { backgroundColor: C.primaryLight }]}><Ionicons name="card-outline" size={18} color="#2563eb" /></View>
                 <Text style={s.rowLinkText}>Manage Billing & Payments</Text>
                 <Ionicons name="chevron-forward" size={16} color="#94a3b8" style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
@@ -733,66 +801,9 @@ export default function MedicalSettingsScreen({ navigation }) {
         )}
 
         {/* ═══ LEGAL & COMPLIANCE TAB ═══ */}
-        {activeTab === 'legal' && (
-          <>
-            <View style={s.infoBanner}>
-              <Ionicons name="information-circle-outline" size={18} color="#2563eb" />
-              <Text style={[s.infoBannerText, { color: '#1e40af' }]}>All consent changes are logged with a timestamp for compliance purposes.</Text>
-            </View>
-
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Consent & Agreements</Text>
-              {[
-                { key: 'termsAccepted',   label: 'Terms & Conditions',               desc: 'I have read and agree to the NessaHub Terms of Service' },
-                { key: 'privacyAccepted', label: 'Privacy Policy',                   desc: 'I agree to the NessaHub Privacy Policy regarding data handling' },
-                { key: 'hipaaAccepted',   label: 'HIPAA / GDPR Acknowledgment',      desc: 'I acknowledge my rights under HIPAA/GDPR for health data protection' },
-                { key: 'dataSharingConsent', label: 'Doctor–Patient Data Sharing',   desc: 'I consent to sharing my health data with my assigned doctor(s)' },
-              ].map(({ key, label, desc }) => (
-                <TouchableOpacity key={key} style={s.consentRow} onPress={() => toggleLegal(key)}>
-                  <View style={[s.checkbox, legal[key] && s.checkboxChecked]}>
-                    {legal[key] && <Ionicons name="checkmark" size={14} color="#fff" />}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.consentLabel}>{label}</Text>
-                    <Text style={s.consentDesc}>{desc}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TouchableOpacity style={[s.btn, savingLegal && { opacity: 0.65 }]} onPress={() => saveLegal(legal)} disabled={savingLegal}>
-              {savingLegal ? <ActivityIndicator color="#fff" size="small" /> : <><Ionicons name="checkmark-circle-outline" size={18} color="#fff" /><Text style={s.btnText}>Save Legal Preferences</Text></>}
-            </TouchableOpacity>
-
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Legal Documents</Text>
-              {[
-                { label: 'Terms & Conditions', icon: 'document-text-outline', color: '#2563eb' },
-                { label: 'Privacy Policy', icon: 'shield-outline', color: '#7c3aed' },
-                { label: 'HIPAA Notice of Privacy Practices', icon: 'medkit-outline', color: '#059669' },
-                { label: 'GDPR Data Rights Information', icon: 'information-circle-outline', color: '#d97706' },
-              ].map(({ label, icon, color }) => (
-                <TouchableOpacity key={label} style={s.rowLink} onPress={() => Alert.alert(label, `The full ${label} document will open in your browser. This is managed by NessaHub Legal.`)}>
-                  <View style={[s.rowIcon, { backgroundColor: color + '18' }]}><Ionicons name={icon} size={18} color={color} /></View>
-                  <Text style={s.rowLinkText}>{label}</Text>
-                  <Ionicons name="open-outline" size={16} color="#94a3b8" style={{ marginLeft: 'auto' }} />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {consentLogs.length > 0 && (
-              <View style={s.card}>
-                <Text style={s.cardTitle}>Consent Log</Text>
-                {consentLogs.slice(-5).reverse().map((log, i) => (
-                  <View key={i} style={s.logRow}>
-                    <Ionicons name="time-outline" size={12} color="#94a3b8" />
-                    <Text style={s.logText}>{log.action} — {new Date(log.timestamp).toLocaleString()}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </>
-        )}
+        {/* Read-only record of what was agreed, grouped by where (consent ledger).
+            The checkboxes here showed defaults and could be unticked. */}
+        {activeTab === 'legal' && <ConsentHistory />}
 
         {/* ═══ SELF-DISCHARGE TAB ═══ */}
         {activeTab === 'discharge' && (
@@ -821,7 +832,7 @@ export default function MedicalSettingsScreen({ navigation }) {
                       value={dischargeForm.reason}
                       onChangeText={v => setDischargeForm(f => ({ ...f, reason: v }))}
                       placeholder="Please describe why you wish to leave. This helps us improve our service."
-                      placeholderTextColor={MedicalColors.textLight}
+                      placeholderTextColor={C.textLight}
                       multiline
                     />
                   </View>
@@ -833,7 +844,7 @@ export default function MedicalSettingsScreen({ navigation }) {
                       value={dischargeForm.message}
                       onChangeText={v => setDischargeForm(f => ({ ...f, message: v }))}
                       placeholder="Any additional information you'd like your doctor to know…"
-                      placeholderTextColor={MedicalColors.textLight}
+                      placeholderTextColor={C.textLight}
                       multiline
                     />
                   </View>
@@ -874,7 +885,7 @@ export default function MedicalSettingsScreen({ navigation }) {
             {[{ key: 'current', label: 'Current Password' }, { key: 'next', label: 'New Password' }, { key: 'confirm', label: 'Confirm New Password' }].map(f => (
               <View key={f.key} style={{ marginBottom: 12 }}>
                 <Text style={s.label}>{f.label}</Text>
-                <TextInput style={s.input} value={pwdForm[f.key]} onChangeText={v => setPwdForm(p => ({ ...p, [f.key]: v }))} secureTextEntry placeholderTextColor={MedicalColors.textLight} placeholder="••••••••" />
+                <TextInput style={s.input} value={pwdForm[f.key]} onChangeText={v => setPwdForm(p => ({ ...p, [f.key]: v }))} secureTextEntry placeholderTextColor={C.textLight} placeholder="••••••••" />
               </View>
             ))}
             <TouchableOpacity style={[s.btn, changingPwd && { opacity: 0.65 }]} onPress={handleChangePassword} disabled={changingPwd}>
@@ -895,14 +906,14 @@ export default function MedicalSettingsScreen({ navigation }) {
                 <Ionicons name="close" size={22} color="#64748b" />
               </TouchableOpacity>
             </View>
-            <Text style={[s.cardDesc, { marginBottom: 16 }]}>This is permanent and cannot be undone. All your data will be removed. Type <Text style={{ fontWeight: '700', color: '#dc2626' }}>DELETE</Text> and enter your password to confirm.</Text>
+            <Text style={[s.cardDesc, { marginBottom: 16 }]}>Your account is closed straight away and you are signed out everywhere. Health records must be kept for the period the law requires (currently 7 years); after that they are permanently deleted. This cannot be undone. Type <Text style={{ fontWeight: '700', color: '#dc2626' }}>DELETE</Text> and enter your password to confirm.</Text>
             <View style={{ marginBottom: 12 }}>
               <Text style={s.label}>Type DELETE</Text>
-              <TextInput style={s.input} value={deleteConfirm} onChangeText={setDeleteConfirm} placeholder="DELETE" placeholderTextColor={MedicalColors.textLight} autoCapitalize="characters" />
+              <TextInput style={s.input} value={deleteConfirm} onChangeText={setDeleteConfirm} placeholder="DELETE" placeholderTextColor={C.textLight} autoCapitalize="characters" />
             </View>
             <View style={{ marginBottom: 16 }}>
               <Text style={s.label}>Your Password</Text>
-              <TextInput style={s.input} value={deletePwd} onChangeText={setDeletePwd} secureTextEntry placeholder="Your current password" placeholderTextColor={MedicalColors.textLight} />
+              <TextInput style={s.input} value={deletePwd} onChangeText={setDeletePwd} secureTextEntry placeholder="Your current password" placeholderTextColor={C.textLight} />
             </View>
             <TouchableOpacity style={[s.dischargeSubmitBtn, deleting && { opacity: 0.65 }]} onPress={handleDeleteAccount} disabled={deleting}>
               {deleting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.btnText}>Permanently Delete My Account</Text>}
@@ -914,7 +925,8 @@ export default function MedicalSettingsScreen({ navigation }) {
   );
 }
 
-const s = StyleSheet.create({
+/** Styles for a palette: medical blue, or therapy violet for clients. */
+const makeStyles = (MedicalColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: MedicalColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { flex: 1, padding: 16 },

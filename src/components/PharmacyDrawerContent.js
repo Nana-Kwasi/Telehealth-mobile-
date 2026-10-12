@@ -10,6 +10,7 @@ import { PharmacyColors as C } from '../constants/colors';
 const PHARMACY_NAV = [
   { name: 'PharmacyHome',          label: 'Dashboard',     icon: 'grid-outline' },
   { name: 'PharmacyPrescriptions', label: 'Prescriptions', icon: 'medical-outline' },
+  { name: 'PharmacyOpen',          label: 'Open Prescriptions', icon: 'mail-open-outline' },
   { name: 'PharmacyBranches',      label: 'Branches',      icon: 'storefront-outline' },
   { name: 'PharmacyWalkIn',        label: 'Walk-in Verify',icon: 'search-outline' },
   { name: 'PharmacyActivity',      label: 'Activity',      icon: 'receipt-outline' },
@@ -21,6 +22,7 @@ const PHARMACY_NAV = [
 const BRANCH_NAV = [
   { name: 'BranchHome',          label: 'Dashboard',     icon: 'grid-outline' },
   { name: 'BranchPrescriptions', label: 'Prescriptions', icon: 'medical-outline' },
+  { name: 'BranchOpen',          label: 'Open Prescriptions', icon: 'mail-open-outline' },
   { name: 'BranchWalkIn',        label: 'Walk-in Verify',icon: 'search-outline' },
   { name: 'BranchTransfers',     label: 'Transfers',     icon: 'swap-horizontal-outline' },
   { name: 'BranchActivity',      label: 'Activity',      icon: 'receipt-outline' },

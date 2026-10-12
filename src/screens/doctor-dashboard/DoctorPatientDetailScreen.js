@@ -810,7 +810,22 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                       style={{ backgroundColor: '#f5f3ff', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#ddd6fe' }}
                       onPress={() => {
                         if (prescriptions.length === 0) { Alert.alert('No Prescriptions', 'Issue a prescription first.'); return; }
-                        Alert.alert('Send Prescription', `Send the latest prescription to ${ph.name}?`, [
+                        // Only a NessaHub branch can receive a prescription. A manually
+                        // typed pharmacy has no account; the old write marked the Rx
+                        // "sent" while no pharmacy ever saw it.
+                        if (!ph.branchId) {
+                          Alert.alert('Not on NessaHub', `${ph.name || 'This pharmacy'} is not on NessaHub, so the prescription cannot be sent to it. Share it with the pharmacy directly, or pick a NessaHub branch.`);
+                          return;
+                        }
+                        const latest = prescriptions[0];
+                        if (latest?.deliveredAt || latest?.pharmacyStatus === 'delivered') {
+                          Alert.alert('Already delivered', 'The latest prescription has already been delivered and cannot be re-sent.');
+                          return;
+                        }
+                        const elsewhere = latest?.branchId && latest.branchId !== ph.branchId;
+                        Alert.alert('Send Prescription', elsewhere
+                          ? `The latest prescription is already with ${latest.branchName || latest.pharmacyName || 'another pharmacy'}. Move it to ${ph.branchName || ph.name}?`
+                          : `Send the latest prescription to ${ph.name}?`, [
                           { text: 'Cancel', style: 'cancel' },
                           {
                             text: 'Send', onPress: async () => {
@@ -818,10 +833,14 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                               try {
                                 await api(`/api/v1/medical/prescriptions/${latestRx.id}`, {
                                   method: 'PATCH',
-                                  body: { pharmacy: { id: ph.name, name: ph.name, location: addrLine || '', contact: phoneLine || '' }, pharmacyStatus: 'sent' },
+                                  body: {
+                                    ...(ph.pharmacyId ? { pharmacyId: ph.pharmacyId } : {}),
+                                    pharmacyBranchId: ph.branchId,
+                                    pharmacyStatus: 'sent',
+                                  },
                                 });
                                 Alert.alert('Sent', `Prescription sent to ${ph.name}.`);
-                              } catch { Alert.alert('Error', 'Could not send prescription.'); }
+                              } catch (e) { Alert.alert('Error', e?.message || 'Could not send prescription.'); }
                             }
                           }
                         ]);

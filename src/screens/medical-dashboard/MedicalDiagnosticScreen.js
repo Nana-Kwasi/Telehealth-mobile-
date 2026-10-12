@@ -1,7 +1,7 @@
 import React, { useState, useCallback,useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Modal, ScrollView, RefreshControl,
+  ActivityIndicator, Modal, ScrollView, RefreshControl, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +24,8 @@ const TYPE_CONFIG = {
 
 export default function MedicalDiagnosticScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
+  // Results the ordering doctor has SHARED, by order id (the server returns only those to a patient).
+  const [sharedByOrder, setSharedByOrder] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -36,9 +38,17 @@ export default function MedicalDiagnosticScreen({ navigation }) {
 
   const loadOrders = async () => {
     try {
-      const list = await api(`/api/v1/diagnostics/operations/orders?patientId=${patientId}`).catch(() => []) || [];
+      const [list0, shared] = await Promise.all([
+        api(`/api/v1/diagnostics/operations/orders?patientId=${patientId}`).catch(() => []),
+        api('/api/v1/diagnostics/operations/results-query').catch(() => []),
+      ]);
+      const list = list0 || [];
       list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setOrders(list);
+      const byOrder = {};
+      (Array.isArray(shared) ? shared : []).filter(r => r.releasedToPatient && r.orderId)
+        .forEach(r => { if (!byOrder[r.orderId]) byOrder[r.orderId] = r; });
+      setSharedByOrder(byOrder);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
   };
@@ -46,8 +56,8 @@ export default function MedicalDiagnosticScreen({ navigation }) {
   const rowKind = (o) => String(o.type || o.centerType || o.diagnosticType || '').toLowerCase();
   const filteredOrders =
     filter === 'All' ? orders
-      // "Ready" = the centre has finished and released the result.
-      : filter === 'Ready' ? orders.filter(o => normalizeDiagnosticOrderStatus(o.status) === 'COMPLETED')
+      // "Ready" = your doctor has shared the result with you.
+      : filter === 'Ready' ? orders.filter(o => sharedByOrder[o.id])
         : orders.filter(o => rowKind(o) === filter.toLowerCase());
 
   const renderItem = ({ item }) => {
@@ -67,6 +77,9 @@ export default function MedicalDiagnosticScreen({ navigation }) {
           </View>
         </View>
         <Text style={styles.testType}>{item.testType}</Text>
+        {sharedByOrder[item.id] ? (
+          <Text style={{ color: '#1e40af', fontWeight: '700', fontSize: 12, marginBottom: 4 }}>📄 Result shared by your doctor</Text>
+        ) : null}
         <View style={styles.locationRow}>
           <Ionicons name="location-outline" size={14} color={C.textSecondary} />
           <Text style={styles.locationText}>{item.branchName || item.centerName || '—'}</Text>
@@ -123,7 +136,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <ScrollView>
-              {selected && ['PENDING', 'IN_PROGRESS'].includes(normalizeDiagnosticOrderStatus(selected.status)) && (
+              {selected && ['PENDING', 'IN_PROGRESS', 'SCHEDULED'].includes(normalizeDiagnosticOrderStatus(selected.status)) && (
               <View style={styles.idCard}>
                 <Ionicons name="id-card-outline" size={28} color={C.primary} />
                 <View style={{ marginLeft: 12 }}>
@@ -132,12 +145,28 @@ export default function MedicalDiagnosticScreen({ navigation }) {
                 </View>
               </View>
               )}
-              {selected && normalizeDiagnosticOrderStatus(selected.status) === 'COMPLETED' && (
+              {selected && sharedByOrder[selected.id] ? (() => {
+                const res = sharedByOrder[selected.id];
+                const file = res.reportUrl || res.fileUrl;
+                return (
+                  <View style={{ backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1.5, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+                    <Text style={{ fontWeight: '800', color: '#1e40af', marginBottom: 8 }}>Your result</Text>
+                    {res.doctorNote ? (<><Text style={styles.detailLabel}>Note from Dr. {selected.doctorName || 'your doctor'}</Text><Text style={{ color: C.text, marginBottom: 8, lineHeight: 19 }}>{res.doctorNote}</Text></>) : null}
+                    {res.findings ? (<><Text style={styles.detailLabel}>Findings</Text><Text style={{ color: C.text, marginBottom: 8, lineHeight: 19 }}>{res.findings}</Text></>) : null}
+                    {res.conclusion ? (<><Text style={styles.detailLabel}>Conclusion</Text><Text style={{ color: C.text, marginBottom: 8, lineHeight: 19 }}>{res.conclusion}</Text></>) : null}
+                    {file && /^https?:/i.test(file) ? (
+                      <TouchableOpacity onPress={() => Linking.openURL(file)} style={{ backgroundColor: C.primary, borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 4 }}>
+                        <Text style={{ color: '#fff', fontWeight: '800' }}>Open report</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                );
+              })() : selected && normalizeDiagnosticOrderStatus(selected.status) === 'COMPLETED' && (
               <View style={[styles.idCard, { backgroundColor: '#ecfdf5', borderColor: '#86efac' }]}>
                 <Ionicons name="checkmark-circle-outline" size={28} color="#15803d" />
                 <View style={{ marginLeft: 12 }}>
-                  <Text style={[styles.idTitle, { color: '#166534' }]}>Results are with your doctor</Text>
-                  <Text style={[styles.idSub, { color: '#0f5628' }]}>Your lab or imaging center has completed this order. Ask your doctor for results and what they mean for your care.</Text>
+                  <Text style={[styles.idTitle, { color: '#166534' }]}>Your doctor is reviewing the result</Text>
+                  <Text style={[styles.idSub, { color: '#0f5628' }]}>The test is done and the result has gone to your doctor. You will be notified once your doctor shares it with you.</Text>
                 </View>
               </View>
               )}
@@ -151,6 +180,11 @@ export default function MedicalDiagnosticScreen({ navigation }) {
                   </Text>
                 </View>
               </View>
+              {selected?.scheduledAt ? (
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Appointment</Text>
+                  <Text style={styles.detailValue}>{new Date(selected.scheduledAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
+                </View>
+              ) : null}
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Center</Text><Text style={styles.detailValue}>{selected?.branchName || selected?.centerName || '—'}</Text></View>
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Doctor</Text><Text style={styles.detailValue}>Dr. {selected?.doctorName || 'Your Doctor'}</Text></View>
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Ordered</Text>

@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { api } from '../../services/apiClient';
+import RxVerifyResultMobile, { isNessaRxCode, verifyRxCode } from '../../components/RxVerifyResultMobile';
 import { PharmacyColors as C } from '../../constants/colors';
 
 const DRUG_STATUS = {
@@ -31,6 +32,8 @@ export default function PharmacyWalkInScreen({ profile }) {
   const [notFound, setNotFound] = useState(false);
   const [marking, setMarking] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  // Server check for NessaHub QR / 8-digit codes (see RxVerifyResultMobile).
+  const [verifyResult, setVerifyResult] = useState(null);
   const [scanned, setScanned] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -50,13 +53,30 @@ export default function PharmacyWalkInScreen({ profile }) {
     if (scanned) return;
     setScanned(true);
     setShowScanner(false);
+    // New collection codes go to the server untouched (the QR token is case-sensitive).
+    if (isNessaRxCode(data)) { setInput(data); checkCode(data); return; }
     const ref = data.toUpperCase();
     setInput(ref);
     searchRef(ref);
   };
 
+  const checkCode = async (raw) => {
+    setLoading(true);
+    setRx(null);
+    setNotFound(false);
+    setVerifyResult(null);
+    try {
+      setVerifyResult(await verifyRxCode(raw));
+    } catch (e) {
+      Alert.alert('Could not verify', e?.message || 'Please try again.');
+    } finally { setLoading(false); }
+  };
+
   const searchRef = async (val) => {
-    const ref = (val || input).trim().toUpperCase();
+    const raw = String(val || input).trim();
+    if (raw && isNessaRxCode(raw)) { checkCode(raw); return; }
+    setVerifyResult(null);
+    const ref = raw.toUpperCase();
     if (!ref) return;
     setLoading(true);
     setRx(null);
@@ -108,8 +128,8 @@ export default function PharmacyWalkInScreen({ profile }) {
         <TextInput
           style={styles.input}
           value={input}
-          onChangeText={t => setInput(t.toUpperCase())}
-          placeholder="RX-XXXXXXXX"
+          onChangeText={t => setInput(t)}
+          placeholder="1234 5678 or RX-XXXXXXXX"
           placeholderTextColor="#94a3b8"
           autoCapitalize="characters"
           returnKeyType="search"
@@ -120,6 +140,8 @@ export default function PharmacyWalkInScreen({ profile }) {
           {loading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="search" size={20} color="#fff" />}
         </TouchableOpacity>
       </View>
+
+      <RxVerifyResultMobile result={verifyResult} rxOpsRoute="PharmacyRxOps" onRefresh={() => checkCode(input)} />
 
       {notFound && (
         <View style={styles.notFound}>

@@ -17,6 +17,8 @@ import Svg, { Circle, G } from 'react-native-svg';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 import AiAssistantFab from '../../components/AiAssistantFab';
 
+import FaqSection from '../../components/FaqSection';
+import WeatherCardMobile from '../../components/WeatherCardMobile';
 const TODAY = new Date().toISOString().split('T')[0];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -486,6 +488,8 @@ export default function DoctorHomeScreen({ navigation }) {
       </View>
       <View style={styles.locationCardSlot}>
         <LocationSummaryCardMobile profile={profile} onEdit={() => navigation.navigate('DoctorSettings')} />
+        {/* Weather at the doctor's saved location — every role's home has it now. */}
+        <View style={{ marginTop: 10 }}><WeatherCardMobile profile={profile} embedded /></View>
       </View>
 
       {/* Counted server-side; the model only writes the sentence over those
@@ -761,6 +765,8 @@ export default function DoctorHomeScreen({ navigation }) {
         ))}
       </View>
 
+      {/* Shared FAQ (backend /api/v1/faq) — same answers as the website. */}
+      <FaqSection compact audience="clinician" />
       <View style={{ height: 32 }} />
     </ScrollView>
 

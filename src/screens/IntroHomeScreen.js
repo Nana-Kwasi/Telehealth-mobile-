@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   Linking,
   StatusBar,
   ActivityIndicator,
+  Image,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,11 +24,9 @@ import {
 
 export default function IntroHomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const videoRef = useRef(null);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(true);
-  const [videoReady, setVideoReady] = useState(false);
   const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [privacyError, setPrivacyError] = useState('');
 
@@ -45,11 +44,6 @@ export default function IntroHomeScreen({ navigation }) {
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (!videoReady || checkingPrivacy) return;
-    videoRef.current?.playAsync?.().catch(() => {});
-  }, [videoReady, checkingPrivacy]);
 
   const openPolicies = useCallback(() => {
     Linking.openURL(POLICIES_URL).catch(() => {});
@@ -80,31 +74,28 @@ export default function IntroHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      <Video
-        ref={videoRef}
-        source={require('../../assets/home.mp4')}
-        style={StyleSheet.absoluteFill}
-        resizeMode={ResizeMode.COVER}
-        isLooping
-        isMuted
-        shouldPlay
-        onReadyForDisplay={() => setVideoReady(true)}
+      {/* The welcome image, shown whole ("contain") so its headline and cards are
+          never cropped on a tall phone; the gradient behind it matches the
+          image's own top and bottom edges, so the bands read as one picture. */}
+      <LinearGradient colors={['#f4f6f3', '#eef3ec', '#dde8da']} style={StyleSheet.absoluteFill} />
+
+      <View style={[styles.brandBlock, { paddingTop: insets.top + 10 }]} pointerEvents="none">
+        <Text style={styles.brandName}>NessaHub</Text>
+        <Text style={styles.brandTagline}>Healthcare & therapy, connected</Text>
+      </View>
+
+      <Image
+        source={require('../../assets/welcome-bg.jpg')}
+        style={styles.heroImage}
+        resizeMode="contain"
+        accessibilityIgnoresInvertColors
+        accessible={false}
       />
+      <View style={{ height: Math.max(insets.bottom, 20) + 76 }} />
 
-      {!videoReady && (
-        <View style={styles.videoLoading}>
-          <ActivityIndicator size="large" color="#fff" />
-        </View>
-      )}
-
-      <View style={styles.overlay} pointerEvents="box-none">
-        <View style={[styles.brandBlock, { paddingTop: insets.top + 16 }]} pointerEvents="none">
-          <Text style={styles.brandName}>NessaHub</Text>
-          <Text style={styles.brandTagline}>Healthcare & therapy, connected</Text>
-        </View>
-
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         <TouchableOpacity
           style={[
             styles.continueBtn,
@@ -118,6 +109,7 @@ export default function IntroHomeScreen({ navigation }) {
         >
           <Ionicons name="arrow-forward" size={28} color="#fff" />
         </TouchableOpacity>
+        {/* Help lives in the floating button (PublicHelpFab) on every public screen. */}
       </View>
 
       <Modal
@@ -166,36 +158,28 @@ export default function IntroHomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#eef3ec',
   },
-  videoLoading: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0f172a',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  heroImage: {
+    flex: 1,
+    width: '100%',
   },
   brandBlock: {
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingBottom: 6,
   },
   brandName: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#fff',
+    color: '#14532d',
     letterSpacing: 0.5,
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
   },
   brandTagline: {
     marginTop: 8,
     fontSize: 15,
-    color: 'rgba(255,255,255,0.88)',
-    fontWeight: '500',
+    color: '#3f6b4c',
+    fontWeight: '600',
     textAlign: 'center',
   },
   continueBtn: {

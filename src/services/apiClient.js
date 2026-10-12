@@ -13,7 +13,10 @@ const API_PORT = 8085;
 
 // Used only when no dev-server host can be read — a release build or a
 // standalone binary. Point this at the deployed backend when there is one.
-const FALLBACK_HOST = '172.20.10.5';
+// The Mac's Bonjour name, not an IP: the hotspot hands the Mac .5 over USB and
+// .4 over Wi-Fi, and a hard-coded IP timed out every request when it changed.
+// iOS resolves .local on the local network (ATS NSAllowsLocalNetworking).
+const FALLBACK_HOST = 'Nanas-MacBook-Air.local';
 
 /** The "host:port" Expo recorded for the dev server, across SDK/manifest shapes. */
 function devServerHostUri() {
@@ -97,7 +100,20 @@ export async function clearSession() {
   if (removable.length) await AsyncStorage.multiRemove(removable);
 }
 
-async function attemptTokenRefresh() {
+// One refresh at a time. When the access token expired, a dashboard firing
+// several requests at once made each of them refresh with the SAME refresh
+// token; the backend rightly treats a reused token as theft and revoked the
+// whole session — "Session expired" and screens that loaded forever.
+let refreshInFlight = null;
+
+function attemptTokenRefresh() {
+  if (!refreshInFlight) {
+    refreshInFlight = doTokenRefresh().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function doTokenRefresh() {
   const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.refreshToken);
   if (!refreshToken) return null;
   try {

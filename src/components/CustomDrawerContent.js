@@ -28,10 +28,15 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
   // Resources to people who had not bought it because the cached value was
   // simply undefined.
   const [tier, setTier] = useState(profile?.membershipTier || profile?.tier || null);
+  // Psychiatry clients also get the medical patient's Prescriptions and E-Pharmacy.
+  const [isPsychiatry, setIsPsychiatry] = useState(false);
   useEffect(() => {
     let alive = true;
     api('/api/v1/medpsych/me')
-      .then((r) => { if (alive && r?.membershipTier) setTier(r.membershipTier); })
+      .then((r) => {
+        if (alive && r?.membershipTier) setTier(r.membershipTier);
+        if (alive) setIsPsychiatry(String(r?.careTrack || '').toLowerCase() === 'psychiatry');
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -84,6 +89,28 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
       icon: 'videocam-outline',
       label: 'Schedule',
       screen: 'Video',
+    },
+    {
+      name: 'Prescriptions',
+      icon: 'medkit-outline',
+      label: 'Prescriptions',
+      screen: 'MedicalPrescriptions',
+      psychiatryOnly: true,
+    },
+    {
+      name: 'Timeline',
+      icon: 'time-outline',
+      label: 'Health Timeline',
+      screen: 'MedicalTimeline',
+      psychiatryOnly: true,
+    },
+    {
+      name: 'EPharmacy',
+      icon: 'storefront-outline',
+      label: 'E-Pharmacy',
+      // On the root stack (shared with medical patients), not in this drawer.
+      screen: 'EPharmacy',
+      psychiatryOnly: true,
     },
     {
       name: 'Schedule',
@@ -156,7 +183,7 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
   const visibleItems = (isSecondOpinion
     ? drawerItems.filter((i) => !['Schedule', 'Resources', 'TherapyWellness', 'TherapyCarePlan'].includes(i.screen))
     : drawerItems
-  ).map((i) => (isSecondOpinion && i.screen === 'Home'
+  ).filter((i) => !i.psychiatryOnly || isPsychiatry).map((i) => (isSecondOpinion && i.screen === 'Home'
     ? { ...i, label: 'My case' }
     : i));
 

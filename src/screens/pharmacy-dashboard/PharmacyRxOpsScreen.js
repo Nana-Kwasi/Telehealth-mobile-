@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 import RxFullDetailsMobile from '../../components/RxFullDetailsMobile';
+import RxHoldAndDispenseMobile from '../../components/RxHoldAndDispenseMobile';
 import {
   deriveRxStockStatus,
   branchCanMarkLinePickup,
@@ -320,6 +321,8 @@ export default function PharmacyRxOpsScreen({ profile, mode = 'branch' }) {
       )}
 
       <RxFullDetailsMobile rx={rx} />
+      {/* Open-list hold timer and counted handover (shown only when they apply). */}
+      <RxHoldAndDispenseMobile rx={rx} onChanged={load} backRoute={mode === 'parent' ? 'PharmacyPrescriptions' : 'BranchPrescriptions'} />
 
       {visibleMeds.map((med) => {
         const i = med.__idx;

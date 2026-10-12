@@ -14,7 +14,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api, getStoredUserId } from '../../services/apiClient';
-import { TherapistColors } from '../../constants/colors';
+import { TherapistColors, DoctorColors } from '../../constants/colors';
+import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
+import { toDateSafe } from '../../utils/dateDisplay';
 import WeeklyCheckInCard from '../../components/WeeklyCheckInCard';
 import RecordGapsCard from '../../components/RecordGapsCard';
 import CodingAssistCard from '../../components/CodingAssistCard';
@@ -39,6 +41,32 @@ import { GlassScrim, GlassSheetSurface } from '../../components/GlassSheet';
 const MOOD_EMOJI = { 1: '😞', 2: '😟', 3: '😕', 4: '🙁', 5: '😐', 6: '🙂', 7: '😊', 8: '😄', 9: '😁', 10: '🤩' };
 const MOOD_LABEL = { 1: 'Very Low', 2: 'Low', 3: 'Below Avg', 4: 'Slightly Low', 5: 'Neutral', 6: 'Okay', 7: 'Good', 8: 'Great', 9: 'Excellent', 10: 'Outstanding' };
 const TABS = ['overview', 'sessions', 'notes', 'mood', 'goals'];
+// Psychiatry: the doctor screen's Prescriptions and E-Pharmacy tabs.
+const PSYCHIATRY_TABS = ['prescriptions', 'epharmacy'];
+const TAB_LABELS = { epharmacy: 'E-Pharmacy' };
+
+const PHARMACY_STATUS_META = {
+  sent: { label: 'Sent to Pharmacy', color: '#1d4ed8', bg: '#eff6ff' },
+  accepted: { label: 'Processing', color: '#d97706', bg: '#fffbeb' },
+  partially_fulfilled: { label: 'Partially Filled', color: '#d97706', bg: '#fffbeb' },
+  ready: { label: 'Ready for Pickup', color: '#16a34a', bg: '#f0fdf4' },
+  delivered: { label: 'Delivered', color: '#475569', bg: '#f8fafc' },
+};
+
+function RestrictedBanner({ section }) {
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 60, paddingHorizontal: 24 }}>
+      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#fef2f2', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 1.5, borderColor: '#fecaca' }}>
+        <Ionicons name="lock-closed" size={28} color="#dc2626" />
+      </View>
+      <Text style={{ fontSize: 16, fontWeight: '800', color: '#0f172a', textAlign: 'center', marginBottom: 8 }}>Access Restricted</Text>
+      <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 20 }}>
+        This client has restricted clinician access to their {section}.{'\n'}This data is hidden based on their privacy settings.
+      </Text>
+    </View>
+  );
+}
+
 
 function fmtDate(ts) {
   const d = toFirestoreDate(ts);
@@ -155,38 +183,58 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
   // counsellor does not, and both use this same screen. The server enforces
   // this too — hiding the button is a courtesy, not the control.
   const canPrescribe = String(client?.careTrack || '').toLowerCase() === 'psychiatry';
-  const [showRxModal, setShowRxModal] = useState(false);
-  const [rx, setRx] = useState({ medication: '', dosage: '', instructions: '' });
-  const [savingRx, setSavingRx] = useState(false);
+  // ── Prescriptions & E-Pharmacy (psychiatry track) ─────────────────────────
+  // Copied from doctor-dashboard/DoctorPatientDetailScreen.js so a psychiatrist has
+  // the same per-client prescription and pharmacy tools as a doctor per patient.
+  const [prescriptions, setPrescriptions] = useState([]);
+  const [viewingRx, setViewingRx] = useState(null);
+  const [pharmacies, setPharmacies] = useState([]);
+  const [dataSharing, setDataSharing] = useState({});
+  const [removingPharmacyKey, setRemovingPharmacyKey] = useState(null);
 
-  const submitRx = async () => {
-    if (!rx.medication.trim() || !rx.dosage.trim()) {
-      Alert.alert('Incomplete', 'A medication and a dosage are both needed.');
-      return;
-    }
-    setSavingRx(true);
+  const fetchPrescriptions = async (uid) => {
+    const doctorId = uid || await getStoredUserId();
+    if (!doctorId || !clientId) return;
+    api(`/api/v1/medical/prescriptions/doctor/${doctorId}`).then(rxRaw => {
+      const list = (rxRaw || []).filter(r => r.patientId === clientId || r.clientId === clientId);
+      setPrescriptions(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (!canPrescribe || !clientId) return;
+    fetchPrescriptions();
+    api(`/api/v1/patients/${clientId}`).then((pd) => {
+      setPharmacies(pd?.pharmacies || []);
+      setDataSharing(pd?.privacy?.dataSharing || {});
+    }).catch(() => {});
+  }, [canPrescribe, clientId]);
+
+  const removePatientPharmacyEntry = async (ph) => {
+    const rk = patientPharmacyKey(ph) || ph.id || ph.name || '';
+    setRemovingPharmacyKey(rk);
     try {
-      const therapistId = await AsyncStorage.getItem('th.userId');
-      await api('/api/v1/medical/prescriptions', {
-        method: 'POST',
-        body: {
-          doctorId: therapistId,
-          patientId: client.id || client.clientId,
-          medication: rx.medication.trim(),
-          dosage: rx.dosage.trim(),
-          instructions: rx.instructions.trim() || 'As directed',
-        },
-      });
-      setShowRxModal(false);
-      setRx({ medication: '', dosage: '', instructions: '' });
-      Alert.alert('Prescription saved', 'It is now on the client\'s record.');
-    } catch (e) {
-      // The server refuses a non-psychiatry client even if this screen somehow
-      // offered the button, so surface its reason rather than a generic error.
-      Alert.alert('Could not prescribe', e?.message || 'Please try again.');
+      const updated = removePatientPharmacyByKey(pharmacies, ph);
+      await api(`/api/v1/patients/${clientId}`, { method: 'PATCH', body: { pharmacies: updated } });
+      setPharmacies(updated);
+    } catch {
+      Alert.alert('Error', 'Could not remove pharmacy.');
     } finally {
-      setSavingRx(false);
+      setRemovingPharmacyKey(null);
     }
+  };
+
+  // Opens the full prescription form (Prescriptions screen) with this client
+  // preselected — the same hand-off as DoctorPatientDetailScreen.
+  const openFullPrescriptionForm = () => {
+    navigation.navigate('TherapistMain', {
+      screen: 'TherapistPrescriptions',
+      params: {
+        openRxForm: true,
+        presetPatientId: client?.id || client?.clientId || clientId,
+        presetPatientName: client?.name || '',
+      },
+    });
   };
   const [viewingNote, setViewingNote] = useState(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -487,21 +535,206 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
         <CodingAssistCard patientId={clientId} accent={TherapistColors.primary} />
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
-          {TABS.map((tab) => (
+          {[...TABS, ...(canPrescribe ? PSYCHIATRY_TABS : [])].map((tab) => (
             <TouchableOpacity
               key={tab}
               style={[styles.tab, activeTab === tab && styles.tabActive]}
               onPress={() => setActiveTab(tab)}
             >
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {TAB_LABELS[tab] || (tab.charAt(0).toUpperCase() + tab.slice(1))}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
+        {activeTab === 'prescriptions' && (
+          dataSharing.prescriptions === false ? <RestrictedBanner section="prescriptions" /> : <>
+            <TouchableOpacity style={docStyles.addRowBtn} onPress={openFullPrescriptionForm}>
+              <Ionicons name="add-circle-outline" size={18} color={DoctorColors.primary} />
+              <Text style={docStyles.addRowBtnText}>New prescription (full form)</Text>
+            </TouchableOpacity>
+
+            {prescriptions.length === 0 && <Text style={docStyles.emptyText}>No prescriptions issued yet</Text>}
+            {prescriptions.map(rx => {
+              const isDone = rx.status === 'completed';
+              const medName = rx.medication || rx.medications?.[0]?.name || 'Medication';
+              const metaLine = [
+                rx.dosage || rx.medications?.[0]?.dosage,
+                rx.frequency || rx.medications?.[0]?.frequency,
+                rx.duration || rx.medications?.[0]?.duration,
+              ].filter(Boolean).join(' · ');
+              const pm = rx.pharmacyStatus ? (PHARMACY_STATUS_META[rx.pharmacyStatus] || null) : null;
+              const altMed = (rx.medications || []).find(m => m.alternativeSuggested);
+              const transferredMed = (rx.medications || []).find(m => m.drugStatus === 'transferred' && m.transferBranchName);
+              return (
+                <TouchableOpacity key={rx.id} activeOpacity={0.92} onPress={() => setViewingRx(rx)} style={[docStyles.rxCard, isDone && { borderLeftWidth: 3, borderLeftColor: '#22c55e' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <Text style={[docStyles.rxMed, { flex: 1 }]}>{medName}</Text>
+                    {isDone ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1, borderColor: '#bbf7d0', marginLeft: 8 }}>
+                        <Ionicons name="checkmark-circle" size={12} color="#16a34a" />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#16a34a' }}>Completed</Text>
+                      </View>
+                    ) : (
+                      <View style={{ backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1, borderColor: '#bfdbfe', marginLeft: 8 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#1d4ed8' }}>Active</Text>
+                      </View>
+                    )}
+                  </View>
+                  {metaLine ? <Text style={docStyles.rxMeta}>{metaLine}</Text> : null}
+                  {pm ? (
+                    <View style={[docStyles.pharmacyStatusPill, { backgroundColor: pm.bg }]}>
+                      <Text style={[docStyles.pharmacyStatusPillText, { color: pm.color }]}>{pm.label}</Text>
+                    </View>
+                  ) : null}
+                  {altMed ? (
+                    <Text style={docStyles.rxApprovedAlt}>
+                      🔁 {altMed.name || 'Original'} → {altMed.alternativeSuggested} · {altMed.drugStatus === 'approved_replacement' ? `Approved · ${altMed.approvedByDoctorName || rx.doctorName || 'Psychiatrist'}` : 'Waiting for your approval'}
+                      {altMed.alternativeRationale ? ` · Why: ${altMed.alternativeRationale}` : ''}
+                    </Text>
+                  ) : null}
+                  {transferredMed ? (
+                    <Text style={[docStyles.rxApprovedAlt, { color: '#0369a1' }]}>
+                      This drug ({transferredMed.name || 'Drug'}) is transfered to branch ({transferredMed.transferBranchName}{transferredMed.transferBranchAddress ? `, ${transferredMed.transferBranchAddress}` : ''}).
+                    </Text>
+                  ) : null}
+                  {rx.instructions ? <Text style={docStyles.rxInstructions}>{rx.instructions}</Text> : null}
+                  {toDateSafe(rx.createdAt) ? (
+                    <Text style={docStyles.rxDate}>
+                      {toDateSafe(rx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  ) : null}
+                  <Text style={{ marginTop: 6, fontSize: 11, color: '#94a3b8', textAlign: 'right' }}>Tap card for full details</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </>
+        )}
+
+        {/* ── E-PHARMACY ── */}
+        {activeTab === 'epharmacy' && (
+          <>
+            <Text style={[docStyles.sectionTitle, { marginBottom: 12 }]}>Patient Pharmacies</Text>
+            {pharmacies.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Ionicons name="storefront-outline" size={40} color="#cbd5e1" />
+                <Text style={docStyles.emptyText}>Patient has no pharmacies added</Text>
+              </View>
+            ) : (
+              pharmacies.map((ph, i) => {
+                const phRowKey = patientPharmacyKey(ph) || ph.id || String(i);
+                const addrLine = ph.address || ph.location;
+                const phoneLine = ph.phone || ph.contact;
+                return (
+                <View key={phRowKey} style={[docStyles.miniCard, { borderLeftWidth: 3, borderLeftColor: '#7c3aed' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={docStyles.miniCardTitle}>{ph.name}</Text>
+                    {addrLine ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <Ionicons name="location-outline" size={12} color="#94a3b8" />
+                        <Text style={docStyles.miniCardSub}>{addrLine}</Text>
+                      </View>
+                    ) : null}
+                    {phoneLine ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <Ionicons name="call-outline" size={12} color="#94a3b8" />
+                        <Text style={docStyles.miniCardSub}>{phoneLine}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: '#fef2f2',
+                        borderRadius: 8,
+                        padding: 8,
+                        borderWidth: 1,
+                        borderColor: '#fecaca',
+                        opacity: removingPharmacyKey === phRowKey ? 0.55 : 1,
+                      }}
+                      disabled={removingPharmacyKey === phRowKey}
+                      onPress={() => {
+                        Alert.alert('Remove pharmacy', `Remove ${ph.name || 'this pharmacy'} from this patient?`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Remove', style: 'destructive', onPress: () => removePatientPharmacyEntry(ph) },
+                        ]);
+                      }}
+                    >
+                      <Text style={{ color: '#dc2626', fontSize: 18, fontWeight: '800', lineHeight: 20 }}>−</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#f5f3ff', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#ddd6fe' }}
+                      onPress={() => {
+                        if (prescriptions.length === 0) { Alert.alert('No Prescriptions', 'Issue a prescription first.'); return; }
+                        // Only a NessaHub branch can receive a prescription. A manually
+                        // typed pharmacy has no account; the old write marked the Rx
+                        // "sent" while no pharmacy ever saw it.
+                        if (!ph.branchId) {
+                          Alert.alert('Not on NessaHub', `${ph.name || 'This pharmacy'} is not on NessaHub, so the prescription cannot be sent to it. Share it with the pharmacy directly, or pick a NessaHub branch.`);
+                          return;
+                        }
+                        const latest = prescriptions[0];
+                        if (latest?.deliveredAt || latest?.pharmacyStatus === 'delivered') {
+                          Alert.alert('Already delivered', 'The latest prescription has already been delivered and cannot be re-sent.');
+                          return;
+                        }
+                        const elsewhere = latest?.branchId && latest.branchId !== ph.branchId;
+                        Alert.alert('Send Prescription', elsewhere
+                          ? `The latest prescription is already with ${latest.branchName || latest.pharmacyName || 'another pharmacy'}. Move it to ${ph.branchName || ph.name}?`
+                          : `Send the latest prescription to ${ph.name}?`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Send', onPress: async () => {
+                              const latestRx = prescriptions[0];
+                              try {
+                                await api(`/api/v1/medical/prescriptions/${latestRx.id}`, {
+                                  method: 'PATCH',
+                                  body: {
+                                    ...(ph.pharmacyId ? { pharmacyId: ph.pharmacyId } : {}),
+                                    pharmacyBranchId: ph.branchId,
+                                    pharmacyStatus: 'sent',
+                                  },
+                                });
+                                Alert.alert('Sent', `Prescription sent to ${ph.name}.`);
+                              } catch (e) { Alert.alert('Error', e?.message || 'Could not send prescription.'); }
+                            }
+                          }
+                        ]);
+                      }}
+                    >
+                      <Ionicons name="send-outline" size={16} color="#7c3aed" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );})
+            )}
+            <View style={{ marginTop: 16, padding: 12, backgroundColor: '#f5f3ff', borderRadius: 10, borderWidth: 1, borderColor: '#ddd6fe' }}>
+              <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: '600' }}>
+                Tap the send icon to forward the most recent prescription to a pharmacy.
+              </Text>
+            </View>
+          </>
+        )}
+
         {activeTab === 'overview' && (
           <>
+            {/* Psychiatry: the Prescriptions section of DoctorPatientOverviewScreen. */}
+            {canPrescribe ? (
+              <View style={styles.card}>
+                <Text style={styles.cardSectionTitle}>Prescriptions ({prescriptions.length})</Text>
+                {prescriptions.length === 0 ? (
+                  <Text style={{ fontSize: 13, color: '#94a3b8' }}>No prescriptions</Text>
+                ) : prescriptions.slice(0, 10).map(rx => (
+                  <View key={rx.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#0f172a' }}>{rx.medication || rx.medications?.[0]?.name || 'Prescription'}</Text>
+                    {toDateSafe(rx.createdAt) ? (
+                      <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{toDateSafe(rx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            ) : null}
             <View style={styles.card}>
               <Text style={styles.cardSectionTitle}>Personal information</Text>
               <InfoRow label="Name" value={clientName} />
@@ -544,7 +777,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
               {canPrescribe ? (
                 <TouchableOpacity
                   style={styles.rxBtn}
-                  onPress={() => setShowRxModal(true)}
+                  onPress={openFullPrescriptionForm}
                   activeOpacity={0.85}
                 >
                   <Ionicons name="medkit-outline" size={17} color="#ffffff" />
@@ -777,62 +1010,50 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
       </Modal>
 
       {/* Simple add note modal (web ClientDetails parity) */}
-      <Modal visible={showRxModal} transparent animationType="slide" onRequestClose={() => setShowRxModal(false)}>
+
+      <Modal visible={!!viewingRx} transparent animationType="slide" onRequestClose={() => setViewingRx(null)}>
         <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <GlassScrim />
-          <GlassSheetSurface style={styles.sheet}>
-            <View style={styles.rxSheetInner}>
-              <Text style={styles.rxTitle}>Prescribe medication</Text>
-              <Text style={styles.rxSub}>For {client?.name || 'this client'} — psychiatry track.</Text>
-
-              <Text style={styles.rxLabel}>Medication</Text>
-              <TextInput
-                style={styles.rxInput}
-                placeholder="e.g. Sertraline"
-                placeholderTextColor="#9aa0ac"
-                value={rx.medication}
-                onChangeText={(v) => setRx({ ...rx, medication: v })}
-              />
-
-              <Text style={styles.rxLabel}>Dosage</Text>
-              <TextInput
-                style={styles.rxInput}
-                placeholder="e.g. 50mg once daily"
-                placeholderTextColor="#9aa0ac"
-                value={rx.dosage}
-                onChangeText={(v) => setRx({ ...rx, dosage: v })}
-              />
-
-              <Text style={styles.rxLabel}>Instructions</Text>
-              <TextInput
-                style={[styles.rxInput, styles.rxMultiline]}
-                placeholder="How and when to take it"
-                placeholderTextColor="#9aa0ac"
-                value={rx.instructions}
-                onChangeText={(v) => setRx({ ...rx, instructions: v })}
-                multiline
-              />
-
-              <View style={styles.rxActions}>
-                <TouchableOpacity style={styles.rxCancel} onPress={() => setShowRxModal(false)}>
-                  <Text style={styles.rxCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.rxSave, savingRx && { opacity: 0.6 }]}
-                  onPress={submitRx}
-                  disabled={savingRx}
-                >
-                  <Text style={styles.rxSaveText}>{savingRx ? 'Saving…' : 'Prescribe'}</Text>
-                </TouchableOpacity>
-              </View>
+        style={docStyles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+          <View style={[docStyles.dischargeCard, { maxHeight: '86%' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={docStyles.dischargeTitle}>Prescription Details</Text>
+              <TouchableOpacity onPress={() => setViewingRx(null)}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
             </View>
-          </GlassSheetSurface>
+            {viewingRx && (
+              <ScrollView>
+                <Text style={docStyles.dischargeSub}>Patient: {viewingRx.patientName || client?.name || 'Patient'}</Text>
+                <Text style={docStyles.dischargeSub}>Diagnosis: {viewingRx.diagnosis || '—'}</Text>
+                <Text style={docStyles.dischargeSub}>Date: {viewingRx.date || '—'}</Text>
+                {viewingRx.prescriptionRef ? <Text style={docStyles.dischargeSub}>Reference: {viewingRx.prescriptionRef}</Text> : null}
+                {(viewingRx.medications || []).map((m, i) => (
+                  <View key={i} style={[docStyles.noteCard, { marginTop: 8, marginBottom: 0 }]}>
+                    <Text style={docStyles.noteTitle}>{m.name || 'Medication'}{m.strength ? ` (${m.strength})` : ''}</Text>
+                    <Text style={docStyles.noteContent}>{[m.dosage, m.frequency, m.duration].filter(Boolean).join(' · ') || '—'}</Text>
+                    {m.alternativeSuggested ? (
+                      <Text style={{ marginTop: 4, fontSize: 12, color: m.drugStatus === 'approved_replacement' ? '#16a34a' : '#7c3aed', fontWeight: '700' }}>
+                        🔁 {m.alternativeSuggested} · {m.drugStatus === 'approved_replacement'
+                          ? `Approved · Dr. ${m.approvedByDoctorName || viewingRx.doctorName || 'Doctor'}`
+                          : 'Waiting for Approval from your Doctor'}
+                        {m.alternativeRationale ? ` · Why: ${m.alternativeRationale}` : ''}
+                      </Text>
+                    ) : null}
+                    {m.drugStatus === 'transferred' && m.transferBranchName ? (
+                      <Text style={{ marginTop: 4, fontSize: 12, color: '#0369a1', fontWeight: '700' }}>
+                        This drug ({m.name || 'Drug'}) is transfered to branch ({m.transferBranchName}{m.transferBranchAddress ? `, ${m.transferBranchAddress}` : ''}).
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+                {viewingRx.instructions ? <Text style={[docStyles.noteContent, { marginTop: 10 }]}>Instructions: {viewingRx.instructions}</Text> : null}
+              </ScrollView>
+            )}
+          </View>
         </KeyboardAvoidingView>
       </Modal>
-
       <Modal visible={showNoteModal} transparent animationType="slide" onRequestClose={() => setShowNoteModal(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.menuOverlay}>
@@ -891,27 +1112,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#5046bd',
   },
   rxBtnText: { color: '#ffffff', fontSize: 14.5, fontWeight: '800' },
-  rxSheetInner: { padding: 20, gap: 8 },
-  rxTitle: { fontSize: 18, fontWeight: '800', color: '#101010' },
-  rxSub: { fontSize: 13, color: '#44474f', marginBottom: 8 },
-  rxLabel: { fontSize: 12, fontWeight: '700', color: '#44474f', marginTop: 6 },
-  rxInput: {
-    backgroundColor: '#ffffff', borderWidth: 1, borderColor: 'rgba(16,16,16,0.16)',
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, color: '#101010',
-  },
-  rxMultiline: { minHeight: 80, textAlignVertical: 'top' },
-  rxActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  rxCancel: {
-    flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 999,
-    backgroundColor: '#ffffff', borderWidth: 1, borderColor: 'rgba(80,70,189,0.35)',
-  },
-  rxCancelText: { color: '#3f3796', fontSize: 14, fontWeight: '700' },
-  rxSave: {
-    flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 999,
-    backgroundColor: '#5046bd',
-  },
-  rxSaveText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
   caseBox: {
     padding: 14,
     marginBottom: 12,
@@ -1047,4 +1247,53 @@ const styles = StyleSheet.create({
   noteSection: { marginBottom: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   noteSectionLabel: { fontSize: 11, fontWeight: '700', color: TherapistColors.textSecondary, textTransform: 'uppercase', marginBottom: 4 },
   noteSectionValue: { fontSize: 14, color: TherapistColors.text, lineHeight: 22 },
+});
+
+// Styles for the Prescriptions / E-Pharmacy tabs, copied from DoctorPatientDetailScreen.
+const docStyles = StyleSheet.create({
+  addRowBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: DoctorColors.primaryLight, borderRadius: 10, padding: 12, marginBottom: 12,
+  },
+  addRowBtnText: { fontSize: 14, color: DoctorColors.primary, fontWeight: '700' },
+  dischargeCard: {
+    backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 10,
+  },
+  dischargeSub: { fontSize: 13, color: DoctorColors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+  dischargeTitle: { fontSize: 18, fontWeight: '800', color: DoctorColors.text, textAlign: 'center', marginBottom: 8 },
+  emptyText: { fontSize: 13, color: '#94a3b8', textAlign: 'center', marginTop: 20 },
+  miniCard: {
+    backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+  },
+  miniCardSub: { fontSize: 11, color: DoctorColors.textSecondary, marginTop: 2 },
+  miniCardTitle: { fontSize: 13, fontWeight: '600', color: DoctorColors.text },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  noteCard: {
+    backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8,
+    borderLeftWidth: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+  },
+  noteContent: { fontSize: 13, color: DoctorColors.textSecondary, lineHeight: 19 },
+  noteTitle: { fontSize: 14, fontWeight: '700', color: DoctorColors.text },
+  pharmacyStatusPill: {
+    alignSelf: 'flex-start',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  pharmacyStatusPillText: { fontSize: 11, fontWeight: '700' },
+  rxApprovedAlt: { fontSize: 12, color: '#16a34a', fontWeight: '600', marginTop: 4 },
+  rxCard: {
+    backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+  },
+  rxDate: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
+  rxInstructions: { fontSize: 12, color: DoctorColors.textSecondary, marginTop: 4, fontStyle: 'italic' },
+  rxMed: { fontSize: 15, fontWeight: '700', color: DoctorColors.text, marginBottom: 2 },
+  rxMeta: { fontSize: 12, color: DoctorColors.textSecondary },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: DoctorColors.text, marginBottom: 10 },
 });

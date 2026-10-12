@@ -14,11 +14,14 @@ import { MedicalColors } from '../../constants/colors';
 import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
 import { mergeLocationProfile } from '../../utils/locationProfile';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
+import TodaysMedsCardMobile from '../../components/TodaysMedsCardMobile';
+import PhoneVerifyBannerMobile from '../../components/PhoneVerifyBannerMobile';
 import { dateMillis, formatDate } from '../../utils/dateDisplay';
 import { resolveFileUrl } from '../../utils/mediaUrl';
 import AiAssistantFab from '../../components/AiAssistantFab';
 import SymptomTriageCard from '../../components/SymptomTriageCard';
 
+import FaqSection from '../../components/FaqSection';
 const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
 // How the daily check-in prompt paces itself. A logged check-in keeps it away
@@ -179,6 +182,10 @@ const MedicalHomeScreen = ({ navigation }) => {
 
   const loadData = async () => {
     setIsLoading(true);
+    // Most recent server-side check-in. Declared here, not inside the block that
+    // fills it: the daily check-in prompt below reads it, and a block-scoped
+    // const made that throw (silently caught) so the prompt never appeared.
+    let lastCheckInAt = 0;
     try {
       const name = await AsyncStorage.getItem('userName');
       setUserName(name || 'Patient');
@@ -223,7 +230,7 @@ const MedicalHomeScreen = ({ navigation }) => {
         // The server is the authority on whether a check-in already exists. The
         // AsyncStorage stamp below is only a fast path, and is empty after a
         // reinstall or on a second device.
-        const lastCheckInAt = feelings.reduce((max, f) => Math.max(max, dateMillis(f.createdAt) || 0), 0);
+        lastCheckInAt = feelings.reduce((max, f) => Math.max(max, dateMillis(f.createdAt) || 0), 0);
 
         // A patient is "assigned" to a doctor through an appointment OR a
         // prescription. Prefer the most recent appointment's doctor; otherwise fall
@@ -549,11 +556,16 @@ const MedicalHomeScreen = ({ navigation }) => {
             onEdit={() => navigation.navigate('MedicalSettings')}
           />
         </View>
-        <View style={styles.metaDivider} />
-        <View style={styles.metaCardRight}>
-          <WeatherCardMobile embedded profile={locationProfile} />
-        </View>
       </View>
+
+      {/* Full width under the location card: squeezed into half the row it
+          wrapped the temperature and condition one letter per line. */}
+      <WeatherCardMobile profile={locationProfile} />
+
+      {/* Until their phone is verified (only while SMS is set up). */}
+      <PhoneVerifyBannerMobile />
+      {/* Medication reminders set in My Care, with today's doses. */}
+      <TodaysMedsCardMobile navigation={navigation} careRoute="MedicalCare" accent="#1e6bb8" />
 
       {/* Level-of-care suggestion before booking, matching web. The server's
           pattern-based safety layer outranks the model, and the card hides the
@@ -973,6 +985,8 @@ const MedicalHomeScreen = ({ navigation }) => {
           )}
         </>
       )}
+      {/* Shared FAQ (backend /api/v1/faq) — same answers as the website. */}
+      <FaqSection compact audience="patient" />
       <View style={{ height: 32 }} />
     </ScrollView>
 

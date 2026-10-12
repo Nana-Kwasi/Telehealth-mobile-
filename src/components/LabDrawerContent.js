@@ -8,9 +8,10 @@ import { LabColors as C } from '../constants/colors';
 
 const LAB_NAV = [
   { name: 'LabHome',    label: 'Dashboard',     icon: 'grid-outline' },
-  { name: 'LabOrders',  label: 'Orders',        icon: 'flask-outline' },
+  { name: 'LabOrders',  label: 'Worklist',        icon: 'flask-outline' },
   { name: 'LabVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'LabResults', label: 'Results',       icon: 'document-text-outline' },
+  { name: 'LabCatalog', label: 'Test Catalog', icon: 'pricetags-outline' },
   { name: 'LabBranches',    label: 'Branches',      icon: 'business-outline' },
   { name: 'LabReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
   { name: 'LabPreferences', label: 'Settings',      icon: 'settings-outline' },
@@ -18,9 +19,10 @@ const LAB_NAV = [
 
 const LAB_BRANCH_NAV = [
   { name: 'LabBranchHome',    label: 'Dashboard',     icon: 'grid-outline' },
-  { name: 'LabBranchOrders',  label: 'Orders',        icon: 'flask-outline' },
+  { name: 'LabBranchOrders',  label: 'Worklist',        icon: 'flask-outline' },
   { name: 'LabBranchVerify',  label: 'Verify Patient',icon: 'search-outline' },
   { name: 'LabBranchResults', label: 'Results',       icon: 'document-text-outline' },
+  { name: 'LabBranchCatalog', label: 'Test Catalog', icon: 'pricetags-outline' },
   { name: 'LabBranchReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
   { name: 'LabBranchPreferences', label: 'Settings',      icon: 'settings-outline' },
 ];

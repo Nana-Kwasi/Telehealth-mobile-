@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  ImageBackground,
   View,
   Text,
   TextInput,
@@ -403,6 +404,9 @@ const LoginScreen = ({ navigation, route }) => {
   };
 
   return (
+    // The calm room photo behind the form; the form sits on frosted white so
+    // the fields stay readable over it.
+    <ImageBackground source={require('../../assets/login-bg.jpg')} style={styles.bg} resizeMode="cover">
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -597,22 +601,30 @@ const LoginScreen = ({ navigation, route }) => {
         </KeyboardAvoidingView>
       </Modal>
     </KeyboardAvoidingView>
+    </ImageBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  bg: {
     flex: 1,
     backgroundColor: Colors.background,
   },
+  container: {
+    flex: 1,
+  },
+  // Centred, then lifted: the extra bottom padding moves the card up into the
+  // middle of the screen rather than sitting low under the header.
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 120,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 28,
   },
   logo: {
     fontSize: 32,
@@ -620,25 +632,29 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     marginBottom: 10,
   },
+  // Brand green, like the NessaHub wordmark above, over the light photo.
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: Colors.primary,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: Colors.textSecondary,
+    fontWeight: '600',
+    color: '#3f6b4c',
   },
   formContainer: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 20,
     padding: 24,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.95)',
+    elevation: 4,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
   },
   errorContainer: {
     backgroundColor: '#ffebee',

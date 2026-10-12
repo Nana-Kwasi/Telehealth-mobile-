@@ -8,6 +8,8 @@ import { api, getStoredUserId } from '../../services/apiClient';
 import { fetchClientPrescriptions } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 import { patientVisibleNotes } from '../../utils/pharmacyRxNotes';
+import PrescriptionCodeCardMobile from '../../components/PrescriptionCodeCardMobile';
+import PrescriptionRequestPanelMobile from '../../components/PrescriptionRequestPanelMobile';
 
 const C = MedicalColors;
 const DEFAULT_TRANSFER_APPROVAL_TTL_HOURS = 6;
@@ -168,6 +170,9 @@ const MedicalPrescriptionsScreen = () => {
             <Text style={styles.infoSub}>Tap the tick to mark a prescription as completed</Text>
           </View>
         </View>
+
+        {/* My doctor, request a refill / new prescription, and my requests. */}
+        <PrescriptionRequestPanelMobile />
 
         {prescriptions.length === 0 ? (
           <View style={styles.emptyState}>
@@ -381,6 +386,7 @@ function RxCard({ rx, onTick, onOpen, onTransferDecision, transferActionKey }) {
             {m.dosage ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Dosage</Text><Text style={styles.rxDetailValue}>{m.dosage}</Text></View> : null}
             {m.frequency ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Frequency</Text><Text style={styles.rxDetailValue}>{m.frequency}</Text></View> : null}
             {m.duration ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Duration</Text><Text style={styles.rxDetailValue}>{m.duration}</Text></View> : null}
+            {m.quantity ? <View style={styles.rxDetailRow}><Text style={styles.rxDetailLabel}>Quantity</Text><Text style={styles.rxDetailValue}>{m.quantity}{m.quantityUnit ? ` ${m.quantityUnit}` : ''}</Text></View> : null}
             {ds && (
               <View style={[styles.drugStatusPill, { backgroundColor: ds.bg }]}>
                 <Text style={[styles.drugStatusPillText, { color: ds.color }]}>{ds.icon} {ds.label}</Text>
@@ -435,6 +441,8 @@ function RxCard({ rx, onTick, onOpen, onTransferDecision, transferActionKey }) {
           <Text style={styles.rxInstructionsText}>{rx.instructions}</Text>
         </View>
       ) : null}
+      {/* QR + collection code to show at the pharmacy, and what has been dispensed. */}
+      {!isDone ? <PrescriptionCodeCardMobile prescription={rx} /> : null}
       {isDone && (
         <View style={styles.completedBanner}>
           <Ionicons name="checkmark-circle" size={14} color="#16a34a" />

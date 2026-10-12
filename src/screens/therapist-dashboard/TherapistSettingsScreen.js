@@ -15,6 +15,8 @@ import NotificationTogglesSection from '../../components/NotificationTogglesSect
 import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 import { resolveFileUrl } from '../../utils/mediaUrl';
 import SecuritySettingsSection from '../../components/SecuritySettingsSection';
+import ConsentHistory from '../../components/ConsentHistory';
+import { ClinicianAccountNote } from '../../components/AccountSecurityExtras';
 import {
   changeTherapistLoginEmail,
   changeTherapistPassword,
@@ -207,6 +209,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
     { id:'security', label:'Security', icon:'shield-outline' },
     { id:'availability', label:'Availability', icon:'calendar-outline' },
     { id:'notifications', label:'Notifications', icon:'notifications-outline' },
+    { id:'legal', label:'Legal', icon:'document-text-outline' },
   ];
 
   return (
@@ -216,14 +219,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
         showsHorizontalScrollIndicator={false}
         style={styles.tabsScroll}
         contentContainerStyle={styles.tabsContent}
-      
-        automaticallyAdjustKeyboardInsets
-        keyboardShouldPersistTaps="handled"
       >
-        {/* Shared with every role. 2FA and biometric sign-in existed
-            only in the medical patient screen, so a clinician could not
-            reach either. */}
-        <SecuritySettingsSection accent={TherapistColors.primary} />
         {sections.map(s => (
           <TouchableOpacity
             key={s.id}
@@ -246,6 +242,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
       >
         {/* ── Profile Section ── */}
         {activeSection === 'profile' && (
@@ -395,6 +392,9 @@ const TherapistSettingsScreen = ({ navigation }) => {
         )}
 
         {/* ── Security Section ── */}
+        {/* Two-step sign-in and biometrics — shared with every role. It used to be
+            rendered inside the horizontal tab strip, covering the tabs. */}
+        {activeSection === 'security' && <SecuritySettingsSection accent={TherapistColors.primary} />}
         {activeSection === 'security' && (
           <View style={styles.sectionCard}>
             <Text style={styles.sectionCardTitle}>Login email</Text>
@@ -547,6 +547,11 @@ const TherapistSettingsScreen = ({ navigation }) => {
             preferences the backend actually honours: the mailer checks them
             before sending optional mail, and the notifier checks pushEnabled
             before reaching a device. */}
+        {/* Consents, read-only — same as the website and the other roles. */}
+        {activeSection === 'legal' && <ConsentHistory />}
+
+        {activeSection === 'security' && <ClinicianAccountNote />}
+
         {activeSection === 'notifications' && (
           <View style={styles.sectionCard}>
             <NotificationTogglesSection accent={TherapistColors.primary} />

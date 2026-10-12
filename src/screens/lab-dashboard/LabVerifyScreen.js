@@ -79,14 +79,13 @@ export default function LabVerifyScreen({ profile }) {
       await api(`/api/v1/diagnostics/operations/orders/${selectedOrder.id}/status`, { method: 'PATCH', body: { status: 'completed' } });
       await api(`/api/v1/diagnostics/operations/orders/${selectedOrder.id}/results`, {
         method: 'POST',
-        body: { orderId: selectedOrder.id, patientId: selectedOrder.patientId, doctorId: selectedOrder.doctorId, type: 'lab', testType: selectedOrder.testType, notes: resultNotes.trim(), fileName: fileName.trim() || null, resultRef, uploadedBy: profile?.id, uploaderName: profile?.labName || 'Lab Center' },
+        body: { orderId: selectedOrder.id, patientId: selectedOrder.patientId, doctorId: selectedOrder.doctorId, type: 'lab', testType: selectedOrder.testType, findings: resultNotes.trim(), notes: resultNotes.trim(), fileName: fileName.trim() || null, resultRef, uploadedBy: profile?.id, uploaderName: profile?.labName || 'Lab Center' },
       });
-      api('/api/v1/notifications/events', { method: 'POST', body: { targetUserId: selectedOrder.doctorId, type: 'LAB_RESULT', title: 'Lab Result Ready', body: `Result for ${selectedOrder.patientName} (${selectedOrder.testType}) is ready.` } }).catch(() => {});
-      api('/api/v1/notifications/events', { method: 'POST', body: { targetUserId: selectedOrder.patientId, type: 'LAB_RESULT', title: 'Lab Result Ready', body: `Your ${selectedOrder.testType} result is available.` } }).catch(() => {});
-      api('/api/v1/patient-timeline', { method: 'POST', body: { patientId: selectedOrder.patientId, type: 'LAB_RESULT', title: `Lab result ready: ${selectedOrder.testType}`, status: 'COMPLETED', relatedId: selectedOrder.id, actor: { role: 'LAB', name: profile?.labName || 'Lab Center' } } }).catch(() => {});
+      // The server notifies the ordering doctor. The patient is told only when the doctor shares the result.
+      api('/api/v1/patient-timeline', { method: 'POST', body: { patientId: selectedOrder.patientId, type: 'LAB_RESULT', title: `Lab test done: ${selectedOrder.testType}`, note: 'Your doctor will review the result and share it with you.', status: 'COMPLETED', relatedId: selectedOrder.id, actor: { role: 'LAB', name: profile?.labName || 'Lab Center' } } }).catch(() => {});
       setFoundOrders(prev => prev.map(o => o.id === selectedOrder.id ? { ...o, status: 'completed' } : o));
       setShowResultModal(false);
-      Alert.alert('Done', 'Result submitted. Doctor and patient have been notified.');
+      Alert.alert('Done', 'Result submitted to the ordering doctor. The patient will see it once the doctor shares it.');
     } catch (e) {
       console.error(e);
       Alert.alert('Error', 'Failed to submit result.');
@@ -94,8 +93,9 @@ export default function LabVerifyScreen({ profile }) {
   };
 
   const renderOrder = ({ item }) => {
-    const isCompleted = item.status === 'completed';
-    const isInProgress = item.status === 'in_progress';
+    const st = String(item.status || '').toLowerCase();
+    const isCompleted = st === 'completed';
+    const isInProgress = st === 'in_progress';
     return (
       <View style={styles.card}>
         <View style={styles.cardTop}>

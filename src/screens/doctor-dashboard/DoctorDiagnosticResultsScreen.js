@@ -52,6 +52,7 @@ export default function DoctorDiagnosticResultsScreen() {
   const [selected, setSelected] = useState(null);
   const [doctorNote, setDoctorNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [filter, setFilter] = useState('All');
 
   const [doctorId, setDoctorId] = useState(null);
@@ -144,6 +145,33 @@ export default function DoctorDiagnosticResultsScreen() {
     } finally {
       setSavingNote(false);
     }
+  };
+
+  // Patients never see a result until the ordering doctor shares it. The note in
+  // the box (if any) is saved and shared with it; the patient is notified.
+  const doShare = async () => {
+    setSharing(true);
+    try {
+      const saved = await api(`/api/v1/diagnostics/operations/results/${selected.id}/share`, {
+        method: 'POST', body: { doctorNote: doctorNote.trim() || null },
+      });
+      const patch = { releasedToPatient: true, doctorNote: saved?.doctorNote ?? selected.doctorNote };
+      setSelected(prev => (prev ? { ...prev, ...patch } : null));
+      setResults(prev => prev.map(r => (r.id === selected.id ? { ...r, ...patch } : r)));
+      Alert.alert('Shared', 'The patient has been notified and can now see this result.');
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Could not share the result.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleShare = () => {
+    if (selected?.kind !== 'result' || selected?.releasedToPatient) return;
+    Alert.alert('Share with patient?', `${selected.patientName || 'The patient'} will be notified and can then see this result and your note.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Share', onPress: doShare },
+    ]);
   };
 
   const openRow = (row) => {
@@ -364,6 +392,20 @@ export default function DoctorDiagnosticResultsScreen() {
                     >
                       <Text style={styles.saveNoteBtnText}>{savingNote ? 'Saving…' : 'Save Note'}</Text>
                     </TouchableOpacity>
+                    {selected?.releasedToPatient ? (
+                      <Text style={{ marginTop: 10, color: '#15803d', fontWeight: '700', fontSize: 13 }}>✓ Shared with the patient</Text>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.saveNoteBtn, { marginTop: 10, backgroundColor: '#15803d' }, sharing && { opacity: 0.6 }]}
+                          onPress={handleShare}
+                          disabled={sharing}
+                        >
+                          <Text style={styles.saveNoteBtnText}>{sharing ? 'Sharing…' : 'Share with patient'}</Text>
+                        </TouchableOpacity>
+                        <Text style={{ marginTop: 6, color: '#92400e', fontSize: 12 }}>The patient cannot see this result until you share it.</Text>
+                      </>
+                    )}
                   </View>
                 </>
               )}

@@ -18,6 +18,7 @@ import {
 import { MedicalColors } from '../../constants/colors';
 import { resolveFileUrl } from '../../utils/mediaUrl';
 
+import { formatMoney } from '../../services/pricing';
 const { width } = Dimensions.get('window');
 
 const DoctorProfileScreen = ({ route, navigation }) => {
@@ -41,7 +42,9 @@ const DoctorProfileScreen = ({ route, navigation }) => {
     ]);
     setDoctor(doc);
     setAvailability(avail);
-    setReviews(revs);
+    // The endpoint returns { reviews, totalCount, averageRating }, not a list —
+    // storing the object made the Reviews tab call .map on it and crash the app.
+    setReviews(Array.isArray(revs) ? revs : (Array.isArray(revs?.reviews) ? revs.reviews : []));
     setIsLoading(false);
   };
 
@@ -83,6 +86,10 @@ const DoctorProfileScreen = ({ route, navigation }) => {
     );
   }
 
+  // Names are stored with or without the honorific ("Dr Zack"); the screen
+  // adds "Dr." itself, which produced "Dr. Dr Zack".
+  const displayName = String(doctor.name || doctor.fullName || '').replace(/^\s*dr\.?\s+/i, '').trim() || 'Doctor';
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -94,12 +101,12 @@ const DoctorProfileScreen = ({ route, navigation }) => {
               <Image source={{ uri: resolveFileUrl(doctor.photoURL)}} style={styles.avatar} />
             ) : (
               <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarText}>{(doctor.name || 'D')[0].toUpperCase()}</Text>
+                <Text style={styles.avatarText}>{displayName[0].toUpperCase()}</Text>
               </View>
             )}
             <View style={styles.nameSection}>
               <View style={styles.nameRow}>
-                <Text style={styles.doctorName}>Dr. {doctor.name}</Text>
+                <Text style={styles.doctorName}>Dr. {displayName}</Text>
                 {doctor.verified && (
                   <Ionicons name="checkmark-circle" size={20} color={MedicalColors.verified} />
                 )}
@@ -113,7 +120,7 @@ const DoctorProfileScreen = ({ route, navigation }) => {
           {/* Quick Stats */}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{doctor.experience || 0}</Text>
+              <Text style={styles.statValue}>{doctor.experience ? doctor.experience : '—'}</Text>
               <Text style={styles.statLabel}>Years Exp.</Text>
             </View>
             <View style={styles.statDivider} />
@@ -126,7 +133,9 @@ const DoctorProfileScreen = ({ route, navigation }) => {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>${doctor.consultationFee || 'N/A'}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+                {Number(doctor.consultationFee) > 0 ? formatMoney(doctor.consultationFee) : '—'}
+              </Text>
               <Text style={styles.statLabel}>Consult Fee</Text>
             </View>
           </View>
@@ -281,7 +290,7 @@ const DoctorProfileScreen = ({ route, navigation }) => {
                     <View style={styles.reviewHeader}>
                       <View style={styles.reviewStars}>{renderStars(review.rating, 14)}</View>
                       <Text style={styles.reviewDate}>
-                        {review.date ? new Date(review.date).toLocaleDateString() : ''}
+                        {(review.date || review.createdAt) ? new Date(review.date || review.createdAt).toLocaleDateString() : ''}
                       </Text>
                     </View>
                     {review.comment ? (
@@ -356,11 +365,12 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
+  // Avatar centred on the banner edge with the name BELOW it. The name used to
+  // sit beside a bottom-aligned avatar, straddling the banner's edge.
   headerContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 50,
+    paddingTop: 52,
   },
   avatar: {
     width: 90,
@@ -385,17 +395,18 @@ const styles = StyleSheet.create({
     color: MedicalColors.primary,
   },
   nameSection: {
-    flex: 1,
-    marginLeft: 16,
-    paddingBottom: 6,
+    alignItems: 'center',
+    marginTop: 10,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     marginBottom: 4,
   },
   doctorName: {
+    textAlign: 'center',
     fontSize: 22,
     fontWeight: '700',
     color: MedicalColors.text,

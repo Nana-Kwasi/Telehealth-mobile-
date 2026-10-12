@@ -7,6 +7,7 @@ import {
   ImageBackground,
   StatusBar,
 } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
 import TherapyTypeModal from '../components/TherapyTypeModal';
@@ -16,14 +17,16 @@ const INTENT_OPTIONS = [
     key: 'therapy',
     title: 'Psychiatry',
     sub: 'Mental health',
-    emoji: '🧠',
+    icon: 'brain',
+    color: '#6ee7b7',
     styleKey: 'pillTherapy',
   },
   {
     key: 'medical',
     title: 'Doctor',
     sub: 'Medical care',
-    emoji: '🩺',
+    icon: 'stethoscope',
+    color: '#93c5fd',
     styleKey: 'pillMedical',
   },
   // Home Care is parked, not removed — the module, its navigator and its
@@ -39,8 +42,9 @@ const INTENT_OPTIONS = [
     key: 'medpsych',
     title: 'Psychology & Counseling',
     sub: 'Talking therapy',
-    emoji: '🩹',
-    styleKey: 'pillHomeCare',
+    icon: 'head-heart-outline',
+    color: '#fcd34d',
+    styleKey: 'pillCounsel',
   },
   {
     // For someone ALREADY under care elsewhere who wants an independent view on
@@ -50,8 +54,9 @@ const INTENT_OPTIONS = [
     key: 'second_opinion',
     title: 'Second Opinion',
     sub: 'Review my current care',
-    emoji: '🔍',
-    styleKey: 'pillHomeCare',
+    icon: 'file-search-outline',
+    color: '#5eead4',
+    styleKey: 'pillSecond',
   },
 ];
 
@@ -150,9 +155,16 @@ const IntentScreen = ({ navigation }) => {
               onPress={() => handleSelect(opt.key)}
               activeOpacity={0.82}
             >
-              <Text style={styles.pillEmoji}>{opt.emoji}</Text>
-              <Text style={styles.pillTitle}>{opt.title}</Text>
-              <Text style={styles.pillSub}>{opt.sub}</Text>
+              <View style={styles.pillTop}>
+                <View style={[styles.pillIcon, { backgroundColor: `${opt.color}26`, borderColor: `${opt.color}66` }]}>
+                  <MaterialCommunityIcons name={opt.icon} size={22} color={opt.color} />
+                </View>
+                <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.55)" />
+              </View>
+              {/* Capped scaling: with large system text the titles broke
+                  mid-word ("Psychiatr / y") in a too-narrow card. */}
+              <Text style={styles.pillTitle} numberOfLines={2} maxFontSizeMultiplier={1.2}>{opt.title}</Text>
+              <Text style={styles.pillSub} numberOfLines={2} maxFontSizeMultiplier={1.2}>{opt.sub}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -229,50 +241,52 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     fontWeight: '400',
   },
+  // Two by two: four cards across left each about 80pt wide, too narrow for
+  // the titles at any text size above the smallest.
   pillsRow: {
     flexDirection: 'row',
-    gap: 10,
-    alignItems: 'stretch',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
   },
   pill: {
-    flex: 1,
+    width: '48.4%',
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    minHeight: 124,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  pillTherapy: { backgroundColor: 'rgba(74,124,89,0.28)', borderColor: 'rgba(110,231,183,0.35)' },
+  pillMedical: { backgroundColor: 'rgba(30,107,184,0.26)', borderColor: 'rgba(147,197,253,0.35)' },
+  pillCounsel: { backgroundColor: 'rgba(184,134,11,0.24)', borderColor: 'rgba(252,211,77,0.35)' },
+  pillHomeCare: { backgroundColor: 'rgba(180,83,9,0.22)', borderColor: 'rgba(253,186,116,0.4)' },
+  pillSecond: { backgroundColor: 'rgba(13,148,136,0.24)', borderColor: 'rgba(94,234,212,0.35)' },
+  pillTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  pillIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    minHeight: 118,
-  },
-  pillTherapy: {
-    backgroundColor: 'rgba(74,124,89,0.18)',
-    borderColor: 'rgba(110,231,183,0.35)',
-  },
-  pillMedical: {
-    backgroundColor: 'rgba(30,107,184,0.18)',
-    borderColor: 'rgba(147,197,253,0.35)',
-  },
-  pillHomeCare: {
-    backgroundColor: 'rgba(180,83,9,0.18)',
-    borderColor: 'rgba(253,186,116,0.4)',
-  },
-  pillEmoji: {
-    fontSize: 26,
-    marginBottom: 8,
   },
   pillTitle: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 4,
+    lineHeight: 19,
+    marginBottom: 3,
   },
   pillSub: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.55)',
-    fontWeight: '400',
-    textAlign: 'center',
-    lineHeight: 13,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.65)',
+    lineHeight: 16,
   },
   loginBtn: {
     alignItems: 'center',

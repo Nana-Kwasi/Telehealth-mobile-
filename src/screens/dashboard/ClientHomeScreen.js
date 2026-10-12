@@ -14,8 +14,10 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchClientData, getCachedClientData, getCachedTherapistData } from '../../services/clientDataService';
 import { api } from '../../services/apiClient';
@@ -24,14 +26,18 @@ import { buildProgressMetrics, overallProgressScore } from '../../utils/clientDa
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import HeroArt from '../../components/HeroArt';
 import ClinicianStatusBadge from '../../components/ClinicianStatusBadge';
-import LocationSummaryCardMobile from '../../components/LocationSummaryCardMobile';
+import { pickLocation, flagFromCountry } from '../../components/LocationSummaryCardMobile';
+import { resolveFileUrl } from '../../utils/mediaUrl';
 import ZCGround from '../../components/ZCGround';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
+import TodaysMedsCardMobile from '../../components/TodaysMedsCardMobile';
+import PhoneVerifyBannerMobile from '../../components/PhoneVerifyBannerMobile';
 import { mergeLocationProfile, fetchAuthLocationProfile } from '../../utils/locationProfile';
 import { ZC } from '../../constants/zencare';
 import GlassFill, { glassStyle } from '../../components/GlassFill';
 import AiAssistantFab from '../../components/AiAssistantFab';
 
+import FaqSection from '../../components/FaqSection';
 const { width } = Dimensions.get('window');
 
 async function resolveMoodClientId(client) {
@@ -116,11 +122,22 @@ const MOOD_OPTIONS = [
 
 const ClientHomeScreen = ({ navigation }) => {
   const [clientData, setClientData] = useState(null);
+  // Psychiatry: the medical patient home's Prescriptions / E-Pharmacy shortcuts.
+  const [isPsychiatry, setIsPsychiatry] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api('/api/v1/medpsych/me')
+      .then((r) => { if (alive) setIsPsychiatry(String(r?.careTrack || '').toLowerCase() === 'psychiatry'); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   // The signed-in account's name — the same source the drawer uses. Kept separate
   // because the patient-profile row returns a blank name for therapy clients.
   const [sessionName, setSessionName] = useState('');
   const [locationProfile, setLocationProfile] = useState(null);
   const [therapistData, setTherapistData] = useState(null);
+  // An unloadable photo falls back to the initial rather than an empty circle.
+  const [photoFailed, setPhotoFailed] = useState(false);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
   const [clientGoals, setClientGoals] = useState([]);
   const [progressMetrics, setProgressMetrics] = useState([]);
@@ -207,6 +224,7 @@ const ClientHomeScreen = ({ navigation }) => {
       // so a freshly-assigned therapist never appeared.
       const therapist = client?.therapist || getCachedTherapistData();
       setTherapistData(therapist || null);
+      setPhotoFailed(false);
 
       const clientId = await AsyncStorage.getItem('th.clientId') || client?.id || await AsyncStorage.getItem('th.userId');
       if (!clientId) {
@@ -450,6 +468,8 @@ const ClientHomeScreen = ({ navigation }) => {
   }
 
 
+  const homeLoc = pickLocation(locationProfile || clientData || {});
+
   return (
     <ZCGround>
 <ScrollView 
@@ -489,45 +509,157 @@ const ClientHomeScreen = ({ navigation }) => {
         </View>
       </View>
 
-      {/* One card, not two. Both answer "where am I and what is it like" — as
-          separate surfaces with their own padding and borders the row read as
-          clutter. The weather follows the saved coordinates, so updating the
-          location updates the weather. */}
-      <View style={[styles.metaCard, glassStyle]}>
-        <GlassFill />
-        <View style={styles.metaCardLeft}>
-          <LocationSummaryCardMobile
-            embedded
-            profile={locationProfile || clientData}
-            onEdit={() => navigation.navigate('Settings')}
-          />
+      {/* Stats Cards */}
+      <View style={styles.statsRow}>
+        <View style={[styles.statCard, glassStyle]}>
+          <GlassFill />
+          <Ionicons name="checkmark-circle" size={32} color="#10B981" />
+          <Text style={styles.statNumber}>{sessionsCompleted}</Text>
+          <Text style={styles.statLabel}>Sessions</Text>
         </View>
-        <View style={styles.metaDivider} />
-        <View style={styles.metaCardRight}>
-          <WeatherCardMobile embedded profile={locationProfile || clientData} />
+        <View style={[styles.statCard, glassStyle]}>
+          <GlassFill />
+          <Ionicons name="trending-up" size={32} color={Colors.primary} />
+          <Text style={styles.statNumber}>{progressScore}%</Text>
+          <Text style={styles.statLabel}>Progress</Text>
+        </View>
+        <View style={[styles.statCard, glassStyle]}>
+          <GlassFill />
+          <Ionicons name="calendar" size={32} color="#F59E0B" />
+          <Text style={styles.statNumber}>{upcomingCount}</Text>
+          <Text style={styles.statLabel}>New schedules</Text>
         </View>
       </View>
 
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.headerMoodCta, styles.actionButton]}
-          onPress={() => setShowMoodModal(true)}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="happy-outline" size={15} color={Colors.primary} />
-          <Text style={styles.headerMoodCtaText}>Log how you feel</Text>
+      {/* Full width: squeezed into half a row it wrapped one letter per line. */}
+      <WeatherCardMobile profile={locationProfile || clientData} />
+
+      {/* Quick Actions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.actionsGrid}>
+          {quickActions.map((action, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[styles.actionCard, glassStyle]}
+              onPress={() => navigation.navigate(action.screen)}
+            >
+              <GlassFill />
+              <View style={[styles.actionIconContainer, { backgroundColor: `${action.color}20` }]}>
+                <Ionicons name={action.icon} size={28} color={action.color} />
+              </View>
+              <Text style={styles.actionLabel}>{action.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* You, your therapist and the two things to reach for: one row.
+          Therapist and location as small tiles, mood check-in and crisis help
+          as round buttons with their own icon, so neither needs a sentence. */}
+      <View style={styles.careRow}>
+        {therapistData ? (
+          <TouchableOpacity style={[styles.careTile, glassStyle]} onPress={() => navigation.navigate('Messages')} activeOpacity={0.85}>
+            <GlassFill />
+            {therapistData.photoURL && !photoFailed
+              ? <Image source={{ uri: resolveFileUrl(therapistData.photoURL) }} style={styles.careAvatar} onError={() => setPhotoFailed(true)} />
+              : <View style={[styles.careAvatar, styles.careAvatarEmpty]}><Text style={styles.careAvatarText}>{(therapistData.name || 'T').charAt(0).toUpperCase()}</Text></View>}
+            <Text style={styles.careTileLabel}>Your therapist</Text>
+            <Text style={styles.careTileTitle} numberOfLines={1}>{therapistData.name || 'Assigned'}</Text>
+            <ClinicianStatusBadge status={therapistData} />
+          </TouchableOpacity>
+        ) : (
+          /* No therapist yet → back into selection. Deliberately the exact
+             inverse of the tile above, so a stale cached coupleId can never
+             hide both. */
+          <TouchableOpacity style={[styles.careTile, styles.careTileFind]} onPress={() => navigation.navigate('MatchTherapist')} activeOpacity={0.85}>
+            <View style={[styles.careAvatar, styles.careAvatarEmpty]}><Ionicons name="search" size={18} color="#5046bd" /></View>
+            <Text style={styles.careTileLabel}>No therapist yet</Text>
+            <Text style={[styles.careTileTitle, { color: '#5046bd' }]} numberOfLines={1}>Find one</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity style={[styles.careTile, glassStyle]} onPress={() => navigation.navigate('Settings')} activeOpacity={0.85}>
+          <GlassFill />
+          <View style={[styles.careAvatar, styles.careFlag]}><Text style={{ fontSize: 20 }}>{flagFromCountry(homeLoc.country)}</Text></View>
+          <Text style={styles.careTileLabel}>{homeLoc.country || 'Location'}</Text>
+          <Text style={styles.careTileTitle} numberOfLines={1}>{[homeLoc.area || homeLoc.street, homeLoc.city].filter(Boolean)[0] || 'Add location'}</Text>
+          <Text style={styles.careTileLink}>Update</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.emergencyBanner, styles.actionButton]}
-          onPress={() => setShowEmergencyModal(true)}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="warning" size={18} color="#dc2626" />
-          <Text style={styles.emergencyBannerText}>In crisis? Tap for immediate help</Text>
-          <Ionicons name="chevron-forward" size={18} color="#dc2626" />
-        </TouchableOpacity>
+        <View style={styles.careRoundWrap}>
+          <TouchableOpacity style={styles.careRoundRing} onPress={() => setShowMoodModal(true)}
+            accessibilityLabel="Log how you feel" activeOpacity={0.85}>
+            <LinearGradient colors={['#34d399', '#059669']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.careRound}>
+              <Ionicons name="happy" size={30} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={styles.careRoundCaption}>Log mood</Text>
+        </View>
+        <View style={styles.careRoundWrap}>
+          <TouchableOpacity style={[styles.careRoundRing, styles.careRoundRingCrisis]} onPress={() => setShowEmergencyModal(true)}
+            accessibilityLabel="In crisis? Tap for immediate help" activeOpacity={0.85}>
+            <LinearGradient colors={['#f87171', '#dc2626']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.careRound}>
+              <Ionicons name="call" size={26} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={[styles.careRoundCaption, { color: '#b91c1c' }]}>Get help</Text>
+        </View>
       </View>
+
+      {/* Next Session */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Upcoming Session</Text>
+        {nextSession ? (
+          <View style={styles.sessionCard}>
+            <View style={styles.sessionHeader}>
+              <Ionicons name="calendar" size={24} color={Colors.primary} />
+              <Text style={styles.sessionDate}>{formatDate(nextSession.scheduledTime)}</Text>
+            </View>
+            {nextSession.notes && (
+              <Text style={styles.sessionNotes} numberOfLines={2}>{nextSession.notes}</Text>
+            )}
+            <TouchableOpacity
+              style={styles.viewDetailsButton}
+              onPress={() => navigation.navigate('Schedule')}
+            >
+              <Text style={styles.viewDetailsText}>View Details</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="calendar-outline" size={48} color={Colors.textSecondary} />
+            <Text style={styles.emptyText}>No upcoming sessions</Text>
+            <TouchableOpacity
+              style={styles.scheduleButton}
+              onPress={() => navigation.navigate('Video')}
+            >
+              <Text style={styles.scheduleButtonText}>Schedule a Session</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+      {/* Until their phone is verified (only while SMS is set up). */}
+      <PhoneVerifyBannerMobile />
+      {/* Medication reminders set in My Care, with today's doses. */}
+      <TodaysMedsCardMobile navigation={navigation} careRoute="TherapyCare" accent="#5046bd" />
+
+      {/* Psychiatry: shortcuts copied from MedicalHomeScreen's quick actions. */}
+      {isPsychiatry ? (
+        <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 12 }}>
+          {[
+            { icon: 'medkit-outline', label: 'Prescriptions', onPress: () => navigation.navigate('MedicalPrescriptions') },
+            { icon: 'medical-outline', label: 'E-Pharmacy', onPress: () => navigation.getParent()?.navigate('EPharmacy') },
+            { icon: 'time-outline', label: 'Timeline', onPress: () => navigation.navigate('MedicalTimeline') },
+          ].map(a => (
+            <TouchableOpacity key={a.label} onPress={a.onPress} activeOpacity={0.85}
+              style={{ flex: 1, alignItems: 'center', gap: 6, paddingVertical: 12, borderRadius: 14, backgroundColor: '#ffffff', borderWidth: 1, borderColor: 'rgba(80,70,189,0.22)' }}>
+              <Ionicons name={a.icon} size={20} color="#5046bd" />
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#5046bd' }}>{a.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
 
       {clientData?.coupleId ? (
         <TouchableOpacity
@@ -632,65 +764,6 @@ const ClientHomeScreen = ({ navigation }) => {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
-      {/* Therapist Card */}
-      {therapistData && (
-        <TouchableOpacity 
-          style={styles.therapistCard}
-          onPress={() => navigation.navigate('Messages')}
-        >
-          <Ionicons name="person-circle" size={48} color={Colors.primary} />
-          <View style={styles.therapistInfo}>
-            <Text style={styles.therapistLabel}>Your Therapist</Text>
-            <Text style={styles.therapistName}>{therapistData.name || 'Not assigned'}</Text>
-            {/* Their own declared availability; renders nothing when unset. */}
-            <ClinicianStatusBadge status={therapistData} />
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
-        </TouchableOpacity>
-      )}
-
-      {/* No therapist yet → route back into selection, the same way a medical
-          patient who skipped doctor booking gets a "Find a Doctor" CTA.
-          Deliberately the exact inverse of the card above: gating this on
-          coupleId as well meant a client carrying a stale cached coupleId saw
-          NEITHER card and had no way back to therapist selection. MatchTherapist
-          handles the couple flow itself, so sending couples there is safe. */}
-      {!therapistData && (
-        <TouchableOpacity
-          style={styles.findTherapistCard}
-          onPress={() => navigation.navigate('MatchTherapist')}
-        >
-          <Ionicons name="search-circle" size={48} color={Colors.primary} />
-          <View style={styles.therapistInfo}>
-            <Text style={styles.therapistLabel}>No therapist yet</Text>
-            <Text style={styles.therapistName}>Find a Therapist</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
-        </TouchableOpacity>
-      )}
-
-      {/* Stats Cards */}
-      <View style={styles.statsRow}>
-        <View style={[styles.statCard, glassStyle]}>
-          <GlassFill />
-          <Ionicons name="checkmark-circle" size={32} color="#10B981" />
-          <Text style={styles.statNumber}>{sessionsCompleted}</Text>
-          <Text style={styles.statLabel}>Sessions</Text>
-        </View>
-        <View style={[styles.statCard, glassStyle]}>
-          <GlassFill />
-          <Ionicons name="trending-up" size={32} color={Colors.primary} />
-          <Text style={styles.statNumber}>{progressScore}%</Text>
-          <Text style={styles.statLabel}>Progress</Text>
-        </View>
-        <View style={[styles.statCard, glassStyle]}>
-          <GlassFill />
-          <Ionicons name="calendar" size={32} color="#F59E0B" />
-          <Text style={styles.statNumber}>{upcomingCount}</Text>
-          <Text style={styles.statLabel}>New schedules</Text>
-        </View>
-      </View>
 
       {/* Progress bar (same % as therapist dashboard) */}
       <View style={styles.section}>
@@ -864,26 +937,6 @@ const ClientHomeScreen = ({ navigation }) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* Quick Actions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.actionsGrid}>
-          {quickActions.map((action, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[styles.actionCard, glassStyle]}
-              onPress={() => navigation.navigate(action.screen)}
-            >
-              <GlassFill />
-              <View style={[styles.actionIconContainer, { backgroundColor: `${action.color}20` }]}>
-                <Ionicons name={action.icon} size={28} color={action.color} />
-              </View>
-              <Text style={styles.actionLabel}>{action.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
       {/* Charts */}
       {sessionsByMonth.length > 0 && (() => {
         const groupedLabels = sessionsByMonth.flatMap(m => [m.month, '']);
@@ -966,38 +1019,8 @@ const ClientHomeScreen = ({ navigation }) => {
         </View>
       )}
 
-      {/* Next Session */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Upcoming Session</Text>
-        {nextSession ? (
-          <View style={styles.sessionCard}>
-            <View style={styles.sessionHeader}>
-              <Ionicons name="calendar" size={24} color={Colors.primary} />
-              <Text style={styles.sessionDate}>{formatDate(nextSession.scheduledTime)}</Text>
-            </View>
-            {nextSession.notes && (
-              <Text style={styles.sessionNotes} numberOfLines={2}>{nextSession.notes}</Text>
-            )}
-            <TouchableOpacity
-              style={styles.viewDetailsButton}
-              onPress={() => navigation.navigate('Schedule')}
-            >
-              <Text style={styles.viewDetailsText}>View Details</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={48} color={Colors.textSecondary} />
-            <Text style={styles.emptyText}>No upcoming sessions</Text>
-            <TouchableOpacity
-              style={styles.scheduleButton}
-              onPress={() => navigation.navigate('Video')}
-            >
-              <Text style={styles.scheduleButtonText}>Schedule a Session</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+      {/* Shared FAQ (backend /api/v1/faq) — same answers as the website. */}
+      <FaqSection compact audience="client" />
     </ScrollView>
       <AiAssistantFab />
     </ZCGround>
@@ -1094,6 +1117,29 @@ const styles = StyleSheet.create({
   // #3f6b4c, not Colors.primary: the brand green measures 4.14:1 on this
   // pill, under the 4.5:1 floor for text this size. This is 5.23:1.
   headerMoodCtaText: { fontSize: 12.5, fontWeight: '700', color: '#1f5f3d' },
+  // ── Therapist · location · mood · crisis, one row ──
+  careRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 18 },
+  careTile: {
+    flex: 1, minWidth: 0, borderRadius: 16, paddingVertical: 10, paddingHorizontal: 8,
+    alignItems: 'center', overflow: 'hidden',
+  },
+  careTileFind: { backgroundColor: '#eef2ff', borderWidth: 1, borderColor: '#a5b4fc' },
+  careAvatar: { width: 46, height: 46, borderRadius: 23, marginBottom: 5, borderWidth: 2, borderColor: '#fff' },
+  careAvatarEmpty: { backgroundColor: '#ede9fe', alignItems: 'center', justifyContent: 'center' },
+  careAvatarText: { color: '#5046bd', fontWeight: '800', fontSize: 16 },
+  careFlag: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  careTileLabel: { fontSize: 10.5, color: '#64748b', fontWeight: '600' },
+  careTileTitle: { fontSize: 13, fontWeight: '800', color: '#0f172a', marginTop: 1, maxWidth: '100%' },
+  careTileLink: { fontSize: 11, fontWeight: '700', color: '#5046bd', marginTop: 3 },
+  careRoundWrap: { alignItems: 'center', width: 64, paddingTop: 8 },
+  // A soft halo around a solid gradient disc: visible on the pale glass ground.
+  careRoundRing: {
+    width: 60, height: 60, borderRadius: 30, padding: 4, backgroundColor: 'rgba(16,185,129,0.18)',
+    shadowColor: '#059669', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 6,
+  },
+  careRoundRingCrisis: { backgroundColor: 'rgba(239,68,68,0.18)', shadowColor: '#dc2626' },
+  careRound: { flex: 1, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  careRoundCaption: { fontSize: 11.5, fontWeight: '800', color: '#047857', marginTop: 6 },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
