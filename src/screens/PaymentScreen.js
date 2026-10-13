@@ -12,7 +12,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, getStoredUserId } from '../services/apiClient';
+import { api, getStoredUserId, getStoredEmail } from '../services/apiClient';
+import { payForBooking } from '../services/paystack';
 import { Colors } from '../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
 import {
@@ -104,7 +105,16 @@ const PaymentScreen = ({ navigation, route }) => {
     if (isCouple) {
       const coupleId = coupleIdParam || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
       try {
-        await markCouplePaymentComplete(coupleId, plan);
+        // Take the payment first; the server only unlocks the couple after it
+        // verifies this exact Paystack reference for the plan's price.
+        const paid = await payForBooking({
+          email: await getStoredEmail(),
+          amount: prices[plan],
+          purpose: 'couple_therapy',
+          metadata: { coupleId, plan },
+        });
+        if (!paid.ok) { Alert.alert('Payment', paid.reason || 'The payment did not go through.'); return; }
+        await markCouplePaymentComplete(coupleId, plan, paid.reference);
         navigation.replace('MatchTherapist', { coupleId, therapyType: 'couples' });
       } catch (e) {
         Alert.alert('Error', e.message || 'Could not record payment.');

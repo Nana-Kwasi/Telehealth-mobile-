@@ -48,10 +48,12 @@ export async function createCoupleRegistration(payload) {
   return data;
 }
 
-export async function linkCouplePartnerAccount(coupleId, partnerKey, { clientId, name }) {
+export async function linkCouplePartnerAccount(coupleId, partnerKey, { clientId, name, inviteToken }) {
+  // Partner B proves the invitation with its token (saved from the invite link).
+  const token = inviteToken || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.inviteToken)) || undefined;
   return api('/api/v1/couples/link-partner', {
     method: 'POST',
-    body: { coupleId, partnerKey: partnerKeyToBackend(partnerKey), clientId, name },
+    body: { coupleId, partnerKey: partnerKeyToBackend(partnerKey), clientId, name, inviteToken: token },
   });
 }
 
@@ -380,10 +382,11 @@ export async function confirmCoupleTherapist(coupleId, accept = true) {
   });
 }
 
-export async function markCouplePaymentComplete(coupleId, plan) {
+/** Marks the couple paid — the server checks the Paystack reference before it does. */
+export async function markCouplePaymentComplete(coupleId, plan, paymentReference) {
   return api(`/api/v1/couples/${coupleId}/payment-complete`, {
     method: 'POST',
-    body: { paymentPlan: plan },
+    body: { paymentPlan: plan, paymentReference },
   });
 }
 
