@@ -1,7 +1,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DeviceEventEmitter } from 'react-native';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
+
+// Maintenance mode (set by a super admin): many screens handle errors quietly, so
+// say it once, plainly, instead of leaving people with blank screens.
+let lastMaintenanceNotice = 0;
+const lastNotice = {};
+function notifyOnce(key, title, message) {
+  const now = Date.now();
+  if (now - (lastNotice[key] || 0) < 5 * 60 * 1000) return;
+  lastNotice[key] = now;
+  try { Alert.alert(title, message); } catch { /* no UI in this context */ }
+}
+function notifyMaintenance(message) {
+  const now = Date.now();
+  if (now - lastMaintenanceNotice < 5 * 60 * 1000) return;
+  lastMaintenanceNotice = now;
+  try { Alert.alert('NessaHub is under maintenance', message); } catch { /* no UI in this context */ }
+}
 
 // The backend runs on the development machine, whose LAN address changes every
 // time it rejoins a network — a personal hotspot hands out a different
@@ -173,10 +190,14 @@ export async function api(path, { method = 'GET', body, authenticated = true, _r
 
   if (!res.ok) {
     let errMsg = `Request failed (${res.status})`;
+    let maintenance = false;
     try {
       const err = await res.json();
       errMsg = err.error || err.message || errMsg;
+      maintenance = res.status === 503 && err.maintenance === true;
+      if (res.status === 403 && err.verifyEmail === true) notifyOnce('verify', 'Confirm your email', errMsg + ' Check your inbox for the link from NessaHub.');
     } catch {}
+    if (maintenance) notifyMaintenance(errMsg);
     throw new Error(errMsg);
   }
 

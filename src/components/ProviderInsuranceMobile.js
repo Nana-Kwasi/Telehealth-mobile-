@@ -230,6 +230,8 @@ export function LicenceCardMobile({ accent = '#1e6bb8' }) {
   useEffect(() => { load(); }, [load]);
   const save = async () => { try { await api(`${I}/licence`, { method: 'POST', body: form }); setForm(null); load(); Alert.alert('Sent', 'NessaHub will verify your licence.'); } catch (e) { Alert.alert('Error', e?.message); } };
   const st = d?.status || 'NOT_SUBMITTED';
+  // Only for clinicians who bill insurers (or who already sent a licence).
+  if (!d || (!d.servesInsuredMembers && st === 'NOT_SUBMITTED')) return null;
   return (
     <View style={[s.card, { borderColor: st === 'VERIFIED' ? '#86efac' : '#fde68a', marginBottom: 12 }]}>
       <Text style={s.title}>Professional licence: {st === 'NOT_SUBMITTED' ? 'not submitted' : st.toLowerCase()}</Text>

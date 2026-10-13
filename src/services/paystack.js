@@ -1,6 +1,18 @@
-import { AppState } from 'react-native';
+import { AppState, Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { api, API_BASE } from './apiClient';
+import { api, API_BASE, getStoredToken } from './apiClient';
+
+/** Ask before opening checkout when tax is added on top (System Config → Payments). */
+function confirmTotal(init) {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Total to pay',
+      `GHS ${Number(init.amount).toFixed(2)} (GHS ${Number(init.baseAmount).toFixed(2)} + GHS ${Number(init.taxAmount).toFixed(2)} tax)`,
+      [{ text: 'Cancel', style: 'cancel', onPress: () => resolve(false) }, { text: 'Continue', onPress: () => resolve(true) }],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
 
 const POLL_MS = 3000;
 const MAX_WAIT_MS = 15 * 60 * 1000;   // a card + OTP can genuinely take a while
@@ -78,7 +90,8 @@ export async function payForBooking({ email, amount, purpose, metadata }) {
   try {
     init = await api('/api/v1/payments/initialize', {
       method: 'POST',
-      authenticated: false,
+      // Signed in: lets the server apply the free first consultation to this person.
+      authenticated: !!(await getStoredToken()),
       body: {
         email,
         amount: Number(amount),
@@ -96,8 +109,18 @@ export async function payForBooking({ email, amount, purpose, metadata }) {
     return { ok: false, reason: e?.message || 'Could not start the payment.' };
   }
 
+  // Free first consultation: nothing to pay, no checkout.
+  if (init?.free && init?.reference) {
+    await recordPromotionRedemption(init.reference, metadata);
+    return { ok: true, reference: init.reference, amount: 0, free: true, currency: init.currency || 'GHS', message: init.message };
+  }
+
   if (!init?.authorizationUrl || !init?.reference) {
     return { ok: false, reason: 'Payment could not be started.' };
+  }
+
+  if (Number(init.taxAmount) > 0 && !(await confirmTotal(init))) {
+    return { ok: false, reason: 'Payment cancelled.' };
   }
 
   const reference = init.reference;
