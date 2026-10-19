@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { api, getStoredUserId } from '../../services/apiClient';
-import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
+import { patientPharmacyKey, removePatientPharmacyByKey, hasPatientPharmacy, dedupePatientPharmacies, pharmacyEntryFromDirectory } from '../../utils/patientPharmacyDedupe';
 import { MedicalColors as C } from '../../constants/colors';
 
 const DRUG_STATUS_META = {
@@ -42,6 +42,10 @@ export default function EPharmacyScreen() {
   const [qrModal, setQrModal] = useState(null); // prescriptionRef string
   const [refreshing, setRefreshing] = useState(false);
   const [transferActionKey, setTransferActionKey] = useState('');
+  // Browse → "Add to my pharmacies": which pharmacy is open, its branches, and the row being saved.
+  const [openPhId, setOpenPhId] = useState(null);
+  const [branchesByPh, setBranchesByPh] = useState({});
+  const [addingKey, setAddingKey] = useState(null);
 
   const isTransferRequestExpired = (med) => {
     if (!med || med.drugStatus !== 'transfer_requested' || med.transferRequestStatus !== 'pending_patient') return false;
@@ -140,12 +144,58 @@ export default function EPharmacyScreen() {
     try {
       const updated = removePatientPharmacyByKey(myPharmacies, ph);
       await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { pharmacies: updated } });
+      setMyPharmacies(updated);
     } catch {
       Alert.alert('Error', 'Could not remove pharmacy.');
     } finally {
       setRemovingPhKey(null);
     }
   };
+
+  // Tapping "Add" on a directory pharmacy: one branch (or none) saves straight
+  // away; several branches open a list so the patient picks the one they use.
+  const toggleAddPharmacy = async (ph) => {
+    if (openPhId === ph.id) { setOpenPhId(null); return; }
+    let branches = branchesByPh[ph.id];
+    if (!branches) {
+      setAddingKey(`ph:${ph.id}`);
+      branches = await api(`/api/v1/pharmacy-branches?pharmacyId=${ph.id}&status=active`).catch(() => []) || [];
+      setBranchesByPh((m) => ({ ...m, [ph.id]: branches }));
+      setAddingKey(null);
+    }
+    if (branches.length <= 1) addPharmacy(ph, branches[0] || null);
+    else setOpenPhId(ph.id);
+  };
+
+  const addPharmacy = async (ph, br) => {
+    const uid = await getStoredUserId();
+    if (!uid) return;
+    const entry = pharmacyEntryFromDirectory(ph, br);
+    const key = patientPharmacyKey(entry);
+    setAddingKey(key);
+    try {
+      // Re-read first so a pharmacy the doctor added meanwhile is not lost.
+      const fresh = await api(`/api/v1/patients/${uid}`).catch(() => null);
+      const current = dedupePatientPharmacies(fresh?.pharmacies || myPharmacies);
+      if (hasPatientPharmacy(current, entry)) {
+        setMyPharmacies(current);
+        Alert.alert('Already saved', `${entry.name} is already in your pharmacies.`);
+        return;
+      }
+      const updated = [...current, entry];
+      await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { pharmacies: updated } });
+      setMyPharmacies(updated);
+      setOpenPhId(null);
+      Alert.alert('Pharmacy added', `${entry.name} is now in your pharmacies. Your doctor can send prescriptions there.`);
+    } catch {
+      Alert.alert('Error', 'Could not add this pharmacy. Please try again.');
+    } finally {
+      setAddingKey(null);
+    }
+  };
+
+  const isSaved = (ph, br) => hasPatientPharmacy(myPharmacies, pharmacyEntryFromDirectory(ph, br));
+  const savedCount = (ph) => myPharmacies.filter((m) => m.pharmacyId && m.pharmacyId === ph.id).length;
 
   const resolveTransferRequest = async (rx, medIndex, approve) => {
     const meds = Array.isArray(rx?.medications) ? rx.medications : [];
@@ -301,7 +351,7 @@ export default function EPharmacyScreen() {
             <View style={styles.empty}>
               <Text style={{ fontSize: 48 }}>⭐</Text>
               <Text style={styles.emptyTitle}>No saved pharmacies</Text>
-              <Text style={styles.emptySub}>When you or your doctor add a branch, it appears here. Tap − to remove.</Text>
+              <Text style={styles.emptySub}>Add one from the Browse tab, or your doctor can add one for you. Tap − to remove.</Text>
             </View>
           ) : (
             myPharmacies.map((ph, idx) => {
@@ -362,20 +412,61 @@ export default function EPharmacyScreen() {
                   <Text style={{ fontSize: 48 }}>🏪</Text>
                   <Text style={styles.emptyTitle}>{searchPh ? 'No matches found' : 'No pharmacies yet'}</Text>
                 </View>
-              ) : filteredPh.map(ph => (
-                <View key={ph.id} style={styles.phCard}>
-                  <View style={styles.phIcon}>
-                    <Text style={{ fontSize: 22 }}>🏪</Text>
+              ) : filteredPh.map(ph => {
+                const branches = branchesByPh[ph.id] || [];
+                const saved = savedCount(ph);
+                const single = branchesByPh[ph.id] && branches.length <= 1;
+                const singleSaved = single && isSaved(ph, branches[0] || null);
+                return (
+                  <View key={ph.id} style={styles.phCardWrap}>
+                    <View style={styles.phCard}>
+                      <View style={styles.phIcon}>
+                        <Text style={{ fontSize: 22 }}>🏪</Text>
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={styles.phName}>{ph.pharmacyName || ph.name}</Text>
+                        {ph.country && <Text style={styles.phDetail}>🌍 {ph.country}</Text>}
+                        {ph.address && <Text style={styles.phDetail}>📍 {ph.address}</Text>}
+                        {ph.phone && <Text style={styles.phDetail}>📞 {ph.phone}</Text>}
+                        {saved > 0 ? <Text style={styles.savedNote}>⭐ In your pharmacies{saved > 1 ? ` (${saved} branches)` : ''}</Text> : null}
+                      </View>
+                      {singleSaved ? (
+                        <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Added</Text></View>
+                      ) : (
+                        <TouchableOpacity style={styles.addBtn} onPress={() => toggleAddPharmacy(ph)} disabled={!!addingKey}>
+                          {addingKey === `ph:${ph.id}` ? <ActivityIndicator size="small" color="#fff" /> : (
+                            <Text style={styles.addBtnText}>{openPhId === ph.id ? 'Close' : '+ Add'}</Text>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {openPhId === ph.id && (
+                      <View style={styles.branchList}>
+                        <Text style={styles.branchHint}>Choose the branch you use</Text>
+                        {branches.map((br) => {
+                          const done = isSaved(ph, br);
+                          const key = patientPharmacyKey(pharmacyEntryFromDirectory(ph, br));
+                          return (
+                            <View key={br.id} style={styles.branchRow}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.branchName}>{br.branchName || 'Branch'}</Text>
+                                {br.address ? <Text style={styles.phDetail} numberOfLines={2}>📍 {br.address}</Text> : null}
+                              </View>
+                              {done ? (
+                                <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Added</Text></View>
+                              ) : (
+                                <TouchableOpacity style={styles.addBtn} onPress={() => addPharmacy(ph, br)} disabled={!!addingKey}>
+                                  {addingKey === key ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.addBtnText}>Add</Text>}
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
                   </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.phName}>{ph.pharmacyName || ph.name}</Text>
-                    {ph.country && <Text style={styles.phDetail}>🌍 {ph.country}</Text>}
-                    {ph.address && <Text style={styles.phDetail}>📍 {ph.address}</Text>}
-                    {ph.phone && <Text style={styles.phDetail}>📞 {ph.phone}</Text>}
-                  </View>
-                  <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Active</Text></View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           )}
         </View>
@@ -503,6 +594,14 @@ const styles = StyleSheet.create({
   phIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#f0f9ff', alignItems: 'center', justifyContent: 'center' },
   phName: { fontSize: 15, fontWeight: '700', color: C.text },
   phDetail: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
+  phCardWrap: { gap: 0 },
+  savedNote: { fontSize: 12, color: '#7c3aed', fontWeight: '600', marginTop: 4 },
+  addBtn: { backgroundColor: '#7c3aed', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, minWidth: 64, alignItems: 'center' },
+  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  branchList: { backgroundColor: '#faf5ff', borderWidth: 1, borderTopWidth: 0, borderColor: '#e9d5ff', borderBottomLeftRadius: 14, borderBottomRightRadius: 14, padding: 12, gap: 8, marginTop: -6, paddingTop: 16 },
+  branchHint: { fontSize: 12, fontWeight: '700', color: '#6b21a8' },
+  branchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#ede9fe' },
+  branchName: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
   activeBadge: { backgroundColor: '#f0fdf4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   activeBadgeText: { fontSize: 11, fontWeight: '700', color: '#16a34a' },
   // QR modal

@@ -207,10 +207,10 @@ export default function DiagnosticBranchDetailScreen({ profile, type = 'lab', ac
       <View style={styles.card}>
         <View style={styles.row}>
           <View style={{ flex: 1, paddingRight: 12 }}>
-            <Text style={styles.rowTitle}>Require MFA</Text>
-            <Text style={styles.rowSub}>The branch operator must confirm a second factor at sign-in.</Text>
+            <Text style={styles.rowTitle}>Require two-step sign-in</Text>
+            <Text style={styles.rowSub}>The branch must enter a code emailed to it every time it signs in.</Text>
           </View>
-          <Switch value={branch.mfaRequired === true} onValueChange={v => patch({ mfaRequired: v }, `MFA ${v ? 'enabled' : 'disabled'}.`)} disabled={busy} />
+          <Switch value={branch.mfaRequired === true} onValueChange={v => patch({ mfaRequired: v }, v ? 'Two-step sign-in is now required for this branch.' : 'Two-step sign-in is now optional for this branch.')} disabled={busy} />
         </View>
         <TouchableOpacity onPress={resetPassword} disabled={busy} style={[styles.outlineBtn, { borderColor: accent }, busy && styles.dim]}>
           <Ionicons name="key-outline" size={16} color={accent} />

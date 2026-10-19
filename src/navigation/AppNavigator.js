@@ -145,6 +145,8 @@ import PharmacyActivityScreen from '../screens/pharmacy-dashboard/PharmacyActivi
 import PharmacyBranchDetailScreen from '../screens/pharmacy-dashboard/PharmacyBranchDetailScreen';
 import PharmacyReportsScreen from '../screens/pharmacy-dashboard/PharmacyReportsScreen';
 import PharmacySettingsScreen from '../screens/pharmacy-dashboard/PharmacySettingsScreen';
+import PharmacyFormularyScreen from '../screens/pharmacy-dashboard/PharmacyFormularyScreen';
+import DiagReportsMobile from '../components/diagnostics/DiagReportsMobile';
 import BranchTransfersScreen from '../screens/branch-dashboard/BranchTransfersScreen';
 import ReportIssueScreen from '../screens/common/ReportIssueScreen';
 import DiagnosticBranchesScreen from '../screens/common/DiagnosticBranchesScreen';
@@ -279,7 +281,7 @@ const PharmacyDrawerNavigator = ({ profile }) => (
       headerStyle: { backgroundColor: PharmacyColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
-      drawerStyle: { backgroundColor: PharmacyColors.primary, width: 280 },
+      drawerStyle: { backgroundColor: '#f8fafc', width: 296 },
     }}
   >
     <PharmacyDrawer.Screen name="PharmacyHome"          options={{ title: 'Dashboard' }}>
@@ -308,6 +310,9 @@ const PharmacyDrawerNavigator = ({ profile }) => (
     </PharmacyDrawer.Screen>
     <PharmacyDrawer.Screen name="PharmacyPreauth" options={{ title: 'Pre-authorisations' }}>
       {() => <PreauthScreen accent={PharmacyColors.primary} />}
+    </PharmacyDrawer.Screen>
+    <PharmacyDrawer.Screen name="PharmacyFormulary" options={{ title: 'Formulary' }}>
+      {() => <PharmacyFormularyScreen />}
     </PharmacyDrawer.Screen>
     <PharmacyDrawer.Screen name="PharmacyReportIssue" options={{ title: 'Report Issue' }}>
       {() => <ReportIssueScreen profile={profile} reporterType="pharmacy_parent" accent={PharmacyColors.primary} />}
@@ -340,7 +345,7 @@ const BranchDrawerNavigator = ({ profile }) => (
       headerStyle: { backgroundColor: PharmacyColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
-      drawerStyle: { backgroundColor: PharmacyColors.primary, width: 280 },
+      drawerStyle: { backgroundColor: '#f8fafc', width: 296 },
     }}
   >
     <BranchDrawer.Screen name="BranchHome"          options={{ title: 'Branch Dashboard' }}>
@@ -398,7 +403,7 @@ const LabDrawerNavigator = ({ profile }) => (
       headerStyle: { backgroundColor: LabColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
-      drawerStyle: { backgroundColor: LabColors.primary, width: 280 },
+      drawerStyle: { backgroundColor: '#f8fafc', width: 296 },
     }}
   >
     <LabDrawer.Screen name="LabHome"    options={{ title: 'Dashboard' }}>
@@ -431,6 +436,9 @@ const LabDrawerNavigator = ({ profile }) => (
     <LabDrawer.Screen name="LabOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
       {() => <DiagnosticOrderDetailScreen profile={profile} type={'lab'} uploadRoute="LabResults" accent={LabColors.primary} />}
     </LabDrawer.Screen>
+    <LabDrawer.Screen name="LabReports" options={{ title: 'Reports' }}>
+      {() => <DiagReportsMobile type="lab" isBranch={false} profile={profile} colors={LabColors} />}
+    </LabDrawer.Screen>
     <LabDrawer.Screen name="LabReportIssue" options={{ title: 'Report Issue' }}>
       {() => <ReportIssueScreen profile={profile} reporterType="lab" accent={LabColors.primary} />}
     </LabDrawer.Screen>
@@ -456,7 +464,7 @@ const LabBranchDrawerNavigator = ({ profile }) => (
       headerStyle: { backgroundColor: LabColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
-      drawerStyle: { backgroundColor: LabColors.primary, width: 280 },
+      drawerStyle: { backgroundColor: '#f8fafc', width: 296 },
     }}
   >
     <LabBranchDrawer.Screen name="LabBranchHome"    options={{ title: 'Branch Dashboard' }}>
@@ -483,6 +491,9 @@ const LabBranchDrawerNavigator = ({ profile }) => (
     <LabBranchDrawer.Screen name="LabBranchOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
       {() => <DiagnosticOrderDetailScreen profile={profile} type={'lab'} uploadRoute="LabBranchResults" accent={LabColors.primary} />}
     </LabBranchDrawer.Screen>
+    <LabBranchDrawer.Screen name="LabBranchReports" options={{ title: 'Reports' }}>
+      {() => <DiagReportsMobile type="lab" isBranch={true} profile={profile} colors={LabColors} />}
+    </LabBranchDrawer.Screen>
     <LabBranchDrawer.Screen name="LabBranchReportIssue" options={{ title: 'Report Issue' }}>
       {() => <ReportIssueScreen profile={profile} reporterType="lab_branch" accent={LabColors.primary} />}
     </LabBranchDrawer.Screen>
@@ -508,7 +519,7 @@ const ScanDrawerNavigator = ({ profile }) => (
       headerStyle: { backgroundColor: ScanColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
-      drawerStyle: { backgroundColor: ScanColors.primary, width: 280 },
+      drawerStyle: { backgroundColor: '#f8fafc', width: 296 },
     }}
   >
     <ScanDrawer.Screen name="ScanHome"    options={{ title: 'Dashboard' }}>
@@ -541,6 +552,9 @@ const ScanDrawerNavigator = ({ profile }) => (
     <ScanDrawer.Screen name="ScanOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
       {() => <DiagnosticOrderDetailScreen profile={profile} type={'scan'} uploadRoute="ScanResults" accent={ScanColors.primary} />}
     </ScanDrawer.Screen>
+    <ScanDrawer.Screen name="ScanReports" options={{ title: 'Reports' }}>
+      {() => <DiagReportsMobile type="scan" isBranch={false} profile={profile} colors={ScanColors} />}
+    </ScanDrawer.Screen>
     <ScanDrawer.Screen name="ScanReportIssue" options={{ title: 'Report Issue' }}>
       {() => <ReportIssueScreen profile={profile} reporterType="scan" accent={ScanColors.primary} />}
     </ScanDrawer.Screen>
@@ -566,7 +580,7 @@ const ScanBranchDrawerNavigator = ({ profile }) => (
       headerStyle: { backgroundColor: ScanColors.primary },
       headerTintColor: '#fff',
       headerTitleStyle: { fontWeight: '700' },
-      drawerStyle: { backgroundColor: ScanColors.primary, width: 280 },
+      drawerStyle: { backgroundColor: '#f8fafc', width: 296 },
     }}
   >
     <ScanBranchDrawer.Screen name="ScanBranchHome"    options={{ title: 'Branch Dashboard' }}>
@@ -592,6 +606,9 @@ const ScanBranchDrawerNavigator = ({ profile }) => (
     </ScanBranchDrawer.Screen>
     <ScanBranchDrawer.Screen name="ScanBranchOrderDetail" options={{ title: 'Order detail', drawerItemStyle: { display: 'none' } }}>
       {() => <DiagnosticOrderDetailScreen profile={profile} type={'scan'} uploadRoute="ScanBranchResults" accent={ScanColors.primary} />}
+    </ScanBranchDrawer.Screen>
+    <ScanBranchDrawer.Screen name="ScanBranchReports" options={{ title: 'Reports' }}>
+      {() => <DiagReportsMobile type="scan" isBranch={true} profile={profile} colors={ScanColors} />}
     </ScanBranchDrawer.Screen>
     <ScanBranchDrawer.Screen name="ScanBranchReportIssue" options={{ title: 'Report Issue' }}>
       {() => <ReportIssueScreen profile={profile} reporterType="scan_branch" accent={ScanColors.primary} />}

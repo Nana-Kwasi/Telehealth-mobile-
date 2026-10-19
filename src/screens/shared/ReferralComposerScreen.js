@@ -38,12 +38,12 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
   useEffect(() => {
     if (sendMode !== 'clinician' || recipient) return undefined;
     const t = setTimeout(() => {
-      api(`/api/v1/care-plans/referrals/recipients?q=${encodeURIComponent(search.trim())}`)
+      api(`/api/v1/care-plans/referrals/recipients?q=${encodeURIComponent(search.trim())}&specialty=${encodeURIComponent(form.specialty.trim())}`)
         .then((d) => setMatches(Array.isArray(d) ? d : []))
         .catch(() => setMatches([]));
     }, 250);
     return () => clearTimeout(t);
-  }, [search, sendMode, recipient]);
+  }, [search, sendMode, recipient, form.specialty]);
   const P = role === 'THERAPIST' ? PALETTES.therapy : PALETTES.medical;
 
   const loadHistory = useCallback(async () => {
@@ -280,7 +280,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
                       <View style={[styles.avatar, { backgroundColor: P.soft }]}><Text style={[styles.avatarText, { color: P.accent }]}>{(recipient.name || '?').charAt(0)}</Text></View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowTitle}>{recipient.name}</Text>
-                        <Text style={styles.rowSub}>{recipient.role === 'DOCTOR' ? 'Doctor' : 'Therapist'}</Text>
+                        <Text style={styles.rowSub}>{roleLine(recipient)}</Text>
                       </View>
                       <TouchableOpacity onPress={() => { setRecipient(null); setSearch(''); }} hitSlop={10}>
                         <Ionicons name="close-circle" size={22} color="#94a3b8" />
@@ -289,15 +289,17 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
                   ) : (
                     <>
                       <TextInput style={styles.input} value={search} onChangeText={setSearch}
-                        placeholder="Search doctors and therapists…" placeholderTextColor="#94a3b8" />
+                        placeholder="Search by name or specialty…" placeholderTextColor="#94a3b8" />
                       {matches.slice(0, 6).map((m) => (
                         <TouchableOpacity key={m.id} style={styles.match} onPress={() => setRecipient(m)}>
                           <View style={[styles.avatar, { backgroundColor: P.soft }]}><Text style={[styles.avatarText, { color: P.accent }]}>{(m.name || '?').charAt(0)}</Text></View>
-                          <Text style={[styles.rowTitle, { flex: 1 }]} numberOfLines={1}>{m.name}</Text>
-                          <Text style={styles.rowSub}>{m.role === 'DOCTOR' ? 'Doctor' : 'Therapist'}</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rowTitle} numberOfLines={1}>{m.name}</Text>
+                            <Text style={styles.rowSub} numberOfLines={1}>{roleLine(m)}</Text>
+                          </View>
                         </TouchableOpacity>
                       ))}
-                      {matches.length === 0 ? <Text style={styles.hint}>No clinicians match that name.</Text> : null}
+                      {matches.length === 0 ? <Text style={styles.hint}>No clinicians match that search.</Text> : null}
                     </>
                   )
                 ) : (
@@ -402,6 +404,9 @@ const PALETTES = {
   therapy: { accent: '#5046bd', accent2: '#3f37a0', soft: '#eeedfb' },
   medical: { accent: '#1e6bb8', accent2: '#155a9c', soft: '#e8f1fb' },
 };
+// "Doctor · Cardiology", or just the role when no specialty is on the profile.
+const roleLine = (c) => [c.role === 'DOCTOR' ? 'Doctor' : 'Therapist', c.specialty].filter(Boolean).join(' · ');
+
 const MEDICAL_SPECIALTIES = ['Cardiology', 'Dermatology', 'Endocrinology', 'Neurology', 'Orthopaedics', 'Psychiatry'];
 const THERAPY_SPECIALTIES = ['Psychiatry', 'Psychology', 'Couples therapy', 'Addiction services', 'Family therapy', 'GP'];
 

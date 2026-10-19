@@ -53,6 +53,8 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
     { name: 'MedicalVideo', icon: 'videocam-outline', label: 'Video Calls' },
     { name: 'MedicalMessages', icon: 'chatbubbles-outline', label: 'Messages' },
     { name: 'MedicalPrescriptions', icon: 'medkit-outline', label: 'Prescriptions' },
+    // E-Pharmacy lives on the root stack, not in this drawer.
+    { name: 'EPharmacy', icon: 'storefront-outline', label: 'E-Pharmacy', root: true },
     { name: 'MedicalDiagnostic', icon: 'flask-outline', label: 'Lab & Scan Orders' },
     { name: 'MedicalHistory', icon: 'folder-outline', label: 'Medical History' },
     { name: 'MedicalBilling', icon: 'card-outline', label: 'Billing' },
@@ -98,7 +100,8 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
             key={item.name}
             style={styles.menuItem}
             onPress={() => {
-              navigation.navigate(item.name);
+              if (item.root) navigation.getParent()?.navigate(item.name);
+              else navigation.navigate(item.name);
               navigation.closeDrawer();
             }}
           >

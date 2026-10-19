@@ -294,7 +294,13 @@ export function InsuranceNetworksMobile({ accent = '#0f766e' }) {
           <TextInput style={[s.input, { marginTop: 8 }]} autoCapitalize="characters" value={form.providerCode} onChangeText={v => setForm({ ...form, providerCode: v })} placeholder="Your provider code" placeholderTextColor="#94a3b8" />
           <TouchableOpacity onPress={save} disabled={busy} style={[s.btn, { backgroundColor: accent, marginTop: 8 }]}>{busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Add & verify</Text>}</TouchableOpacity>
         </View>
-      ) : <Text style={[s.sub, { marginTop: 8 }]}>No insurers are connected to NessaHub yet.</Text>}
+      ) : (
+        <View style={{ marginTop: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: '#cbd5e1', borderRadius: 12, padding: 12, backgroundColor: '#f8fafc' }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: '#0f172a' }}>No insurance company has joined NessaHub yet.</Text>
+          <Text style={[s.sub, { marginTop: 4 }]}>As soon as one joins, you can pick it here, type the provider code that insurer gave you and tap Add & verify. Until then you can still serve patients who pay themselves.</Text>
+          <TextInput style={[s.input, { marginTop: 10, opacity: 0.5 }]} editable={false} placeholder="Your provider code" placeholderTextColor="#94a3b8" />
+        </View>
+      )}
       {codes.map(c => (
         <View key={c.id} style={s.codeRow}>
           <View style={{ flex: 1 }}>

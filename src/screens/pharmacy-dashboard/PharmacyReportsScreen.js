@@ -1,38 +1,35 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert,
-} from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
-import {
-  RX_STATUSES, toMillis, parseRangeBounds, buildMetrics,
-} from '../../utils/pharmacyReportMetrics';
+import { RX_STATUSES, toMillis, parseRangeBounds, rxTouchesBranch, buildMetrics } from '../../utils/pharmacyReportMetrics';
+import { PageHeader, Section, KpiGrid, Row, Button, Notice, ui } from '../../components/provider/ProviderUI';
+import DateField from '../../components/provider/DateField';
 
 /**
- * Mobile counterpart of the web PharmacyReports / BranchReports screens. Uses the
- * same `pharmacyReportMetrics` helpers as the web build so both report identical
- * numbers for the same date range. (PDF export stays web-only.)
+ * Pharmacy reports on mobile — the twin of web PharmacyReports / BranchReports:
+ * a date range (prescriptions created in it), one branch or the whole network,
+ * the same metrics from the shared pharmacyReportMetrics helpers, and a
+ * NessaHub PDF to share.
  */
-
-const pct = (v) => `${Math.round(Number(v) || 0)}%`;
-
-function todayISO() { return new Date().toISOString().split('T')[0]; }
-function daysAgoISO(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().split('T')[0];
-}
+const pct = (v) => `${(Number(v) || 0).toFixed(1)}%`;
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const PRESETS = [['7 days', 7], ['30 days', 30], ['90 days', 90]];
 
 export default function PharmacyReportsScreen({ profile, isBranch = false }) {
   const [prescriptions, setPrescriptions] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(() => daysAgoISO(30));
-  const [dateTo, setDateTo] = useState(() => todayISO());
-  const [appliedFrom, setAppliedFrom] = useState(() => daysAgoISO(30));
-  const [appliedTo, setAppliedTo] = useState(() => todayISO());
+  const [from, setFrom] = useState(() => daysAgo(30));
+  const [to, setTo] = useState(() => iso(new Date()));
+  const [branchId, setBranchId] = useState('all');
+  const [applied, setApplied] = useState(() => ({ from: daysAgo(30), to: iso(new Date()), branchId: 'all' }));
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const load = useCallback(async () => {
     const id = profile?.id;
@@ -51,131 +48,134 @@ export default function PharmacyReportsScreen({ profile, isBranch = false }) {
         setPrescriptions(list || []);
         setBranches(brs || []);
       }
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [profile?.id, profile?.organizationId, profile?.branchName, isBranch]);
-
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const filteredRx = useMemo(() => {
-    const { startMs, endMs } = parseRangeBounds(appliedFrom, appliedTo);
+  const filtered = useMemo(() => {
+    const { startMs, endMs } = parseRangeBounds(applied.from, applied.to);
     return prescriptions.filter(rx => {
       const ms = toMillis(rx.createdAt);
-      if (!ms) return false;
-      if (startMs && ms < startMs) return false;
-      if (endMs && ms > endMs) return false;
-      return true;
+      if (!ms || (startMs && ms < startMs) || (endMs && ms > endMs)) return false;
+      return isBranch || rxTouchesBranch(rx, applied.branchId);
     });
-  }, [prescriptions, appliedFrom, appliedTo]);
+  }, [prescriptions, applied, isBranch]);
 
-  const metrics = useMemo(() => buildMetrics(branches, filteredRx), [branches, filteredRx]);
+  const m = useMemo(() => buildMetrics(branches, filtered), [branches, filtered]);
+  const scopeName = applied.branchId === 'all' ? (isBranch ? (profile?.branchName || 'This branch') : 'All branches')
+    : (branches.find(b => b.id === applied.branchId)?.branchName || 'Branch');
 
-  const applyRange = () => {
-    if (dateFrom && dateTo && dateFrom > dateTo) {
-      Alert.alert('Invalid range', 'The start date must be on or before the end date.');
-      return;
-    }
-    setAppliedFrom(dateFrom);
-    setAppliedTo(dateTo);
+  const generate = () => {
+    if (from > to) { Alert.alert('Dates', 'The start date must be on or before the end date.'); return; }
+    setApplied({ from, to, branchId });
   };
 
-  if (loading) {
-    return <View style={styles.centered}><ActivityIndicator color={C.primary} size="large" /></View>;
-  }
+  const preset = (n) => { const f = daysAgo(n); const t = iso(new Date()); setFrom(f); setTo(t); setApplied({ from: f, to: t, branchId }); };
 
-  const rxCounts = metrics?.rxCounts || {};
+  const sharePdf = async () => {
+    setPdfBusy(true);
+    try {
+      const counts = m.rxCounts || {};
+      const kpi = (l, v, h = '') => `<td><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div><div class="h">${esc(h)}</div></td>`;
+      const html = `<html><head><meta name="viewport" content="width=device-width"><style>
+        body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#0f172a;padding:28px}
+        h1{font-size:20px;margin:0}.sub{color:#64748b;font-size:12px;margin:4px 0 18px}
+        .bar{border-bottom:3px solid #14b8a6;padding-bottom:10px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end}
+        table{width:100%;border-collapse:collapse;margin-bottom:16px}td,th{padding:8px;font-size:12px;text-align:left}
+        .k td{border:1px solid #e2e8f0;width:25%;vertical-align:top}.l{color:#64748b;font-size:10px;text-transform:uppercase}.v{font-size:20px;font-weight:800}.h{color:#94a3b8;font-size:10px}
+        .t th{background:#f1f5f9}.t td{border-bottom:1px solid #f1f5f9}h2{font-size:14px;margin:18px 0 8px}
+      </style></head><body>
+        <div class="bar"><div><h1>${esc(profile?.pharmacyName || profile?.branchName || 'Pharmacy')} — Operational report</h1>
+        <div class="sub">${esc(applied.from)} to ${esc(applied.to)} · ${esc(scopeName)} · prescriptions created in range</div></div><b style="color:#0c4a6e">NessaHub</b></div>
+        <table class="k"><tr>${kpi('Prescriptions', m.totalRx, `${m.unassigned} unassigned`)}${kpi('Delivered', counts.delivered || 0, `${pct(m.completionRate)} completion`)}${kpi('Ready backlog', m.readyBacklog, 'ready, not delivered')}${kpi('Branches', branches.length, `${m.branchCounts?.active || 0} active`)}</tr>
+        <tr>${kpi('Drug availability', pct(m.availabilityRate), `${m.medsTotal} lines`)}${kpi('Stock-out rate', pct(m.stockoutRate))}${kpi('Alternatives suggested', pct(m.altRate))}${kpi('Alternatives approved', pct(m.altApprovalRate))}</tr></table>
+        <h2>Prescription funnel</h2><table class="t"><tr>${RX_STATUSES.map(s => `<th>${esc(s.replace(/_/g, ' '))}</th>`).join('')}</tr><tr>${RX_STATUSES.map(s => `<td>${counts[s] || 0}</td>`).join('')}</tr></table>
+        ${(m.branchRows || []).length ? `<h2>Branch performance</h2><table class="t"><tr><th>Branch</th><th>Total</th><th>Active</th><th>Ready</th><th>Delivered</th></tr>${m.branchRows.map(r => `<tr><td>${esc(r.branchName)}</td><td>${r.total}</td><td>${r.active}</td><td>${r.ready}</td><td>${r.delivered}</td></tr>`).join('')}</table>` : ''}
+        <div class="sub">Generated ${esc(new Date().toLocaleString())} on NessaHub.</div>
+      </body></html>`;
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Pharmacy report', UTI: 'com.adobe.pdf' });
+      else Alert.alert('Report saved', uri);
+    } catch (e) {
+      Alert.alert('Could not build the PDF', e?.message || 'Please try again.');
+    } finally { setPdfBusy(false); }
+  };
+
+  if (loading) return <View style={[ui.screen, { justifyContent: 'center' }]}><ActivityIndicator color={C.primary} size="large" /></View>;
+  const counts = m.rxCounts || {};
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false}
-      // The keyboard covered whatever was being typed into: this screen had
-      // no keyboard handling at all. iOS insets the scroll view; Android
-      // resizes the window (app.json softwareKeyboardLayoutMode default).
-      automaticallyAdjustKeyboardInsets
-      keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-      <Text style={styles.title}>Reports</Text>
-      <Text style={styles.sub}>
-        {isBranch ? 'This branch’s dispensing activity' : 'Dispensing activity across your pharmacy'}
-      </Text>
+    <ScrollView style={ui.screen} contentContainerStyle={ui.content} showsVerticalScrollIndicator={false}
+      automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+      <PageHeader title={isBranch ? 'Branch reports' : 'Pharmacy reports'} subtitle="Prescriptions created in the chosen dates" />
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Date range</Text>
-        <View style={styles.rangeRow}>
-          <TextInput style={[styles.input, { flex: 1 }]} value={dateFrom} onChangeText={setDateFrom}
-            placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" />
-          <Text style={styles.muted}>to</Text>
-          <TextInput style={[styles.input, { flex: 1 }]} value={dateTo} onChangeText={setDateTo}
-            placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" />
-        </View>
-        <TouchableOpacity onPress={applyRange} style={styles.applyBtn}>
-          <Text style={styles.applyText}>Apply range</Text>
-        </TouchableOpacity>
-        <Text style={styles.muted}>
-          Showing {filteredRx.length} prescription{filteredRx.length === 1 ? '' : 's'} from {appliedFrom} to {appliedTo}
-        </Text>
-      </View>
-
-      <Text style={styles.sectionTitle}>Prescriptions by status</Text>
-      <View style={styles.tileWrap}>
-        {RX_STATUSES.map(s => (
-          <View key={s} style={styles.tile}>
-            <Text style={styles.tileNum}>{rxCounts[s] || 0}</Text>
-            <Text style={styles.tileLabel}>{s.replace(/_/g, ' ')}</Text>
-          </View>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>Dispensing performance</Text>
-      <View style={styles.tileWrap}>
-        <View style={styles.tile}><Text style={styles.tileNum}>{metrics.totalRx || 0}</Text><Text style={styles.tileLabel}>prescriptions</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{metrics.medsTotal || 0}</Text><Text style={styles.tileLabel}>drug lines</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{pct(metrics.completionRate)}</Text><Text style={styles.tileLabel}>completed</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{pct(metrics.availabilityRate)}</Text><Text style={styles.tileLabel}>availability</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{pct(metrics.stockoutRate)}</Text><Text style={styles.tileLabel}>stock-outs</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{pct(metrics.altRate)}</Text><Text style={styles.tileLabel}>alt suggested</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{pct(metrics.altApprovalRate)}</Text><Text style={styles.tileLabel}>alt approved</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{metrics.readyBacklog || 0}</Text><Text style={styles.tileLabel}>ready backlog</Text></View>
-        {!isBranch && (
-          <View style={styles.tile}><Text style={styles.tileNum}>{metrics.unassigned || 0}</Text><Text style={styles.tileLabel}>unassigned</Text></View>
-        )}
-      </View>
-
-      {!isBranch && (metrics.branchRows || []).length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>By branch</Text>
-          {metrics.branchRows.map((b, i) => (
-            <View key={i} style={styles.card}>
-              <Text style={styles.branchName}>{b.branchName}</Text>
-              <Text style={styles.muted}>
-                {b.total} total · {b.delivered} delivered · {b.ready} ready · {b.active} active
-              </Text>
-            </View>
+      <Section title="Report scope" accent={C.primary}>
+        <View style={st.chips}>
+          {PRESETS.map(([l, n]) => (
+            <TouchableOpacity key={n} style={[st.chip, applied.from === daysAgo(n) && applied.to === iso(new Date()) && st.chipOn]} onPress={() => preset(n)}>
+              <Text style={[st.chipText, applied.from === daysAgo(n) && applied.to === iso(new Date()) && { color: '#fff' }]}>Last {l}</Text>
+            </TouchableOpacity>
           ))}
-        </>
-      )}
+        </View>
+        <View style={st.dates}>
+          <DateField label="From" value={from} onChange={setFrom} accent={C.primary} maximumDate={new Date()} />
+          <DateField label="To" value={to} onChange={setTo} accent={C.primary} maximumDate={new Date()} />
+        </View>
+        {!isBranch && branches.length ? (
+          <>
+            <Text style={ui.label}>Branch</Text>
+            <View style={st.chips}>
+              {[{ id: 'all', branchName: 'All branches' }, ...branches].map(b => (
+                <TouchableOpacity key={b.id} style={[st.chip, branchId === b.id && st.chipOn]} onPress={() => setBranchId(b.id)}>
+                  <Text style={[st.chipText, branchId === b.id && { color: '#fff' }]}>{b.branchName || 'Branch'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        ) : null}
+        <View style={st.actions}>
+          <Button accent={C.primary} icon="bar-chart-outline" label="Generate report" onPress={generate} style={{ flex: 1 }} />
+          <Button accent={C.primary} variant="outline" icon="document-outline" label={pdfBusy ? 'Building…' : 'Share PDF'} onPress={sharePdf} disabled={pdfBusy} style={{ flex: 1 }} />
+        </View>
+      </Section>
+
+      <Notice text={`${applied.from} to ${applied.to} · ${scopeName} · ${m.totalRx} prescription${m.totalRx === 1 ? '' : 's'}`} />
+
+      <KpiGrid items={[
+        ...(isBranch ? [] : [{ label: 'Branches (network)', value: branches.length, hint: `${m.branchCounts?.active || 0} active · ${m.branchCounts?.suspended || 0} suspended`, icon: 'storefront-outline', color: '#0369a1', bg: '#e0f2fe' }]),
+        { label: 'Prescriptions in scope', value: m.totalRx, hint: isBranch ? undefined : `${m.unassigned} unassigned to a branch`, icon: 'medical-outline', color: '#7c3aed', bg: '#f3e8ff' },
+        { label: 'Delivered', value: counts.delivered || 0, hint: `${pct(m.completionRate)} completion`, icon: 'bag-check-outline', color: '#15803d', bg: '#dcfce7' },
+        { label: 'Ready backlog', value: m.readyBacklog, hint: 'Ready, not delivered', icon: 'time-outline', color: '#b45309', bg: '#fef3c7' },
+        ...(isBranch ? [] : [{ label: 'Branch password resets', value: m.pendingPasswordResets, hint: 'First sign-in reset pending', icon: 'key-outline', color: '#64748b', bg: '#f1f5f9' }]),
+      ]} />
+
+      <Section title="Medicines" subtitle={`${m.medsTotal} medication lines`} accent={C.primary}>
+        <Row title="Drug availability" meta={pct(m.availabilityRate)} metaColor="#15803d" />
+        <Row title="Stock-out rate" meta={pct(m.stockoutRate)} metaColor="#b91c1c" />
+        <Row title="Alternatives suggested" meta={pct(m.altRate)} />
+        <Row title="Alternatives approved" meta={pct(m.altApprovalRate)} last />
+      </Section>
+
+      <Section title="Prescription funnel" accent={C.primary}>
+        {RX_STATUSES.map((s, i) => <Row key={s} title={s.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())} meta={String(counts[s] || 0)} last={i === RX_STATUSES.length - 1} />)}
+      </Section>
+
+      {!isBranch ? (
+        <Section title="Branch performance" subtitle="Total · active · ready · delivered" accent={C.primary}>
+          {(m.branchRows || []).length === 0 ? <Text style={ui.muted}>No prescriptions in this range.</Text> : m.branchRows.map((r, i) => (
+            <Row key={`${r.branchName}-${i}`} title={r.branchName} subtitle={`${r.active} active · ${r.ready} ready · ${r.delivered} delivered`} meta={String(r.total)} last={i === m.branchRows.length - 1} />
+          ))}
+        </Section>
+      ) : null}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
-  sub: { fontSize: 13, color: '#64748b', marginBottom: 14 },
-  card: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', padding: 14, marginBottom: 12 },
-  label: { fontSize: 12, fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 8 },
-  rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  input: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: '#0f172a' },
-  applyBtn: { marginTop: 10, backgroundColor: C.primary, borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
-  applyText: { color: '#fff', fontWeight: '800', fontSize: 13 },
-  muted: { fontSize: 12, color: '#94a3b8', marginTop: 8 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: '#0f172a', marginTop: 10, marginBottom: 8 },
-  tileWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
-  tile: {
-    backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0',
-    paddingVertical: 14, paddingHorizontal: 16, minWidth: 100, flexGrow: 1, alignItems: 'center',
-  },
-  tileNum: { fontSize: 22, fontWeight: '800', color: C.primary },
-  tileLabel: { fontSize: 11, color: '#64748b', marginTop: 3, textTransform: 'capitalize' },
-  branchName: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+const st = StyleSheet.create({
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#fff' },
+  chipOn: { backgroundColor: C.primary, borderColor: C.primary },
+  chipText: { fontSize: 13, fontWeight: '700', color: '#475569' },
+  dates: { flexDirection: 'row', gap: 10 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
 });

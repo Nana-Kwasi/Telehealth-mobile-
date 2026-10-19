@@ -1,126 +1,55 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { performLogout, wipeLocalData } from '../services/authService';
+import ProviderDrawer from './provider/ProviderDrawer';
 import { api } from '../services/apiClient';
 import { ScanColors as C } from '../constants/colors';
 
 const SCAN_NAV = [
-  { name: 'ScanHome',    label: 'Dashboard',     icon: 'grid-outline' },
-  { name: 'ScanOrders',  label: 'Worklist',        icon: 'scan-outline' },
-  { name: 'ScanVerify',  label: 'Verify Patient',icon: 'search-outline' },
-  { name: 'ScanResults', label: 'Reports',       icon: 'document-text-outline' },
+  { name: 'ScanHome', label: 'Overview', icon: 'grid-outline' },
+  { name: 'ScanOrders', label: 'All Orders', icon: 'clipboard-outline' },
+  { name: 'ScanResults', label: 'Results', icon: 'document-text-outline' },
+  { name: 'ScanBranches', label: 'Branches', icon: 'business-outline' },
+  { name: 'ScanCatalog', label: 'Scan Catalog', icon: 'pricetags-outline' },
+  { name: 'ScanReports', label: 'Reports', icon: 'stats-chart-outline' },
   { name: 'ScanInsuranceClaims', label: 'Insurance claims', icon: 'shield-checkmark-outline' },
   { name: 'ScanPreauth', label: 'Pre-authorisations', icon: 'checkmark-done-outline' },
-  { name: 'ScanCatalog', label: 'Scan Catalog', icon: 'pricetags-outline' },
-  { name: 'ScanBranches',    label: 'Branches',      icon: 'business-outline' },
-  { name: 'ScanReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
-  { name: 'ScanPreferences', label: 'Settings',      icon: 'settings-outline' },
+  { name: 'ScanReportIssue', label: 'Report Issue', icon: 'mail-outline' },
+  { name: 'ScanPreferences', label: 'Settings', icon: 'settings-outline' },
 ];
 
 const SCAN_BRANCH_NAV = [
-  { name: 'ScanBranchHome',    label: 'Dashboard',     icon: 'grid-outline' },
-  { name: 'ScanBranchOrders',  label: 'Worklist',        icon: 'scan-outline' },
-  { name: 'ScanBranchVerify',  label: 'Verify Patient',icon: 'search-outline' },
-  { name: 'ScanBranchResults', label: 'Reports',       icon: 'document-text-outline' },
+  { name: 'ScanBranchHome', label: 'Overview', icon: 'grid-outline' },
+  { name: 'ScanBranchOrders', label: 'Worklist', icon: 'clipboard-outline' },
+  { name: 'ScanBranchResults', label: 'Results', icon: 'document-text-outline' },
+  { name: 'ScanBranchCatalog', label: 'Scan Catalog', icon: 'pricetags-outline' },
+  { name: 'ScanBranchReports', label: 'Reports', icon: 'stats-chart-outline' },
   { name: 'ScanBranchInsuranceClaims', label: 'Insurance claims', icon: 'shield-checkmark-outline' },
   { name: 'ScanBranchPreauth', label: 'Pre-authorisations', icon: 'checkmark-done-outline' },
-  { name: 'ScanBranchCatalog', label: 'Scan Catalog', icon: 'pricetags-outline' },
-  { name: 'ScanBranchReportIssue', label: 'Report Issue',  icon: 'mail-outline' },
-  { name: 'ScanBranchPreferences', label: 'Settings',      icon: 'settings-outline' },
+  { name: 'ScanBranchReportIssue', label: 'Report Issue', icon: 'mail-outline' },
+  { name: 'ScanBranchPreferences', label: 'Settings', icon: 'settings-outline' },
 ];
 
 export default function ScanDrawerContent({ navigation, state, profile, isBranch = false }) {
-  const navItems = isBranch ? SCAN_BRANCH_NAV : SCAN_NAV;
-  const activeRoute = state?.routes?.[state.index]?.name;
-  const [parentScanName, setParentScanName] = useState('');
-
+  const [parentName, setParentName] = useState('');
   useEffect(() => {
     if (!isBranch || !profile?.scanId) return;
     api(`/api/v1/admin/users/${profile.scanId}`).then((data) => {
-      if (data?.centerName || data?.name) setParentScanName(data.centerName || data.name || '');
+      if (data?.centerName || data?.name) setParentName(data.centerName || data.name || '');
     }).catch(() => {});
   }, [isBranch, profile?.scanId]);
 
-  const handleLogout = () => {
-    Alert.alert('Log Out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: async () => {
-          // Clearing the session is not enough: without resetting navigation the
-          // dashboard stays mounted and the user appears to still be logged in.
-          try { await performLogout(); } catch (_) {}
-          await wipeLocalData();
-          navigation.getParent()?.replace('Intent');
-        },
-      },
-    ]);
-  };
-
-  const centerName = profile?.centerName || profile?.branchName || 'Scan Center';
-
+  const name = profile?.centerName || profile?.branchName || 'Scan Center';
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.logoRow}>
-          <Ionicons name="radio-outline" size={22} color="#fff" />
-          <Text style={styles.logoText}>NessaHub</Text>
-          <View style={styles.badge}><Text style={styles.badgeText}>{isBranch ? 'Branch' : 'Scan'}</Text></View>
-        </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{centerName[0].toUpperCase()}</Text>
-        </View>
-        <Text style={styles.centerName}>{centerName}</Text>
-        {isBranch && parentScanName ? (
-          <Text style={styles.parentOrgName} numberOfLines={2}>{parentScanName}</Text>
-        ) : null}
-        <Text style={styles.centerRole}>{isBranch ? 'Branch Account' : 'Scan Center'}</Text>
-      </View>
-
-      <ScrollView style={styles.nav} showsVerticalScrollIndicator={false}>
-        {navItems.map(item => {
-          const isActive = activeRoute === item.name;
-          return (
-            <TouchableOpacity
-              key={item.name}
-              style={[styles.navItem, isActive && styles.navItemActive]}
-              onPress={() => navigation.navigate(item.name)}
-            >
-              <Ionicons name={item.icon} size={20} color={isActive ? '#fff' : C.textSecondary} />
-              <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>{item.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-        <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-    </View>
+    <ProviderDrawer
+      navigation={navigation}
+      state={state}
+      items={isBranch ? SCAN_BRANCH_NAV : SCAN_NAV}
+      accent={C.primary}
+      accentSoft={C.primaryLight}
+      roleLabel={isBranch ? 'Scan centre branch' : 'Scan centre'}
+      accountName={name}
+      accountKind={isBranch ? 'Branch account' : 'Parent account'}
+      parentName={isBranch ? parentName : ''}
+      location={[profile?.city, profile?.country].filter(Boolean).join(' · ')}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.primary },
-  header: { padding: 20, paddingTop: 54, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.15)' },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  logoText: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  badge: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  avatarText: { color: '#ffffff', fontSize: 20, fontWeight: '800' },
-  centerName: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  parentOrgName: { color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '700', marginTop: 4 },
-  centerRole: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 2 },
-  nav: { flex: 1, padding: 12 },
-  navItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, marginBottom: 4 },
-  navItemActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
-  navLabel: { fontSize: 15, color: C.textSecondary, fontWeight: '600' },
-  navLabelActive: { color: '#fff' },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 20, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)' },
-  logoutText: { color: '#ef4444', fontSize: 15, fontWeight: '700' },
-});

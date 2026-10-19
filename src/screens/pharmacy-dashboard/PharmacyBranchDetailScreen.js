@@ -7,6 +7,7 @@ import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
+import { KpiGrid, Row, Pill, toMillis, formatWhen } from '../../components/provider/ProviderUI';
 
 /**
  * Mobile counterpart of the web PharmacyBranchDetail screen: the parent pharmacy's
@@ -106,7 +107,7 @@ export default function PharmacyBranchDetailScreen({ profile }) {
 
   const toggleMfa = (next) => patch(
     { mfaRequired: next },
-    `MFA requirement ${next ? 'enabled' : 'disabled'} for this branch operator.`,
+    next ? 'This branch must now enter an emailed code each time it signs in.' : 'Two-step sign-in is now optional for this branch.',
   );
 
   const resetPassword = () => {
@@ -198,9 +199,31 @@ export default function PharmacyBranchDetailScreen({ profile }) {
         </View>
       )}
 
-      <View style={styles.tileRow}>
-        <View style={styles.tile}><Text style={styles.tileNum}>{rx.length}</Text><Text style={styles.tileLabel}>prescriptions</Text></View>
-        <View style={styles.tile}><Text style={styles.tileNum}>{delivered}</Text><Text style={styles.tileLabel}>delivered</Text></View>
+      <Text style={styles.sectionTitle}>Operations summary</Text>
+      <KpiGrid items={[
+        { label: 'Total prescriptions', value: rx.length, icon: 'medical-outline', color: '#1d4ed8', bg: '#eff6ff' },
+        { label: 'Delivered', value: delivered, icon: 'bag-check-outline', color: '#16a34a', bg: '#dcfce7' },
+        { label: 'Ready', value: rx.filter(r => r.pharmacyStatus === 'ready').length, icon: 'checkmark-circle-outline', color: '#0d9488', bg: '#ccfbf1' },
+        { label: 'In progress', value: rx.filter(r => ['accepted', 'partially_fulfilled'].includes(r.pharmacyStatus)).length, icon: 'time-outline', color: '#d97706', bg: '#fef3c7' },
+        { label: 'Incoming', value: rx.filter(r => (r.pharmacyStatus || 'sent') === 'sent').length, icon: 'download-outline', color: '#7c3aed', bg: '#f3e8ff' },
+        { label: 'Transferred out', value: rx.filter(r => (r.medications || []).some(m => m.drugStatus === 'transferred')).length, icon: 'swap-horizontal-outline', color: '#be123c', bg: '#ffe4e6' },
+        { label: 'Medication lines', value: rx.reduce((n, r) => n + (r.medications || []).length, 0), icon: 'list-outline', color: '#334155', bg: '#f1f5f9' },
+      ]} />
+
+      <Text style={styles.sectionTitle}>Live branch operations</Text>
+      <View style={styles.card}>
+        {rx.length === 0 ? <Text style={styles.muted}>No prescriptions for this branch yet.</Text> : [...rx]
+          .sort((a, b) => Math.max(toMillis(b.updatedAt), toMillis(b.createdAt)) - Math.max(toMillis(a.updatedAt), toMillis(a.createdAt)))
+          .slice(0, 20)
+          .map((r, i, arr) => {
+            const mix = (r.medications || []).reduce((acc, m) => { const k = (m.drugStatus || 'pending').replace(/_/g, ' '); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
+            return (
+              <Row key={r.id} title={`${r.patientName || 'Patient'} · ${r.prescriptionRef || r.id.slice(0, 8)}`}
+                subtitle={`${Object.entries(mix).map(([k, v]) => `${k} (${v})`).join(', ') || 'No medicines'} · ${formatWhen(Math.max(toMillis(r.updatedAt), toMillis(r.createdAt)))}`}
+                right={<Pill label={(r.pharmacyStatus || 'sent').replace(/_/g, ' ')} color={C.primary} bg={C.primaryLight} />}
+                onPress={() => navigation.navigate('PharmacyRxOps', { rxId: r.id })} last={i === arr.length - 1} />
+            );
+          })}
       </View>
 
       <Text style={styles.sectionTitle}>Branch profile</Text>
@@ -222,8 +245,8 @@ export default function PharmacyBranchDetailScreen({ profile }) {
       <View style={styles.card}>
         <View style={styles.row}>
           <View style={{ flex: 1, paddingRight: 12 }}>
-            <Text style={styles.rowTitle}>Require MFA</Text>
-            <Text style={styles.rowSub}>The branch operator must confirm a second factor at sign-in.</Text>
+            <Text style={styles.rowTitle}>Require two-step sign-in</Text>
+            <Text style={styles.rowSub}>The branch must enter a code emailed to it every time it signs in.</Text>
           </View>
           <Switch value={branch.mfaRequired === true} onValueChange={toggleMfa} disabled={busy} />
         </View>

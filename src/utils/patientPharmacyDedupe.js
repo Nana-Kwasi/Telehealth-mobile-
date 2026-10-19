@@ -39,3 +39,38 @@ export function dedupePatientPharmacies(list) {
   }
   return out;
 }
+
+/**
+ * A `patientProfiles.pharmacies` entry for a directory pharmacy (and branch,
+ * when it has one) — the same shape the doctor's "Add E-Pharmacy" saves, so
+ * prescription routing and the doctor's screens read it the same way.
+ */
+export function pharmacyEntryFromDirectory(ph, br, addedBy = 'patient') {
+  const pick = (k) => String(br?.[k] || ph?.[k] || br?.location?.[k] || ph?.location?.[k] || '').trim();
+  const num = (k) => {
+    const n = Number(br?.[k] ?? ph?.[k] ?? br?.location?.[k] ?? ph?.location?.[k]);
+    return Number.isFinite(n) && (br?.[k] ?? ph?.[k] ?? br?.location?.[k] ?? ph?.location?.[k]) != null ? n : null;
+  };
+  const pharmacyName = ph?.pharmacyName || ph?.name || 'Pharmacy';
+  const branchName = br?.branchName || '';
+  return {
+    name: [branchName, pharmacyName].filter(Boolean).join(' · '),
+    address: pick('address'),
+    country: pick('country'),
+    city: pick('city'),
+    area: pick('area'),
+    region: pick('region'),
+    street: pick('street'),
+    ghanaDigitalAddress: pick('ghanaDigitalAddress'),
+    latitude: num('latitude'),
+    longitude: num('longitude'),
+    phone: String(br?.phone || ph?.phone || '').trim(),
+    pharmacyId: ph?.id || null,
+    branchId: br?.id || null,
+    pharmacyName,
+    branchName,
+    source: 'platform',
+    addedByPatient: addedBy === 'patient',
+    addedAt: new Date().toISOString(),
+  };
+}

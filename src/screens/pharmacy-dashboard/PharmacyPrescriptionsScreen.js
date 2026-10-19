@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,40 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { PharmacyColors as C } from '../../constants/colors';
 import { rxHasPendingDoctorNote, isRxDelivered, awaitingDoctorDecision } from '../../utils/pharmacyRxNotes';
 import RxFullDetailsMobile from '../../components/RxFullDetailsMobile';
+import { toMillis } from '../../components/provider/ProviderUI';
+
+// The same filters as web PharmacyPrescriptions.js (and the overview's queue).
+const MS_48H = 48 * 3600000;
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'incoming', label: 'Incoming' },
+  { id: 'active', label: 'Active' },
+  { id: 'ready', label: 'Ready' },
+  { id: 'overdue', label: 'Pickup overdue' },
+  { id: 'review', label: 'Needs review' },
+  { id: 'stuck', label: 'Stuck >48h' },
+];
+function rxMatchesFilter(rx, filter, branchId) {
+  if (branchId && rx.branchId !== branchId) return false;
+  const st = rx.pharmacyStatus || 'sent';
+  const updated = toMillis(rx.updatedAt);
+  const last = Math.max(updated, toMillis(rx.createdAt));
+  switch (filter) {
+    case 'incoming': return st === 'sent';
+    case 'active': return ['accepted', 'partially_fulfilled'].includes(st);
+    case 'ready': return st === 'ready';
+    case 'overdue': return st === 'ready' && Date.now() - updated > MS_48H;
+    case 'review': return st === 'partially_fulfilled' && (rx.medications || []).some(m => ['not_available', 'alternative_suggested', 'pending'].includes(m.drugStatus));
+    case 'stuck': return st === 'accepted' && Date.now() - last > MS_48H;
+    default: return true;
+  }
+}
 
 const DRUG_STATUS = {
   pending:               { icon: '⏳', label: 'Pending',       color: '#d97706' },
@@ -46,12 +74,33 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
   const [saving, setSaving] = useState(false);
   const [altModal, setAltModal] = useState(null); // { rxId, medIndex }
   const [altText, setAltText] = useState('');
+  const route = useRoute();
+  const [filter, setFilter] = useState(route.params?.filter || 'all');
+  const [branchId, setBranchId] = useState(route.params?.branchId || '');
+  const [branches, setBranches] = useState([]);
+  const [search, setSearch] = useState('');
+  // Prescriptions and branches are keyed by the organisation id.
+  const orgId = profile?.organizationId || profile?.id;
+  useEffect(() => {
+    if (route.params?.filter) setFilter(route.params.filter);
+    if (route.params?.branchId !== undefined) setBranchId(route.params.branchId || '');
+  }, [route.params?.filter, route.params?.branchId]);
+  useEffect(() => {
+    api(`/api/v1/pharmacy-branches?pharmacyId=${orgId}`).then(d => setBranches(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [orgId]);
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map(f => [f.id, prescriptions.filter(rx => rxMatchesFilter(rx, f.id, branchId)).length])), [prescriptions, branchId]);
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return prescriptions.filter(rx => rxMatchesFilter(rx, filter, branchId)
+      && (!q || `${rx.patientName} ${rx.doctorName} ${rx.prescriptionRef} ${rx.diagnosis} ${(rx.medications || []).map(m => m.name).join(' ')}`.toLowerCase().includes(q)));
+  }, [prescriptions, filter, branchId, search]);
+  const branchNameOf = (rx) => rx.branchName || branches.find(b => b.id === rx.branchId)?.branchName || 'Unassigned';
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      const rawList = await api(`/api/v1/medical/prescriptions/pharmacy/${profile?.id}`).catch(() => []) || [];
+      const rawList = await api(`/api/v1/medical/prescriptions/pharmacy/${orgId}`).catch(() => []) || [];
       const list = rawList.map(data => ({
         ...data,
         medications: (data.medications || []).map(m => ({ ...m, drugStatus: m.drugStatus || 'pending' })),
@@ -124,6 +173,7 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.cardPatient}>{rx.patientName || 'Patient'}</Text>
             <Text style={styles.cardSub}>Dr. {rx.doctorName || 'Doctor'} · {rx.diagnosis || '—'}</Text>
+            <Text style={styles.cardSub}><Ionicons name="storefront-outline" size={11} /> {branchNameOf(rx)}</Text>
             {rx.prescriptionRef && (
               <Text style={styles.refCode}>{rx.prescriptionRef}</Text>
             )}
@@ -152,15 +202,36 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
         <ActivityIndicator color={C.primary} style={{ marginTop: 60 }} />
       ) : (
         <FlatList showsVerticalScrollIndicator={false}
-          data={prescriptions}
+          data={shown}
           keyExtractor={r => r.id}
           renderItem={renderCard}
+          ListHeaderComponent={(
+            <View style={{ gap: 10 }}>
+              <TextInput style={styles.searchBox} value={search} onChangeText={setSearch} placeholder="Search patient, doctor, code or medicine" placeholderTextColor="#94a3b8" />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {FILTERS.map(f => (
+                  <TouchableOpacity key={f.id} onPress={() => setFilter(f.id)} style={[styles.filterChip, filter === f.id && styles.filterChipOn]}>
+                    <Text style={[styles.filterText, filter === f.id && { color: '#fff' }]}>{f.label} · {counts[f.id] || 0}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              {branches.length > 1 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {[{ id: '', branchName: 'All branches' }, ...branches].map(b => (
+                    <TouchableOpacity key={b.id || 'all'} onPress={() => setBranchId(b.id)} style={[styles.filterChip, branchId === b.id && styles.filterChipOn]}>
+                      <Text style={[styles.filterText, branchId === b.id && { color: '#fff' }]}>{b.branchName || 'Branch'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : null}
+            </View>
+          )}
           contentContainerStyle={{ padding: 16, gap: 12 }}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={{ fontSize: 48 }}>💊</Text>
-              <Text style={styles.emptyTitle}>No prescriptions yet</Text>
-              <Text style={styles.emptySub}>Prescriptions routed to this pharmacy will appear here.</Text>
+              <Text style={styles.emptyTitle}>{prescriptions.length ? 'Nothing matches this filter' : 'No prescriptions yet'}</Text>
+              <Text style={styles.emptySub}>{prescriptions.length ? 'Try another filter or clear the search.' : 'Prescriptions routed to this pharmacy will appear here.'}</Text>
             </View>
           }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={C.primary} />}
@@ -277,7 +348,11 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.background },
+  container: { flex: 1, backgroundColor: '#f4f6f9' },
+  searchBox: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#0f172a', backgroundColor: '#fff' },
+  filterChip: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#fff' },
+  filterChipOn: { backgroundColor: C.primary, borderColor: C.primary },
+  filterText: { fontSize: 12, fontWeight: '700', color: '#475569' },
   card: { backgroundColor: '#fff', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: C.border },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
   cardPatient: { fontSize: 16, fontWeight: '700', color: C.text },

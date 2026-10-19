@@ -82,7 +82,7 @@ export default function PharmacyWalkInScreen({ profile }) {
     setRx(null);
     setNotFound(false);
     try {
-      const queue = await api(`/api/v1/medical/prescriptions/pharmacy/${profile?.id}`).catch(() => []) || [];
+      const queue = await api(`/api/v1/medical/prescriptions/pharmacy/${profile?.organizationId || profile?.id}`).catch(() => []) || [];
       const found = queue.find(r => (r.prescriptionRef || '').toUpperCase() === ref);
       if (found) {
         setRx(found);
