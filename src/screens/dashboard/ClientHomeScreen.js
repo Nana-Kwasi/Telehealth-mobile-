@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -136,6 +137,18 @@ const ClientHomeScreen = ({ navigation }) => {
   // because the patient-profile row returns a blank name for therapy clients.
   const [sessionName, setSessionName] = useState('');
   const [locationProfile, setLocationProfile] = useState(null);
+  // The location found right after sign-in is saved after this screen loads:
+  // refresh the card when it arrives instead of showing "Missing".
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('locationUpdated', async () => {
+      try {
+        const uid = await AsyncStorage.getItem('th.userId');
+        const authLoc = uid ? await fetchAuthLocationProfile(uid) : null;
+        if (authLoc) setLocationProfile((prev) => mergeLocationProfile(prev, authLoc));
+      } catch (_) { /* keep what is shown */ }
+    });
+    return () => sub.remove();
+  }, []);
   const [therapistData, setTherapistData] = useState(null);
   // An unloadable photo falls back to the initial rather than an empty circle.
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -473,7 +486,7 @@ const ClientHomeScreen = ({ navigation }) => {
 
   return (
     <ZCGround>
-<ScrollView 
+<ScrollView showsVerticalScrollIndicator={false} 
       style={styles.container} 
       contentContainerStyle={styles.contentContainer}
       refreshControl={

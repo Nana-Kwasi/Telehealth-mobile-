@@ -93,7 +93,7 @@ export default function CheckInReviewQueueCard({ people = [], nameOf = (p) => p.
             <Text style={styles.sub}>Reminder 4 days before, confirmation the day before, check-in on the day.</Text>
           </View>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
           {people.map((p) => (
             <TouchableOpacity key={p.id} onPress={() => setPlanFor(p.id)}
               style={[styles.chip, planFor === p.id && styles.chipOn]}>
@@ -101,7 +101,7 @@ export default function CheckInReviewQueueCard({ people = [], nameOf = (p) => p.
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
           {[3, 7, 10, 14, 21, 28, 42, 90].map((d) => (
             <TouchableOpacity key={d} onPress={() => setInDays(d)}
               style={[styles.chip, inDays === d && styles.chipOn]}>

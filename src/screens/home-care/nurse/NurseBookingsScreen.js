@@ -28,7 +28,7 @@ export default function NurseBookingsScreen({ navigation, route, profile }) {
   const tabs = TABS.map((t) => ({ ...t, count: counts[t.countKey] || 0 }));
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={{ fontSize: 22, fontWeight: '800', color: C.text, marginBottom: 4 }}>Bookings</Text>
       <Text style={[hc.sub, { marginBottom: 12 }]}>Requests, emergency & ongoing care</Text>
       <NurseTabBar tabs={tabs} active={tab} onChange={setTab} />

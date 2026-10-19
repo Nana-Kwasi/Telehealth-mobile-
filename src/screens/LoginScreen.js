@@ -418,7 +418,7 @@ const LoginScreen = ({ navigation, route }) => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <Text style={styles.logo}>NessaHub</Text>
           <Text style={styles.title}>Welcome Back!</Text>

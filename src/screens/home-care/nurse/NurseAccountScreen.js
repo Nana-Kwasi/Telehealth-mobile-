@@ -27,7 +27,7 @@ export default function NurseAccountScreen({ route, profile }) {
   }, [route.params?.tab]);
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={{ fontSize: 22, fontWeight: '800', color: C.text, marginBottom: 4 }}>Account</Text>
       <Text style={[hc.sub, { marginBottom: 12 }]}>Profile, schedule, documents & earnings</Text>
       <NurseTabBar tabs={tabs} active={tab} onChange={setTab} />

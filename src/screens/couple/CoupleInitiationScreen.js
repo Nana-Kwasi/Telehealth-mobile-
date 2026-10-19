@@ -130,7 +130,7 @@ export default function CoupleInitiationScreen({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Couple therapy</Text>
         <Text style={styles.subtitle}>
           Tell us about you both and complete your private intake. We will email your partner

@@ -72,7 +72,7 @@ function EmojiPicker({ onSelect, onClose }) {
         <Text style={emojiStyles.title}>Emojis</Text>
         <TouchableOpacity onPress={onClose}><Ionicons name="close" size={20} color="#64748b" /></TouchableOpacity>
       </View>
-      <ScrollView contentContainerStyle={emojiStyles.grid}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={emojiStyles.grid}>
         {EMOJI_LIST.map((e, i) => (
           <TouchableOpacity key={i} style={emojiStyles.cell} onPress={() => onSelect(e)}>
             <Text style={emojiStyles.emoji}>{e}</Text>
@@ -397,7 +397,7 @@ export default function DoctorMessagesScreen({ route }) {
         </View>
 
         {/* Messages */}
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           ref={listRef}
           style={styles.messageList}
           contentContainerStyle={{ paddingVertical: 8 }}
@@ -516,7 +516,7 @@ export default function DoctorMessagesScreen({ route }) {
       {loadingPatients ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={filteredPatients}
           keyExtractor={item => item.id}
           contentContainerStyle={{ padding: 12 }}

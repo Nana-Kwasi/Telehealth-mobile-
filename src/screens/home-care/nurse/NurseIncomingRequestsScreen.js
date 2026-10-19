@@ -75,7 +75,7 @@ export default function NurseIncomingRequestsScreen({ navigation, profile, embed
   if (embedded) return <View>{body}</View>;
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="Incoming requests" subtitle="Accept or decline patient bookings" />
       {body}
     </ScrollView>

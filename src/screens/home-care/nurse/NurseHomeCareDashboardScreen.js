@@ -58,7 +58,7 @@ export default function NurseHomeCareDashboardScreen({ navigation, profile }) {
   };
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       style={hc.screen}
       contentContainerStyle={hc.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}

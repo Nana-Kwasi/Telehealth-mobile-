@@ -38,7 +38,7 @@ export default function DiagnosticBranchesScreen({ profile, type = 'lab', detail
   if (loading) return <View style={styles.centered}><ActivityIndicator color={accent} size="large" /></View>;
 
   return (
-    <FlatList
+    <FlatList showsVerticalScrollIndicator={false}
       style={styles.container}
       data={branches}
       keyExtractor={b => String(b.id)}

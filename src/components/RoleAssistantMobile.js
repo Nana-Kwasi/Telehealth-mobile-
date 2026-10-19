@@ -51,7 +51,7 @@ export default function RoleAssistantMobile({ kind = 'pharmacy', accent = '#0f76
             <View style={{ flex: 1 }}><Text style={s.headTitle}>NessaHub AI</Text><Text style={s.headSub}>Live figures for your organisation · read-only</Text></View>
             <TouchableOpacity onPress={() => setOpen(false)}><Ionicons name="close" size={24} color="#fff" /></TouchableOpacity>
           </View>
-          <ScrollView ref={scroll} contentContainerStyle={{ padding: 14, gap: 10 }} keyboardShouldPersistTaps="handled">
+          <ScrollView showsVerticalScrollIndicator={false} ref={scroll} contentContainerStyle={{ padding: 14, gap: 10 }} keyboardShouldPersistTaps="handled">
             {thread.length === 0 ? (
               <View style={{ gap: 8 }}>
                 <Text style={s.intro}>Ask about your queue, figures or any person who dealt with you — a first name is enough. Medical details stay private.</Text>

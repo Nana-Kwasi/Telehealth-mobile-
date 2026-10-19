@@ -230,6 +230,14 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
       // charge rather than blocking the booking.
       const chosen = myDoctors.find((d) => d.id === sForm.doctorId);
       const fee = Number(chosen?.consultationFee ?? 0);
+      // Slot still free? Checked before taking payment.
+      try {
+        await api('/api/v1/medical/appointments/check', { method: 'POST', body: { doctorId: sForm.doctorId, scheduledAt } });
+      } catch (e) {
+        setSError(e?.message || 'That time is not available. Please choose another.');
+        setSSaving(false);
+        return;
+      }
       const payerEmail = await getStoredEmail();
       const paid = await payForBooking({
         email: payerEmail,
@@ -670,7 +678,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
               {(modalDateAppts || []).map((a) => (
                 <View key={a.id} style={[styles.modalCard, { borderLeftColor: getStatusColor(a.status) }]}>
                   <View style={styles.modalCardTop}>
@@ -929,7 +937,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
                 <Ionicons name="close" size={20} color="white" />
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
               {renderDocCalendar()}
             </ScrollView>
             <View style={styles.modalFooter}>
@@ -968,7 +976,7 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
               <Text style={styles.formLabel}>New Date (YYYY-MM-DD)</Text>
               <TextInput
                 style={styles.formInput}

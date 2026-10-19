@@ -51,7 +51,7 @@ export default function HomeCareNurseProfileScreen({ navigation, route }) {
   };
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <View style={[hc.card, { alignItems: 'center' }]}>
         <NurseAvatar nurse={nurse} size={88} />
         <Text style={[hc.title, { marginTop: 12 }]}>{nurse.fullName}</Text>

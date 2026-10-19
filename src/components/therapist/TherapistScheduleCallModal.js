@@ -164,7 +164,7 @@ export default function TherapistScheduleCallModal({
             ) : (
               <>
                 <Text style={styles.fieldLabel}>Client</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
                   {clients.map((c) => (
                     <TouchableOpacity
                       key={c.id}

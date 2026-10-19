@@ -138,7 +138,7 @@ export default function HomeCareBookScreen({ navigation, route }) {
   }
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).

@@ -105,7 +105,7 @@ export function DiagWorklistMobile({ type = 'lab', profile, isBranch, colors: C 
         {q ? <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={18} color="#94a3b8" /></TouchableOpacity> : null}
       </View>
       <View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingBottom: 8 }}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingBottom: 8 }}>
           {tabs.map(([k, label]) => (
             <TouchableOpacity key={k} onPress={() => setTab(k)} style={[st.tab, tab === k && { backgroundColor: C.primary, borderColor: C.primary }]}>
               <Text style={[st.tabText, tab === k && { color: '#fff' }]}>{label} {base.filter(o => inTab(o, k)).length}</Text>
@@ -114,7 +114,7 @@ export function DiagWorklistMobile({ type = 'lab', profile, isBranch, colors: C 
         </ScrollView>
       </View>
       {loading ? <ActivityIndicator color={C.primary} style={{ margin: 32 }} /> : (
-        <FlatList data={shown} keyExtractor={o => o.id} renderItem={renderItem}
+        <FlatList showsVerticalScrollIndicator={false} data={shown} keyExtractor={o => o.id} renderItem={renderItem}
           contentContainerStyle={{ padding: 12, paddingTop: 4, gap: 10, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.primary} />}
           ListEmptyComponent={<View style={{ alignItems: 'center', padding: 40 }}><Ionicons name="checkmark-done-circle-outline" size={44} color="#cbd5e1" /><Text style={st.empty}>{q ? 'No orders match that name.' : 'Nothing here right now.'}</Text></View>} />
@@ -192,7 +192,7 @@ export function DiagOrderDetailMobile({ type = 'lab', colors: C }) {
     : [['Ordered', order.createdAt], ['Collected', order.sampleCollectedAt], ['Started', order.startedAt], ['Resulted', order.completedAt]];
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.background }} contentContainerStyle={{ padding: 14, gap: 12 }}>
+    <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, backgroundColor: C.background }} contentContainerStyle={{ padding: 14, gap: 12 }}>
       <View style={st.card}>
         <View style={st.cardTop}><Text style={[st.test, { fontSize: 18, flex: 1 }]}>{order.testType || 'Order'}</Text><StagePill status={order.status} /></View>
         <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, alignItems: 'center' }}><PriorityPill priority={order.priority} /><TatChip order={o} type={type} /></View>
@@ -275,7 +275,7 @@ export function DiagResultsMobile({ type = 'lab', isBranch, colors: C }) {
         ))}
       </View>
       {loading ? <ActivityIndicator color={C.primary} style={{ margin: 32 }} /> : (
-        <FlatList data={shown} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, paddingTop: 0, gap: 10, flexGrow: 1 }}
+        <FlatList showsVerticalScrollIndicator={false} data={shown} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, paddingTop: 0, gap: 10, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.primary} />}
           ListEmptyComponent={<Text style={[st.empty, { padding: 40 }]}>No results yet.</Text>}
           renderItem={({ item: r }) => (
@@ -332,7 +332,7 @@ export function DiagCatalogMobile({ type = 'lab', isBranch, colors: C }) {
       </View>
       <Text style={[st.meta, { paddingHorizontal: 16, marginBottom: 6 }]}>{isBranch ? 'Set by head office. Reference ranges here drive result flags.' : 'Tap to edit price and turnaround. Reference ranges: edit on the web dashboard.'}</Text>
       {loading ? <ActivityIndicator color={C.primary} style={{ margin: 32 }} /> : (
-        <FlatList data={shown} keyExtractor={i => i.id} contentContainerStyle={{ padding: 12, paddingTop: 0, gap: 8, flexGrow: 1 }}
+        <FlatList showsVerticalScrollIndicator={false} data={shown} keyExtractor={i => i.id} contentContainerStyle={{ padding: 12, paddingTop: 0, gap: 8, flexGrow: 1 }}
           ListEmptyComponent={<Text style={[st.empty, { padding: 40 }]}>{isBranch ? 'Head office has not published a catalog yet.' : 'No items yet. Tap + to add, or use Quick add on the web.'}</Text>}
           renderItem={({ item: i }) => (
             <TouchableOpacity activeOpacity={isBranch ? 1 : 0.7} style={[st.card, !i.active && { opacity: 0.55 }]}

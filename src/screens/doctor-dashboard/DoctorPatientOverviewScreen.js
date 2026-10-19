@@ -150,7 +150,7 @@ export default function DoctorPatientOverviewScreen({ route, navigation }) {
         </View>
       </View>
 
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: 36 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.primary} />}

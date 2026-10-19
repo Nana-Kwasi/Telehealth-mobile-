@@ -6,7 +6,7 @@ import FaqSection from '../../components/FaqSection';
 export default function FaqScreen({ route }) {
   const audience = route?.params?.audience || 'all';
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+    <ScrollView showsVerticalScrollIndicator={false} style={styles.container} contentContainerStyle={{ paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
       <FaqSection audience={audience} title="All questions" />
     </ScrollView>
   );

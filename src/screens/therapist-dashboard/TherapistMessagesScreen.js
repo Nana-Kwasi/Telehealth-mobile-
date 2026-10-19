@@ -244,7 +244,7 @@ export default function TherapistMessagesScreen({ profile }) {
           <Text style={styles.emptySub}>Try a different search term</Text>
         </View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={filteredTherapists}
           keyExtractor={(t) => t.id}
           contentContainerStyle={styles.staffList}

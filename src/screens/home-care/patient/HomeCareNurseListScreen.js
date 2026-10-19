@@ -43,7 +43,7 @@ export default function HomeCareNurseListScreen({ navigation, route }) {
   };
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>{title}</Text>
       {loading ? <ActivityIndicator color={C.primary} /> : null}
 

@@ -44,7 +44,7 @@ export default function NurseOngoingEngagementsScreen({ navigation, profile, emb
   if (embedded) return <View>{body}</View>;
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="Ongoing engagements" subtitle="Weekly / monthly care in progress" />
       {body}
     </ScrollView>

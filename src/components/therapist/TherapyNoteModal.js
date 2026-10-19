@@ -72,7 +72,7 @@ export default function TherapyNoteModal({ visible, client, onClose, onSave }) {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
               <Text style={styles.sectionTitle}>Session Information</Text>
               <Field label="Date *">
                 <TextInput
@@ -99,7 +99,7 @@ export default function TherapyNoteModal({ visible, client, onClose, onSave }) {
                 />
               </Field>
               <Field label="Mood *">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
                   {MOOD_OPTIONS.map((o) => (
                     <TouchableOpacity
                       key={o}
@@ -123,7 +123,7 @@ export default function TherapyNoteModal({ visible, client, onClose, onSave }) {
                 />
               </Field>
               <Field label="Interventions Used">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
                   {INTERVENTION_OPTIONS.map((o) => (
                     <TouchableOpacity
                       key={o}
@@ -136,7 +136,7 @@ export default function TherapyNoteModal({ visible, client, onClose, onSave }) {
                 </ScrollView>
               </Field>
               <Field label="Progress Assessment">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
                   {PROGRESS_OPTIONS.map((o) => (
                     <TouchableOpacity
                       key={o}

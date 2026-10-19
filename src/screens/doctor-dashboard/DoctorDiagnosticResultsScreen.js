@@ -287,7 +287,7 @@ export default function DoctorDiagnosticResultsScreen() {
       {loading ? (
         <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={listData}
           keyExtractor={i => i.rowKey || i.id}
           renderItem={renderItem}

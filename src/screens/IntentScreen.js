@@ -11,6 +11,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
 import TherapyTypeModal from '../components/TherapyTypeModal';
+import { clearFlow, updateFlow } from '../services/medpsychFlow';
 
 const INTENT_OPTIONS = [
   {
@@ -60,6 +61,14 @@ const INTENT_OPTIONS = [
   },
 ];
 
+/** Forget any earlier, unfinished sign-up and record which service this one is. */
+async function startFreshFlow(serviceType, therapyType) {
+  try {
+    await clearFlow();
+    await updateFlow({ serviceType, ...(therapyType ? { therapyType } : {}) });
+  } catch (_) { /* the sign-up screen still sets it on continue */ }
+}
+
 const IntentScreen = ({ navigation }) => {
   // Psychology & Counseling asks WHICH kind of therapy before the sign-up
   // form, then hands off to the flow that already handles it.
@@ -95,13 +104,22 @@ const IntentScreen = ({ navigation }) => {
       return;
     }
 
-    // Individual keeps the cached, pay-before-anything-is-written flow.
-    navigation.navigate('MedPsychSignUp', { service: 'medpsych', therapyType });
+    // Individual talking therapy: questionnaire → sign up → choose a therapist,
+    // the same client journey as on the web. It used to open the paid
+    // psychiatrist sign-up, which shares its screens with Second Opinion.
+    await startFreshFlow('medpsych', therapyType); // clears any half-finished Second Opinion sign-up
+    try {
+      await AsyncStorage.setItem('userIntent', 'therapy');
+      await AsyncStorage.multiRemove(['th.medicalSkip', 'th.pendingBooking']);
+    } catch (_) {}
+    navigation.navigate('Questionnaire', { therapyType: 'individual' });
   };
 
   const handleSelect = async (intent) => {
     try {
       await AsyncStorage.setItem('userIntent', intent);
+      // Leftovers from an earlier Doctor attempt must not steer a different sign-up.
+      if (intent !== 'medical') await AsyncStorage.multiRemove(['th.medicalSkip', 'th.pendingBooking']);
     } catch (_) {}
 
     if (intent === 'therapy') {
@@ -123,6 +141,7 @@ const IntentScreen = ({ navigation }) => {
     if (intent === 'second_opinion') {
       // Same policy gate — the consents are identical — carrying its own
       // service type so the gate knows which intake to ask for afterwards.
+      await startFreshFlow('second_opinion');
       navigation.navigate('MedPsychSignUp', { service: 'second_opinion' });
     }
   };

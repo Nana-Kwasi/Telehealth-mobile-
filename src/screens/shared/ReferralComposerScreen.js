@@ -149,7 +149,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
   return (
     <ZCGround>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
@@ -185,7 +185,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
               <Ionicons name="person" size={14} color={P.accent} />
               <Text style={styles.label}>Patient</Text>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
               {patients.map((p) => {
                 const on = form.patientId === p.id;
                 return (

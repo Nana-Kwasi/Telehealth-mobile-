@@ -214,7 +214,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.tabsScroll}
@@ -339,7 +339,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
             {/* Specialization */}
             <View>
               <Text style={styles.fieldLabel}>Specialization</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginTop:8}}>
+              <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{marginTop:8}}>
                 {SPECIALIZATIONS.map(s => (
                   <TouchableOpacity key={s} style={[styles.chip, profile.specialization===s && styles.chipActive]} onPress={()=>setProfile(p=>({...p,specialization:s}))}>
                     <Text style={[styles.chipText, profile.specialization===s && {color:'#fff'}]}>{s}</Text>

@@ -172,7 +172,7 @@ export default function DoctorReviewsScreen() {
       </View>
 
       {/* Filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
         {STAR_FILTERS.map(f => (
           <TouchableOpacity
             key={f}
@@ -201,7 +201,7 @@ export default function DoctorReviewsScreen() {
       {loading ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={filtered}
           keyExtractor={item => item.id}
           renderItem={renderReview}

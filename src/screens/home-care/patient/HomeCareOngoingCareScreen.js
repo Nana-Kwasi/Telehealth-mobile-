@@ -99,7 +99,7 @@ export default function HomeCareOngoingCareScreen({ navigation }) {
   );
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="Ongoing care" subtitle="Weekly, monthly & yearly packages log each visit-day" />
       {loading ? <ActivityIndicator color={C.primary} /> : null}
       {!loading && list.length === 0 ? <Text style={hc.sub}>No ongoing care packages.</Text> : null}

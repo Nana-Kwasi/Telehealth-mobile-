@@ -316,7 +316,7 @@ const ClientSupportScreen = ({ navigation }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -528,7 +528,7 @@ const ClientSupportScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               <Text style={styles.ratingLabel}>Overall Session Rating *</Text>
               <View style={styles.starsContainer}>
                 {[1, 2, 3, 4, 5].map((star) => (
@@ -618,7 +618,7 @@ const ClientSupportScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Title *</Text>
                 <TextInput
@@ -718,7 +718,7 @@ const ClientSupportScreen = ({ navigation }) => {
                 onChangeText={setFaqSearch}
               />
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               {filteredFAQ.map((item, index) => (
                 <View key={index} style={styles.faqItem}>
                   <Text style={styles.faqQuestion}>{item.question}</Text>
@@ -748,7 +748,7 @@ const ClientSupportScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               {searchedIncident && (
                 <>
                   <View style={styles.detailRow}>

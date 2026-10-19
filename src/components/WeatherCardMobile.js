@@ -206,7 +206,7 @@ export default function WeatherCardMobile({ profile, embedded = false, compact =
           </View>
 
           {weather.hourly?.length ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.hours}>
+            <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.hours}>
               {weather.hourly.map((h) => (
                 <View key={h.iso} style={[st.hour, { backgroundColor: chip }]}>
                   <Text style={[st.hourTime, { color: sub }]}>{h.time}</Text>

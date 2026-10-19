@@ -748,7 +748,7 @@ export default function TherapistPrescriptionsScreen() {
       {loading ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={filtered}
           keyExtractor={item => item.id}
           renderItem={renderRx}
@@ -781,7 +781,7 @@ export default function TherapistPrescriptionsScreen() {
                 <Text style={styles.altModalSub}>
                   {altApprovalRx.patientName} · {altApprovalRx.diagnosis}
                 </Text>
-                <ScrollView style={{ maxHeight: 380 }}>
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
                   {(altApprovalRx.medications || []).map((med, i) => {
                     if (med.drugStatus !== 'alternative_suggested') return null;
                     return (
@@ -842,7 +842,7 @@ export default function TherapistPrescriptionsScreen() {
               </TouchableOpacity>
             </View>
             {viewingRx && (
-              <ScrollView>
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.altModalSub}>{viewingRx.patientName || 'Patient'} · {viewingRx.diagnosis || '—'}</Text>
                 <Text style={[styles.altOriginalLabel, { marginBottom: 8 }]}>Date: {viewingRx.date || '—'} {viewingRx.prescriptionRef ? `· ${viewingRx.prescriptionRef}` : ''}</Text>
                 {showRxAll && (
@@ -972,7 +972,7 @@ export default function TherapistPrescriptionsScreen() {
               <>
                 <Text style={styles.altModalSub}>{reassignRx.patientName || 'Patient'} · {reassignRx.prescriptionRef || reassignRx.id}</Text>
                 <Text style={[styles.altOriginalLabel, { marginBottom: 8 }]}>Only drugs marked as Not Available will be reassigned.</Text>
-                <ScrollView style={{ maxHeight: 260 }}>
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 260 }}>
                   {branchDirectory
                     .filter(row => !reassignRx.pharmacyId || row.pharmacyId === reassignRx.pharmacyId)
                     .map(row => (
@@ -1015,12 +1015,12 @@ export default function TherapistPrescriptionsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
               {/* Patient */}
               {!editing && (
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Client *</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                  <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
                     {patients.map(p => (
                       <TouchableOpacity
                         key={p.id}

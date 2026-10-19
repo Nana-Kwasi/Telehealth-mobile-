@@ -56,7 +56,7 @@ export default function NurseActiveVisitScreen({ navigation, route }) {
   }
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>Active visit</Text>
       <View style={hc.card}>
         <Text style={{ fontWeight: '800' }}>{booking.patientName}</Text>

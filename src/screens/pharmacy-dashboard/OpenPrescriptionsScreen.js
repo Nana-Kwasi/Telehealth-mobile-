@@ -49,7 +49,7 @@ export default function OpenPrescriptionsScreen({ rxOpsRoute }) {
   if (loading) return <View style={s.center}><ActivityIndicator /></View>;
 
   return (
-    <FlatList
+    <FlatList showsVerticalScrollIndicator={false}
       style={s.container}
       contentContainerStyle={{ padding: 16, gap: 12 }}
       data={rows}

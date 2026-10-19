@@ -57,7 +57,7 @@ export default function NurseNotificationsBell({ profileId }) {
                 <Text style={{ color: C.primary, fontWeight: '700' }}>Close</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false}>
               {loading ? <Text style={hc.sub}>Loading…</Text> : null}
               {!loading && list.length === 0 ? <Text style={hc.sub}>No notifications yet.</Text> : null}
               {list.map((n) => (

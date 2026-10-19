@@ -246,7 +246,7 @@ const ClientVideoScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Therapist Info */}
         {therapistData ? (
           <View style={styles.therapistCard}>
@@ -375,7 +375,7 @@ const ClientVideoScreen = ({ navigation }) => {
             </View>
 
             {therapistData ? (
-              <ScrollView style={styles.modalContent}>
+              <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
                 {message.text ? (
                   <View style={[
                     styles.messageContainer,
@@ -557,7 +557,7 @@ const ClientVideoScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               {isLoadingAvailability ? (
                 <ActivityIndicator size="large" color={Colors.primary} />
               ) : (

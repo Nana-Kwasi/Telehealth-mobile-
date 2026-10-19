@@ -4,7 +4,7 @@ import { HomeCareColors as C } from '../../constants/homeCareColors';
 
 export default function NurseTabBar({ tabs, active, onChange }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.row}>
+    <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.row}>
       {tabs.map((t) => {
         const on = active === t.id;
         return (

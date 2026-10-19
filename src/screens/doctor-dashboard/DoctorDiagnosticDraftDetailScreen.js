@@ -124,7 +124,7 @@ export default function DoctorDiagnosticDraftDetailScreen({ route, navigation })
   const accent = draft.orderType === 'scan' ? '#4c1d95' : '#065f46';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.inner}>
+    <ScrollView showsVerticalScrollIndicator={false} style={styles.container} contentContainerStyle={styles.inner}>
       <View style={[styles.badge, { borderColor: accent }]}>
         <Ionicons name="document-outline" size={20} color={accent} />
         <Text style={[styles.badgeText, { color: accent }]}>DRAFT · {draft.orderType?.toUpperCase()}</Text>

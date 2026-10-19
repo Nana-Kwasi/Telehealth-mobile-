@@ -191,7 +191,7 @@ const ClientBillingScreen = ({ navigation }) => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'GHS'
     }).format(amount || 0);
   };
 
@@ -235,7 +235,7 @@ const ClientBillingScreen = ({ navigation }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         automaticallyAdjustKeyboardInsets

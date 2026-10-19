@@ -167,7 +167,7 @@ export default function DoctorAnalyticsScreen() {
   const totalTypeCount = typeDist.video + typeDist.chat + typeDist.inPerson;
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       style={styles.container}
       contentContainerStyle={{ padding: 16 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAnalytics(); }} />}

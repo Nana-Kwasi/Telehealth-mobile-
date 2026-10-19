@@ -12,6 +12,7 @@
 // All writes are best-effort; a denied permission keeps the last known location.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { api, getStoredUserId, getStoredRole, getStoredToken, getStoredNurseId } from './apiClient';
 import { getCurrentLocationMobile, reverseGeocodeMobile } from './homeCareGeoService';
 
@@ -101,5 +102,8 @@ export async function refreshCurrentLocation({ force = false } = {}) {
     }));
   } catch { /* ignore */ }
 
+  // Tell open screens: the home dashboard loads before this finishes, so a new
+  // user saw "Location: Missing" until they left the screen and came back.
+  try { DeviceEventEmitter.emit('locationUpdated', current); } catch { /* ignore */ }
   return current;
 }

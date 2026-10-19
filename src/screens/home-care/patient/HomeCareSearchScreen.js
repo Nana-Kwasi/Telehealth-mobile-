@@ -58,7 +58,7 @@ export default function HomeCareSearchScreen({ navigation, route }) {
   };
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -68,7 +68,7 @@ export default function HomeCareSearchScreen({ navigation, route }) {
       <TextInput style={hc.input} placeholder="Search by name" value={query} onChangeText={setQuery} />
 
       <Text style={hc.label}>Specialty</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
         <TouchableOpacity style={[hc.chip, !filters.specialty && hc.chipActive]} onPress={() => setFilters((f) => ({ ...f, specialty: '' }))}>
           <Text style={!filters.specialty ? hc.chipTextActive : hc.chipText}>All</Text>
         </TouchableOpacity>

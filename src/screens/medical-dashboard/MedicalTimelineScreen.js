@@ -174,7 +174,7 @@ export default function MedicalTimelineScreen({ navigation }) {
       {loading ? (
         <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
       ) : (
-        <SectionList
+        <SectionList showsVerticalScrollIndicator={false}
           sections={filteredSections}
           keyExtractor={i => i.id}
           renderItem={renderItem}

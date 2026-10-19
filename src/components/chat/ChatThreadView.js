@@ -45,7 +45,7 @@ function EmojiPicker({ onSelect, onClose }) {
           <Ionicons name="close" size={20} color="#64748b" />
         </TouchableOpacity>
       </View>
-      <ScrollView contentContainerStyle={emojiS.grid}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={emojiS.grid}>
         {EMOJI_LIST.map((e, i) => (
           <TouchableOpacity key={i} style={emojiS.cell} onPress={() => onSelect(e)}>
             <Text style={emojiS.emoji}>{e}</Text>
@@ -427,7 +427,7 @@ export default function ChatThreadView({
       keyboardVerticalOffset={keyboardVerticalOffset}
     >
       {header}
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         ref={listRef}
         style={styles.messageList}
         contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 12 }}

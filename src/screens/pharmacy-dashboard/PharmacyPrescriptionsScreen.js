@@ -151,7 +151,7 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
       {loading ? (
         <ActivityIndicator color={C.primary} style={{ marginTop: 60 }} />
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={prescriptions}
           keyExtractor={r => r.id}
           renderItem={renderCard}

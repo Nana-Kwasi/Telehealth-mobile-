@@ -19,7 +19,7 @@ export default function CouplePartnerBWelcomeScreen({ navigation, route }) {
   const inviteToken = draftToken || token;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.container}>
       <View style={styles.badge}>
         <Text style={styles.badgeText}>Couples therapy invitation</Text>
       </View>

@@ -435,7 +435,7 @@ export default function TherapistScheduleScreen({ profile }) {
         {therapyNotes.length === 0 ? (
           <Text style={styles.notesEmpty}>No therapy notes yet. Add notes from client sessions.</Text>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesScroll}>
+          <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesScroll}>
             {therapyNotes.slice(0, 6).map((note) => (
               <View
                 key={note.id}
@@ -468,7 +468,7 @@ export default function TherapistScheduleScreen({ profile }) {
     <View style={styles.reportsWrap}>
       <Text style={styles.reportsHeading}>Generate reports</Text>
       <Text style={styles.fieldLabel}>Report type</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
         {REPORT_TYPES.filter((r) => !r.adminOnly || isAdmin).map((r) => (
           <TouchableOpacity
             key={r.id}
@@ -753,7 +753,7 @@ export default function TherapistScheduleScreen({ profile }) {
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Schedule call</Text>
             <Text style={styles.fieldLabel}>Client</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
               {clients.map((c) => (
                 <TouchableOpacity
                   key={c.id}

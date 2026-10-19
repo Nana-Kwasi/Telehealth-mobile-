@@ -87,7 +87,7 @@ const InsuranceDetailsScreen = () => {
   }
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -120,9 +120,9 @@ const InsuranceDetailsScreen = () => {
       {/* Section: Cost Info */}
       <Text style={styles.sectionTitle}>Coverage Details</Text>
       <View style={styles.card}>
-        {field('Deductible', 'deductible', { placeholder: 'e.g., $1,500/year', keyboardType: 'default' })}
-        {field('Co-pay', 'copay', { placeholder: 'e.g., $30 per visit' })}
-        {field('Out-of-Pocket Max', 'outOfPocketMax', { placeholder: 'e.g., $5,000/year' })}
+        {field('Deductible', 'deductible', { placeholder: 'e.g., GHS 1,500/year', keyboardType: 'default' })}
+        {field('Co-pay', 'copay', { placeholder: 'e.g., GHS 30 per visit' })}
+        {field('Out-of-Pocket Max', 'outOfPocketMax', { placeholder: 'e.g., GHS 5,000/year' })}
       </View>
 
       {/* Section: Notes */}

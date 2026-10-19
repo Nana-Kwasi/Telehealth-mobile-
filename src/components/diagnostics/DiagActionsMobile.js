@@ -54,7 +54,7 @@ function Sheet({ visible, title, sub, onClose, children, footer, accent }) {
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={10}><Text style={{ fontSize: 22, color: '#64748b' }}>✕</Text></TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
           {footer ? <View style={s.sheetFoot}>{footer}</View> : null}
         </View>
       </View>

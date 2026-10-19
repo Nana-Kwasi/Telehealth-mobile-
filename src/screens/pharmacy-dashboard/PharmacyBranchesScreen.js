@@ -61,7 +61,7 @@ export default function PharmacyBranchesScreen({ profile }) {
       {loading ? (
         <ActivityIndicator color={C.primary} style={{ marginTop: 60 }} />
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={branches}
           keyExtractor={b => b.id}
           renderItem={renderBranch}

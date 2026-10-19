@@ -66,7 +66,7 @@ export default function NotificationsScreen({ navigation }) {
             <Text style={styles.headerBackText}>All</Text>
           </TouchableOpacity>
         </View>
-        <ScrollView contentContainerStyle={styles.detailBody}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailBody}>
           <View style={styles.detailIcon}>
             <Ionicons name={iconForEvent(detail.eventType)} size={24} color="#2563eb" />
           </View>
@@ -92,7 +92,7 @@ export default function NotificationsScreen({ navigation }) {
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color="#2563eb" /></View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={items}
           keyExtractor={(n) => String(n.id)}
           refreshControl={

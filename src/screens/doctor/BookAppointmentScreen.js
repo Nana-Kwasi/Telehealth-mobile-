@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,12 @@ import {
   ActivityIndicator,
   TextInput,
   Switch,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, getStoredUserId } from '../../services/apiClient';
+import { api, getStoredUserId, getStoredEmail } from '../../services/apiClient';
+import { payForBooking } from '../../services/paystack';
 import { createAppointment } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 
@@ -51,6 +53,37 @@ const BookAppointmentScreen = ({ route, navigation }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [vitals, setVitals] = useState({ ...EMPTY_VITALS });
   const [showVitals, setShowVitals] = useState(false);
+  // Not signed in yet (new visitor): pay with the email they will sign up with,
+  // then sign up; the paid booking becomes a real appointment after sign-up.
+  const lastPaymentRef = useRef(null);
+  const [isGuest, setIsGuest] = useState(false);
+  const [bookingAs, setBookingAs] = useState('');
+  useEffect(() => {
+    getStoredUserId().then(async (id) => {
+      setIsGuest(!id);
+      if (id) setBookingAs((await AsyncStorage.getItem('userName')) || (await AsyncStorage.getItem('th.email')) || 'your account');
+    }).catch(() => setIsGuest(true));
+  }, []);
+  const notYou = async () => {
+    try { const { performLogout } = await import('../../services/authService'); await performLogout(); } catch { /* ignore */ }
+    const root = navigation.getParent() || navigation;
+    root.reset({ index: 0, routes: [{ name: 'Intent' }] });
+  };
+  // Shown after Paystack confirms the payment. An Alert raised while the payment
+  // sheet is closing is silently dropped on iOS, which is why nothing appeared and
+  // the visitor was never taken to sign-up.
+  const [success, setSuccess] = useState(null); // { amount, reference, next: 'signup' | 'booked' }
+  const goNext = (s = success) => {
+    setSuccess(null);
+    if (!s) return;
+    if (s.next === 'signup') navigation.navigate('SignUp');
+    else navigation.navigate('MedicalMain');
+  };
+  useEffect(() => {
+    if (!success) return undefined;
+    const t = setTimeout(() => goNext(success), success.next === 'signup' ? 3000 : 4000);
+    return () => clearTimeout(t);
+  }, [success]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Generate next 14 days for date selection if no preselected date
   const getDateOptions = () => {
@@ -87,9 +120,52 @@ const BookAppointmentScreen = ({ route, navigation }) => {
       return;
     }
 
+    // Is the slot still free? Checked BEFORE payment, so nobody pays for a time
+    // the server then refuses (it happened: a taken 13:30 was charged twice).
+    try {
+      setIsSubmitting(true);
+      await api('/api/v1/medical/appointments/check', {
+        method: 'POST', authenticated: false,
+        body: { doctorId, scheduledAt: `${selectedDate}T${selectedTime}:00` },
+      });
+    } catch (e) {
+      setIsSubmitting(false);
+      Alert.alert('Choose another time', e?.message || 'That time is not available.');
+      return;
+    } finally {
+      setIsSubmitting(false);
+    }
+
     const clientId = await getStoredUserId();
     if (!clientId) {
-      Alert.alert('Not Logged In', 'Please log in to book an appointment.');
+      // New visitor: pay first, then sign up (the appointment is created after sign-up).
+      // Paystack needs an email to start a payment; a NessaHub booking address is
+      // used until the account exists, then the payment is filed on the account.
+      const email = `booking+${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}@nessahub.com`;
+      setIsSubmitting(true);
+      try {
+        const paid = await payForBooking({
+          email,
+          amount: Number(consultationFee || 0),
+          purpose: 'medical',
+          metadata: { doctorId, providerId: doctorId, serviceType: 'consultation' },
+        });
+        if (!paid.ok) {
+          Alert.alert('Payment not completed', paid.reason || 'Your appointment was not booked.');
+          return;
+        }
+        await AsyncStorage.setItem('th.pendingBooking', JSON.stringify({
+          doctorId, doctorName: doctorName || 'Doctor', doctorSpecialization: specialization || '',
+          date: selectedDate, time: selectedTime, consultationType: selectedType, notes: notes.trim(),
+          slotId: slotId || null, consultationFee: Number(consultationFee || 0),
+          paymentReference: paid.reference || null, savedAt: new Date().toISOString(),
+        }));
+        await AsyncStorage.setItem('userIntent', 'medical');
+        // Let the payment sheet finish closing before showing the confirmation.
+        setTimeout(() => setSuccess({ amount: paid.amount, reference: paid.reference, next: 'signup', free: paid.free }), 600);
+      } finally {
+        setIsSubmitting(false);
+      }
       return;
     }
 
@@ -110,7 +186,27 @@ const BookAppointmentScreen = ({ route, navigation }) => {
         recordedAt: new Date().toISOString(),
       } : null;
 
+      // ── Pay before the appointment exists (or use the free first consultation) ──
+      // This screen used to book straight away without any payment.
+      const fee = Number(consultationFee || 0);
+      const paid = await payForBooking({
+        email: await getStoredEmail(),
+        amount: fee,
+        purpose: 'medical',
+        metadata: { doctorId, providerId: doctorId, patientId: clientId, serviceType: 'consultation' },
+      });
+      if (!paid.ok) {
+        Alert.alert('Payment not completed', paid.reason || 'Your appointment was not booked.');
+        setIsSubmitting(false);
+        return;
+      }
+      lastPaymentRef.current = paid.reference || null;
+      if (paid.reference) {
+        api('/api/v1/payments/record', { method: 'POST', body: { reference: paid.reference, description: `Consultation with Dr. ${doctorName || ''}`.trim() } }).catch(() => {});
+      }
+
       await createAppointment({
+        paymentReference: paid.reference || null,
         doctorId,
         doctorName: doctorName || 'Doctor',
         doctorSpecialization: specialization || '',
@@ -129,19 +225,10 @@ const BookAppointmentScreen = ({ route, navigation }) => {
         api(`/api/v1/patients/${clientId}/vitals`, { method: 'POST', body: vitalsPayload }).catch(() => {});
       }
 
-      Alert.alert(
-        'Appointment Booked',
-        `Your ${selectedType} appointment with Dr. ${doctorName} on ${selectedDate} at ${selectedTime} has been submitted. You will receive a confirmation once the doctor accepts.`,
-        [
-          {
-            text: 'View Appointments',
-            onPress: () => navigation.navigate('MedicalMain'),
-          },
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]
-      );
+      setTimeout(() => setSuccess({ amount: paid.amount, reference: paid.reference, next: 'booked', free: paid.free }), 600);
     } catch (error) {
-      Alert.alert('Error', 'Failed to book appointment. Please try again.');
+      // Say what the server said; if money was already taken, give the reference.
+      Alert.alert('Could not book the appointment', `${error?.message || 'Please try again.'}${lastPaymentRef.current ? `\n\nYour payment reference: ${lastPaymentRef.current}. Contact support and quote it if you are not refunded or rebooked.` : ''}`);
       console.error('Booking error:', error);
     } finally {
       setIsSubmitting(false);
@@ -167,7 +254,7 @@ const BookAppointmentScreen = ({ route, navigation }) => {
           </View>
         </View>
         {consultationFee ? (
-          <Text style={styles.feeText}>${consultationFee}</Text>
+          <Text style={styles.feeText}>GHS {consultationFee}</Text>
         ) : null}
       </View>
 
@@ -212,7 +299,7 @@ const BookAppointmentScreen = ({ route, navigation }) => {
             </Text>
           </View>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll}>
+          <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll}>
             {dateOptions.map((d) => (
               <TouchableOpacity
                 key={d.value}
@@ -371,6 +458,13 @@ const BookAppointmentScreen = ({ route, navigation }) => {
         )}
       </View>
 
+      {!isGuest && !!bookingAs && (
+        <View style={[styles.section, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+          <Text style={{ color: MedicalColors.textLight, fontSize: 14, flex: 1 }}>Booking as <Text style={{ fontWeight: '800', color: MedicalColors.text || '#0f172a' }}>{bookingAs}</Text></Text>
+          <TouchableOpacity onPress={notYou}><Text style={{ color: MedicalColors.primary, fontWeight: '700' }}>Not you?</Text></TouchableOpacity>
+        </View>
+      )}
+
       {/* Notes */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Notes for Doctor (optional)</Text>
@@ -411,7 +505,7 @@ const BookAppointmentScreen = ({ route, navigation }) => {
           <View style={[styles.summaryRow, styles.summaryRowLast]}>
             <Text style={styles.summaryLabel}>Fee</Text>
             <Text style={[styles.summaryValue, { fontWeight: '700', color: MedicalColors.primary }]}>
-              ${consultationFee}
+              GHS {consultationFee}
             </Text>
           </View>
         ) : null}
@@ -433,6 +527,28 @@ const BookAppointmentScreen = ({ route, navigation }) => {
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />
+      <Modal visible={!!success} transparent animationType="fade" onRequestClose={() => goNext()}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24, alignItems: 'center' }}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#dcfce7', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+              <Ionicons name="checkmark" size={36} color="#16a34a" />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: '#0f172a', marginBottom: 6 }}>
+              {success?.free ? 'Your first consultation is free' : 'Payment successful'}
+            </Text>
+            {!success?.free && <Text style={{ fontSize: 15, color: '#334155', marginBottom: 4 }}>GHS {Number(success?.amount || 0).toFixed(2)} paid to NessaHub</Text>}
+            {!!success?.reference && <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>Reference {success.reference}</Text>}
+            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 18 }}>
+              {success?.next === 'signup'
+                ? 'Confirmed with Paystack. Next, create your account to confirm your appointment with Dr. ' + (doctorName || '') + '.'
+                : `Your appointment with Dr. ${doctorName || ''} on ${selectedDate} at ${selectedTime} is booked. You will be told when the doctor confirms.`}
+            </Text>
+            <TouchableOpacity onPress={() => goNext()} style={{ backgroundColor: MedicalColors.primary, borderRadius: 12, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' }}>
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>{success?.next === 'signup' ? 'Continue to sign up' : 'View my appointments'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };

@@ -3,9 +3,10 @@ import { NavigationContainer, useFocusEffect, useNavigation } from '@react-navig
 import * as Notifications from 'expo-notifications';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { View, ActivityIndicator, DeviceEventEmitter } from 'react-native';
+import { View, ActivityIndicator, DeviceEventEmitter, AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { resolveRole } from '../services/authService';
+import { resolveRole, performLogout } from '../services/authService';
+import { touchActivity, isIdleExpired, clearActivity } from '../services/sessionIdle';
 import { api, clearSession } from '../services/apiClient';
 import { applyCoupleLandingIfNeeded } from '../services/coupleTherapyService';
 import { PRIVACY_STORAGE_KEY, syncPrivacyConsentToUser } from '../services/privacyConsentService';
@@ -952,6 +953,16 @@ const AppNavigator = () => {
           return;
         }
 
+        // Unused for longer than the inactivity limit: sign out instead of reopening
+        // the last person's dashboard.
+        if (await isIdleExpired()) {
+          try { await performLogout(); } catch { await clearSession(); }
+          await clearActivity();
+          if (!cancelled) { setIsAuthenticated(false); setProfile(null); setUserRole(null); setIsLoading(false); }
+          return;
+        }
+        await touchActivity();
+
         const allowedRoles = ['client','patient','therapist','admin','doctor','pharmacy','branch_user','lab','lab_branch','scan','scan_branch','homecare_nurse'];
         if (!allowedRoles.includes(role)) {
           await clearSession();
@@ -1016,6 +1027,17 @@ const AppNavigator = () => {
         if (!profileStr) return;
         const merged = JSON.parse(profileStr);
         setProfile(merged);
+        // A sign-in inside the app (password or 2FA code) lands here too. The start-up
+        // check ran before it, so role and isAuthenticated were still empty and the
+        // forced password-change gate stayed inactive. Pick them up from the session.
+        const [token, role] = await Promise.all([
+          AsyncStorage.getItem('th.token'),
+          AsyncStorage.getItem('userRole'),
+        ]);
+        if (token) {
+          if (role) setUserRole(role);
+          setIsAuthenticated(true);
+        }
         if (merged?.name) await AsyncStorage.setItem('userName', merged.name);
       } catch (_) {}
     });
@@ -1030,6 +1052,25 @@ const AppNavigator = () => {
    * "Session expired" to the console and the person stayed on a dashboard
    * that quietly loaded nothing.
    */
+  // Inactivity timeout while the app is backgrounded: time stops being "active"
+  // when the app leaves the screen; coming back past the limit signs out.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      const token = await AsyncStorage.getItem('th.token').catch(() => null);
+      if (!token) return;
+      if (state === 'active') {
+        if (await isIdleExpired()) {
+          try { await performLogout(); } catch { await clearSession(); }
+          await clearActivity();
+          DeviceEventEmitter.emit('sessionExpired');
+          return;
+        }
+      }
+      touchActivity();
+    });
+    return () => sub.remove();
+  }, []);
+
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('sessionExpired', () => {
       setIsAuthenticated(false);

@@ -516,7 +516,7 @@ export default function AiChatScreen({ clinician = false }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         ref={scrollRef}
         style={styles.flex}
         contentContainerStyle={styles.thread}

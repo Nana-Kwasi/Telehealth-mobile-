@@ -137,7 +137,7 @@ const TherapistMoodScreen = ({ navigation }) => {
             <Text style={styles.emptyTitle}>No clients assigned</Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.listContent}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
             {clients.map(c => (
               <TouchableOpacity key={c.id} style={styles.clientCard} onPress={() => selectClient(c)} activeOpacity={0.75}>
                 <View style={styles.clientAvatar}>
@@ -178,7 +178,7 @@ const TherapistMoodScreen = ({ navigation }) => {
           <ActivityIndicator color={TherapistColors.primary} />
         </View>
       ) : (
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.detailContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[TherapistColors.primary]} />}
         >

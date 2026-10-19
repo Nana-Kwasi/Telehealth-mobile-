@@ -445,7 +445,7 @@ export default function DoctorHomeScreen({ navigation }) {
 
   return (
     <>
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -517,7 +517,7 @@ export default function DoctorHomeScreen({ navigation }) {
       />
 
       {/* Stats — horizontal scroll */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll} contentContainerStyle={styles.statsScrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll} contentContainerStyle={styles.statsScrollContent}>
         {[
           { label: 'Patients',    value: stats.patients,                        icon: 'people',           color: '#1e40af' },
           { label: 'Today',       value: stats.todayAppts,                      icon: 'calendar',         color: '#166534' },

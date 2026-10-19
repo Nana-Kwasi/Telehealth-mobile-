@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -48,15 +48,10 @@ export function getForcedPasswordFirestoreTarget(userRole, profile) {
 }
 
 export default function ForcedPasswordChangeGateMobile({ active, userRole, profile, onSuccess }) {
-  const target = useMemo(
-    () => getForcedPasswordFirestoreTarget(userRole, profile),
-    [userRole, profile],
-  );
-  const visible =
-    !!active &&
-    profile?.mustChangePassword === true &&
-    !!target?.collection &&
-    !!target?.docId;
+  // The change goes to /auth/password-change by user id, so the role-to-collection
+  // target is not needed to show the gate. Requiring it hid the gate from any role
+  // missing from that list.
+  const visible = !!active && profile?.mustChangePassword === true;
 
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');

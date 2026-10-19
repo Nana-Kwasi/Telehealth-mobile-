@@ -119,7 +119,7 @@ export default function NotificationPreferencesScreen() {
 
   return (
     <ZCGround>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={zcStyles.badge}><Text style={zcStyles.badgeText}>Notifications</Text></View>
         <Text style={[zcStyles.display, styles.title]}>How we contact you</Text>
 

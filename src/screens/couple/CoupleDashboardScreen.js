@@ -70,7 +70,7 @@ export default function CoupleDashboardScreen({ navigation, route }) {
   const proposal = couple?.therapistProposal;
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}

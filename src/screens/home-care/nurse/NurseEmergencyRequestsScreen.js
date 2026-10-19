@@ -59,7 +59,7 @@ export default function NurseEmergencyRequestsScreen({ navigation, profile, embe
   if (embedded) return <View>{body}</View>;
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="Emergency requests" subtitle="Unassigned urgent — claim to respond" />
       {body}
     </ScrollView>

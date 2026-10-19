@@ -72,7 +72,7 @@ export default function HomeCareSignUpModalScreen({ navigation, route }) {
   return (
     <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={close} />
-      <ScrollView contentContainerStyle={styles.centered} keyboardShouldPersistTaps="handled">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.centered} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <Text style={styles.title}>Sign up for Home Care</Text>
           <Text style={styles.sub}>{message || 'Book nurses and manage visits from your dashboard.'}</Text>

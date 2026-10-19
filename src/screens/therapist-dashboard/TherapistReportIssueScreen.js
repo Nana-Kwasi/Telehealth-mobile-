@@ -104,7 +104,7 @@ export default function TherapistReportIssueScreen({ profile }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={styles.pageTitle}>Report an Issue</Text>
           <Text style={styles.pageSub}>
             Send complaints, incidents, and feedback directly to Super Admin.
@@ -227,7 +227,7 @@ export default function TherapistReportIssueScreen({ profile }) {
                     {selected.category ? <View style={styles.metaPill}><Text style={styles.metaPillText}>{selected.category}</Text></View> : null}
                     {selected.severity ? <View style={styles.metaPill}><Text style={styles.metaPillText}>{selected.severity}</Text></View> : null}
                   </View>
-                  <ScrollView style={{ maxHeight: 360 }}>
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }}>
                     {[
                       ['Submitted', fmtDate(selected.createdAt)],
                       ['Last updated', fmtDate(selected.updatedAt)],

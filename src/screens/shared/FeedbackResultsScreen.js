@@ -41,7 +41,7 @@ export default function FeedbackResultsScreen() {
   }
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       style={styles.flex}
       contentContainerStyle={styles.content}
       refreshControl={

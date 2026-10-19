@@ -51,7 +51,7 @@ export default function MyWellnessScreen({ peopleNoun = 'therapist' }) {
 
   return (
     <ZCGround>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl

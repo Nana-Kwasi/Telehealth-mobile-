@@ -20,7 +20,7 @@ export default function NurseNotificationsScreen({ profile }) {
   );
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="Notifications" subtitle="Bookings, emergencies & updates" />
       {loading ? <ActivityIndicator color={C.primary} /> : null}
       {list.length === 0 && !loading ? <Text style={hc.sub}>No notifications yet.</Text> : null}

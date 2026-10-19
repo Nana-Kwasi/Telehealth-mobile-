@@ -150,7 +150,7 @@ export default function LabVerifyScreen({ profile }) {
       </View>
 
       {searched && (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={foundOrders}
           keyExtractor={i => i.id}
           renderItem={renderOrder}

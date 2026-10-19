@@ -46,7 +46,7 @@ export default function PharmacyHomeScreen({ profile, navigation }) {
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadStats(); }} tintColor={C.primary} />}
       >

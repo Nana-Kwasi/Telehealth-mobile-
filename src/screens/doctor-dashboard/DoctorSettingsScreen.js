@@ -303,7 +303,7 @@ export default function DoctorSettingsScreen() {
     <View style={styles.container}>
       {/* Tab Bar */}
       {/* Scrolls sideways: five tabs no longer fit as equal-width columns. */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
         {TABS.map(t => (
           <TouchableOpacity
             key={t}
@@ -324,7 +324,7 @@ export default function DoctorSettingsScreen() {
 
       {/* Profile Tab */}
       {tab === 'Profile' && (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <LicenceCardMobile accent={DoctorColors.primary} />
           {/* Header */}
           <View style={styles.profileHeader}>
@@ -468,7 +468,7 @@ export default function DoctorSettingsScreen() {
       {/* Security Tab — two-step sign-in and biometrics, shared with every role
           (was squeezed in above the profile header). */}
       {tab === 'Security' && (
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <SecuritySettingsSection accent={DoctorColors.primary} />
           <ChangePasswordCard accent={DoctorColors.primary} />
           <ClinicianAccountNote />
@@ -476,20 +476,20 @@ export default function DoctorSettingsScreen() {
       )}
 
       {tab === 'Notifications' && (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <NotificationTogglesSection accent={DoctorColors.primary} />
         </ScrollView>
       )}
 
       {tab === 'Legal' && (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <ConsentHistory />
         </ScrollView>
       )}
 
       {/* Availability Tab */}
       {tab === 'Availability' && (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <Text style={styles.sectionLabel}>Add Availability</Text>
 
           <Field

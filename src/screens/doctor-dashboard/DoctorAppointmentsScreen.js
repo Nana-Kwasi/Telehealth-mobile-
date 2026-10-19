@@ -278,7 +278,7 @@ export default function DoctorAppointmentsScreen() {
 
       {/* ──────── CALENDAR TAB ──────── */}
       {mainTab === 'Calendar' && (
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} />}
         >
           <View style={styles.calCard}>
@@ -386,7 +386,7 @@ export default function DoctorAppointmentsScreen() {
             ))}
           </View>
 
-          <FlatList
+          <FlatList showsVerticalScrollIndicator={false}
             style={styles.listFlatList}
             data={listFiltered}
             keyExtractor={item => item.id}
@@ -508,13 +508,13 @@ export default function DoctorAppointmentsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 20 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
               {/* Patient selector */}
               <Text style={styles.fieldLabel}>Patient *</Text>
               {patients.length === 0 ? (
                 <Text style={styles.noPatients}>No patients yet. Patients appear after they book with you.</Text>
               ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
+                <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
                   {patients.map(p => (
                     <TouchableOpacity
                       key={p.id}

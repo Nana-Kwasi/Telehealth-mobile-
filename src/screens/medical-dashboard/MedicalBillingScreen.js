@@ -69,7 +69,7 @@ const MedicalBillingScreen = () => {
       <View style={styles.statsRow}>
         <View style={[styles.statCard, { borderTopColor: MedicalColors.primary }]}>
           <Ionicons name="card-outline" size={22} color={MedicalColors.primary} />
-          <Text style={styles.statAmount}>${totalBilled.toFixed(2)}</Text>
+          <Text style={styles.statAmount}>GHS {totalBilled.toFixed(2)}</Text>
           <Text style={styles.statLabel}>Total Billed</Text>
         </View>
         <View style={[styles.statCard, { borderTopColor: MedicalColors.success }]}>
@@ -79,7 +79,7 @@ const MedicalBillingScreen = () => {
         </View>
         <View style={[styles.statCard, { borderTopColor: MedicalColors.warning }]}>
           <Ionicons name="alert-circle-outline" size={22} color={MedicalColors.warning} />
-          <Text style={styles.statAmount}>$0.00</Text>
+          <Text style={styles.statAmount}>GHS 0.00</Text>
           <Text style={styles.statLabel}>Outstanding</Text>
         </View>
       </View>
@@ -109,7 +109,7 @@ const MedicalBillingScreen = () => {
                 </Text>
               </View>
               <View style={styles.invoiceRight}>
-                <Text style={styles.invoiceAmount}>${a.consultationFee || '0.00'}</Text>
+                <Text style={styles.invoiceAmount}>GHS {a.consultationFee || '0.00'}</Text>
                 <View style={styles.paidBadge}>
                   <Text style={styles.paidBadgeText}>Paid</Text>
                 </View>

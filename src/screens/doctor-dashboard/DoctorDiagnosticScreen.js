@@ -364,7 +364,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
 
         {/* Step 1: Select Type */}
         {step === 1 && (

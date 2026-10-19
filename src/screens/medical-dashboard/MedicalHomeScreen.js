@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Image, Dimensions,
-  Modal, TextInput, Alert, KeyboardAvoidingView, Platform, Switch,
-} from 'react-native';
+  Modal, TextInput, Alert, KeyboardAvoidingView, Platform, Switch, DeviceEventEmitter } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HeroArt from '../../components/HeroArt';
 import { LineChart, PieChart } from 'react-native-chart-kit';
@@ -170,15 +169,18 @@ const MedicalHomeScreen = ({ navigation }) => {
   // Only the location is re-read — a full loadData() on every focus would refetch
   // the whole dashboard and re-run the daily check-in prompt.
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', async () => {
+    const reloadLocation = async () => {
       try {
         const uid = await getStoredUserId();
         if (!uid) return;
         const patData = await api(`/api/v1/patients/${uid}`).catch(() => null);
         if (patData) setLocationProfile((prev) => mergeLocationProfile(prev, patData));
       } catch (_) {}
-    });
-    return unsubscribe;
+    };
+    const unsubscribe = navigation.addListener('focus', reloadLocation);
+    // The location found right after sign-in arrives after this screen loaded.
+    const sub = DeviceEventEmitter.addListener('locationUpdated', reloadLocation);
+    return () => { unsubscribe(); sub.remove(); };
   }, [navigation]);
 
   const loadData = async () => {
@@ -495,8 +497,8 @@ const MedicalHomeScreen = ({ navigation }) => {
               style={styles.findDoctorButton}
               onPress={() => navigation.getParent()?.navigate('DoctorSearch')}
             >
-              <Ionicons name="search" size={16} color="#FFFFFF" />
-              <Text style={styles.findDoctorText}>Find Doctor</Text>
+              <Ionicons name="search" size={16} color="#1d4ed8" />
+              <Text style={styles.findDoctorText}>Find a Doctor</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1206,7 +1208,8 @@ const styles = StyleSheet.create({
 
   /* Welcome */
   // Equal split: the greeting takes half, the artwork the other half.
-  welcomeCopy: { flex: 1, minWidth: 0, paddingRight: 8 },
+  // Stays in the blue half: text and the button never run onto the photo.
+  welcomeCopy: { flexBasis: '50%', maxWidth: '50%', minWidth: 0, paddingRight: 10 },
 
   // ── Location + weather, one card ──
   metaCard: {
@@ -1283,19 +1286,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#16a34a',
   },
+  // Solid white on the blue: the see-through version vanished into the photo.
   findDoctorButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    marginTop: 14,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 999,
+    shadowColor: '#0b2a5c',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   findDoctorText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#1d4ed8',
+    fontSize: 14,
+    fontWeight: '800',
   },
 
   /* Find Doctor Banner */

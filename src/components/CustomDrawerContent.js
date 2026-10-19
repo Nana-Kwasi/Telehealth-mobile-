@@ -16,7 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TherapyColors as Colors } from '../constants/colors';
 import { performLogout } from '../services/authService';
 import { api } from '../services/apiClient';
-import { resolveFileUrl } from '../utils/mediaUrl';
+import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
 
 const CustomDrawerContent = ({ navigation, profile, state }) => {
   // Second Opinion clients see a narrower drawer: one case, one consultation,
@@ -201,8 +201,8 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
         style={styles.hero}
       >
         <View style={styles.userInfo}>
-          {profile?.photoURL ? (
-            <Image source={{ uri: resolveFileUrl(profile.photoURL)}} style={styles.avatar} />
+          {avatarOf(profile) ? (
+            <Image source={{ uri: avatarOf(profile)}} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>
@@ -217,7 +217,7 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
         </View>
       </ImageBackground>
 
-      <ScrollView style={styles.menuContainer}>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
         {visibleItems.map((item) => (
           <TouchableOpacity
             key={item.name}

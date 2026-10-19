@@ -231,7 +231,7 @@ export default function CoupleSectionForm({ section, form, errors, onChange }) {
   };
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+    <ScrollView showsVerticalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>{section.title}</Text>
       {section.subtitle ? <Text style={styles.subtitle}>{section.subtitle}</Text> : null}
       {section.policySlug ? (

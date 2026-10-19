@@ -72,12 +72,12 @@ export default function HelpCenterModal({ visible, onClose, audience = 'visitor'
         </LinearGradient>
 
         {tab === 'faq' ? (
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: 4 }}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: 4 }}>
             <FaqSection audience={audience} showAsk={false} bare title="All questions" />
           </ScrollView>
         ) : (
           <>
-            <ScrollView ref={scroller} style={{ flex: 1 }} contentContainerStyle={s.thread} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} ref={scroller} style={{ flex: 1 }} contentContainerStyle={s.thread} keyboardShouldPersistTaps="handled">
               <View style={[s.bubble, s.ness]}>
                 <Text style={s.nessText}>
                   Hi, I'm Ness. Ask me anything about using NessaHub — booking, therapy, payments, privacy.

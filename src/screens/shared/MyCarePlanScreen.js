@@ -48,7 +48,7 @@ export default function MyCarePlanScreen({ peopleNoun = 'clinician' }) {
 
   return (
     <ZCGround>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={ZC.accent} />

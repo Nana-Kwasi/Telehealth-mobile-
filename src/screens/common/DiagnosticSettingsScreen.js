@@ -109,7 +109,7 @@ export default function DiagnosticSettingsScreen({ profile, type = 'lab', isBran
   return (
     <View style={s.container}>
       <View style={s.tabs}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 6 }}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 6 }}>
           {SECTIONS.map(([k, label]) => (
             <TouchableOpacity key={k} onPress={() => setSection(k)} style={[s.tab, section === k && { backgroundColor: accent, borderColor: accent }]}>
               <Text style={[s.tabText, section === k && { color: '#fff' }]}>{label}</Text>
@@ -117,7 +117,7 @@ export default function DiagnosticSettingsScreen({ profile, type = 'lab', isBran
           ))}
         </ScrollView>
       </View>
-      <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 48 }}>
+      <ScrollView showsVerticalScrollIndicator={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 48 }}>
         {section === 'overview' && (
           <>
             <View style={s.statRow}>

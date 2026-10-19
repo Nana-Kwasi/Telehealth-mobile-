@@ -16,7 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { performLogout } from '../services/authService';
 import { TherapistColors } from '../constants/colors';
 import { ImageBackground } from 'react-native';
-import { resolveFileUrl } from '../utils/mediaUrl';
+import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
 
 const drawerItems = [
   { screen: 'TherapistHome',      icon: 'home-outline',            label: 'Dashboard' },
@@ -93,9 +93,9 @@ const TherapistDrawerContent = ({ navigation, profile, state }) => {
             navigation.closeDrawer();
           }}
         >
-          {profile?.photoURL && !photoFailed ? (
+          {avatarOf(profile) && !photoFailed ? (
             <Image
-              source={{ uri: resolveFileUrl(profile.photoURL) }}
+              source={{ uri: avatarOf(profile) }}
               style={styles.avatarImage}
               // A stored photo URL can be truthy but unloadable — a stale upload
               // host, or a capability token signed with a different secret.

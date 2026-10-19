@@ -73,7 +73,7 @@ export default function AdminDocComposerScreen({ role = 'DOCTOR' }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"
       automaticallyAdjustKeyboardInsets>
       <Text style={styles.h1}>Documents</Text>
       <Text style={styles.lead}>Drafted from your own details. Nothing is added that you did not write.</Text>
@@ -88,7 +88,7 @@ export default function AdminDocComposerScreen({ role = 'DOCTOR' }) {
           ))}
         </View>
         <Text style={styles.label}>Patient</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false}>
           {patients.map((p) => (
             <TouchableOpacity key={p.id} onPress={() => setPatientId(p.id)}
               style={[styles.chip, patientId === p.id && styles.chipOn]}>

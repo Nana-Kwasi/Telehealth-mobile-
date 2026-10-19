@@ -250,7 +250,7 @@ export default function DoctorNotesScreen() {
       {loading ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={filtered}
           keyExtractor={item => item.id}
           renderItem={renderNote}
@@ -285,7 +285,7 @@ export default function DoctorNotesScreen() {
                   </TouchableOpacity>
                 </View>
                 <View style={[styles.readDivider, { borderLeftColor: meta.color }]} />
-                <ScrollView style={styles.readBody}>
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.readBody}>
                   <Text style={styles.readContent}>{viewingNote.content}</Text>
                 </ScrollView>
                 <View style={styles.readFooter}>
@@ -314,12 +314,12 @@ export default function DoctorNotesScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
               {/* Patient selector */}
               {!editing && (
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Patient *</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                  <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
                     {patients.map(p => (
                       <TouchableOpacity
                         key={p.id}

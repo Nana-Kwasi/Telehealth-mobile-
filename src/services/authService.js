@@ -66,6 +66,47 @@ async function fetchProfileForRole(userId, mobileRole) {
 }
 
 // ─── Core login ───────────────────────────────────────────────────────────────
+/**
+ * Merge resolve-role into a freshly signed-in profile: the forced password-change
+ * flag and the organisation/branch fields live there, not on the role profile.
+ * Both sign-in paths (password and 2FA code) need it, or the 2FA path never
+ * shows the "set a new password" gate. Returns the effective role.
+ */
+async function applyResolvedRole(userId, mobileRole, resolvedProfile) {
+  let effectiveRole = mobileRole;
+  try {
+    const rr = await api(`/api/v1/auth/mobile/resolve-role/${userId}`);
+    if (rr?.profile?.mustChangePassword !== undefined) {
+      resolvedProfile.mustChangePassword = rr.profile.mustChangePassword;
+    }
+    if (rr?.profile) {
+      // Merge the organisation fields (organizationId, pharmacyName / labName /
+      // centerName, branchId, branchName…). `id` and `role` are pinned below so a
+      // stale value in the payload cannot break routing.
+      Object.assign(resolvedProfile, rr.profile, {
+        id: userId,
+        uid: userId,
+        email: resolvedProfile.email,
+      });
+      if (rr.profile.fullName || rr.profile.name || rr.profile.displayName) {
+        resolvedProfile.name = rr.profile.name || rr.profile.displayName || rr.profile.fullName;
+        resolvedProfile.fullName = resolvedProfile.name;
+      }
+    }
+    // Only adopt the branch roles. Every other role already resolves correctly from
+    // /auth/login, and narrowing this keeps working dashboards untouched.
+    const BRANCH_ROLES = ['branch_user', 'lab_branch', 'scan_branch'];
+    if (BRANCH_ROLES.includes(rr?.role)) {
+      effectiveRole = rr.role;
+      await AsyncStorage.setItem(STORAGE_KEYS.role, effectiveRole);
+    }
+    resolvedProfile.role = effectiveRole;
+  } catch (_) {
+    /* non-fatal — gate simply won't show if this lookup fails */
+  }
+  return effectiveRole;
+}
+
 export async function signInWithEmailOrUsername(identifier, password) {
   const email = identifier.trim().toLowerCase();
   const data = await api('/api/v1/auth/login', {
@@ -127,37 +168,7 @@ export async function signInWithEmailOrUsername(identifier, password) {
   // of its branch logins, so /auth/login alone cannot tell them apart. resolve-role
   // detects a branch (uid == organization_branches.id) and returns the branch role
   // plus the org/branch names and ids the dashboards read.
-  let effectiveRole = mobileRole;
-  try {
-    const rr = await api(`/api/v1/auth/mobile/resolve-role/${data.userId}`);
-    if (rr?.profile?.mustChangePassword !== undefined) {
-      resolvedProfile.mustChangePassword = rr.profile.mustChangePassword;
-    }
-    if (rr?.profile) {
-      // Merge the organisation fields (organizationId, pharmacyName / labName /
-      // centerName, branchId, branchName…). `id` and `role` are pinned below so a
-      // stale value in the payload cannot break routing.
-      Object.assign(resolvedProfile, rr.profile, {
-        id: data.userId,
-        uid: data.userId,
-        email: resolvedProfile.email,
-      });
-      if (rr.profile.fullName || rr.profile.name || rr.profile.displayName) {
-        resolvedProfile.name = rr.profile.name || rr.profile.displayName || rr.profile.fullName;
-        resolvedProfile.fullName = resolvedProfile.name;
-      }
-    }
-    // Only adopt the branch roles. Every other role already resolves correctly from
-    // /auth/login, and narrowing this keeps working dashboards untouched.
-    const BRANCH_ROLES = ['branch_user', 'lab_branch', 'scan_branch'];
-    if (BRANCH_ROLES.includes(rr?.role)) {
-      effectiveRole = rr.role;
-      await AsyncStorage.setItem(STORAGE_KEYS.role, effectiveRole);
-    }
-    resolvedProfile.role = effectiveRole;
-  } catch (_) {
-    /* non-fatal — gate simply won't show if this lookup fails */
-  }
+  const effectiveRole = await applyResolvedRole(data.userId, mobileRole, resolvedProfile);
 
   // persist for quick re-access
   await AsyncStorage.setItem('userProfile', JSON.stringify(resolvedProfile));
@@ -300,6 +311,8 @@ export async function signInWithRefreshToken(refreshToken) {
 
 /** The half of sign-in that runs once a real token exists. */
 async function finishSession(data, fallbackEmail) {
+  // A new sign-in starts the inactivity clock afresh.
+  try { (await import('./sessionIdle')).touchActivity(); } catch { /* ignore */ }
   const mobileRole = mapRole(data.role);
 
   await storeSession({
@@ -327,8 +340,10 @@ async function finishSession(data, fallbackEmail) {
     ...(profile || {}),
   };
 
-  await AsyncStorage.setItem('userRole', mobileRole);
+  const effectiveRole = await applyResolvedRole(data.userId, mobileRole, resolvedProfile);
+
+  await AsyncStorage.setItem('userRole', effectiveRole);
   await AsyncStorage.setItem('userProfile', JSON.stringify(resolvedProfile));
 
-  return { role: mobileRole, profile: resolvedProfile, refreshToken: data.refreshToken };
+  return { role: effectiveRole, profile: resolvedProfile, refreshToken: data.refreshToken };
 }

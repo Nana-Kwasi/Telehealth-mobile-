@@ -88,7 +88,7 @@ export default function ProviderWellnessScreen({ audience = 'my_clients', people
   return (
     <ZCGround>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets

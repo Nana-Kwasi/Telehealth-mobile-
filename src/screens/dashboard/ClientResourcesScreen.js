@@ -484,7 +484,7 @@ const ClientResourcesScreen = ({ navigation }) => {
       </View>
 
       {/* Resources List */}
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -526,7 +526,7 @@ const ClientResourcesScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               {selectedWorksheet?.description && (
                 <Text style={styles.worksheetDescription}>
                   {selectedWorksheet.description}
@@ -712,7 +712,7 @@ const ClientResourcesScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               {selectedResource?.description ? (
                 <Text style={styles.noteDescription}>{selectedResource.description}</Text>
               ) : null}
@@ -769,7 +769,7 @@ const ClientResourcesScreen = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
               {/* Render exactly what the PDF renders. This modal used to show a
                   few hand-picked keys (description / noteContent / content), so a
                   note whose fields live in structuredData displayed a single line

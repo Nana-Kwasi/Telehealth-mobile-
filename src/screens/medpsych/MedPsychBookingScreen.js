@@ -202,7 +202,7 @@ export default function MedPsychBookingScreen({ navigation }) {
   if (!flow) return <View style={zcStyles.screen} />;
 
   return (
-    <ScrollView style={zcStyles.screen} contentContainerStyle={styles.scroll}
+    <ScrollView showsVerticalScrollIndicator={false} style={zcStyles.screen} contentContainerStyle={styles.scroll}
         automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
       >
@@ -261,7 +261,7 @@ export default function MedPsychBookingScreen({ navigation }) {
         <Row label="Length" value="50 minutes" />
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>${rate.toFixed(2)}</Text>
+          <Text style={styles.totalValue}>GHS {rate.toFixed(2)}</Text>
         </View>
 
         <TouchableOpacity
@@ -270,7 +270,7 @@ export default function MedPsychBookingScreen({ navigation }) {
           disabled={busy || !time}
         >
           <Text style={zcStyles.btnPrimaryText}>
-            {busy ? 'Completing…' : `Pay $${rate.toFixed(0)} and book`}
+            {busy ? 'Completing…' : `Pay GHS ${rate.toFixed(0)} and book`}
           </Text>
         </TouchableOpacity>
 

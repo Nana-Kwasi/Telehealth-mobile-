@@ -1,14 +1,13 @@
 import React from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
-} from 'react-native';
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, DeviceEventEmitter } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { performLogout } from '../services/authService';
 import { api, getStoredUserId } from '../services/apiClient';
 import { DoctorColors } from '../constants/colors';
-import { resolveFileUrl } from '../utils/mediaUrl';
+import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
 
 const drawerItems = [
   { screen: 'DoctorHome',               icon: 'home-outline',            label: 'Dashboard' },
@@ -48,7 +47,14 @@ const DoctorDrawerContent = ({ navigation, profile, state }) => {
       const d = await api(`/api/v1/doctors/${uid}`).catch(() => null);
       if (d && !cancelled) setFreshProfile(d);
     })();
-    return () => { cancelled = true; };
+    // Settings saved (new photo, name…): fetch the live record again.
+    const sub = DeviceEventEmitter.addListener('refreshProfile', async () => {
+      const uid = profile?.id || (await getStoredUserId());
+      if (!uid) return;
+      const d = await api(`/api/v1/doctors/${uid}`).catch(() => null);
+      if (d && !cancelled) setFreshProfile(d);
+    });
+    return () => { cancelled = true; sub.remove(); };
   }, [profile?.id]);
 
   const handleLogout = async () => {
@@ -75,8 +81,8 @@ const DoctorDrawerContent = ({ navigation, profile, state }) => {
         <Text style={styles.logoSubtitle}>Doctor Portal</Text>
 
         <View style={styles.userInfo}>
-          {profile?.photoURL ? (
-            <Image source={{ uri: resolveFileUrl(profile.photoURL)}} style={styles.avatar} />
+          {avatarOf(freshProfile, profile) ? (
+            <Image source={{ uri: avatarOf(freshProfile, profile)}} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarInitial}>{displayName[0]?.toUpperCase()}</Text>

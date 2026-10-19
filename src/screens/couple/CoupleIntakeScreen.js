@@ -329,7 +329,7 @@ export default function CoupleIntakeScreen({ navigation, route }) {
 
   if (bootstrapError) {
     return (
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.errorPage}
         contentContainerStyle={styles.errorPageContent}
         keyboardShouldPersistTaps="handled"

@@ -71,7 +71,7 @@ const MedicalHistoryScreen = () => {
   return (
     <View style={styles.container}>
       {/* Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
         {TABS.map(t => (
           <TouchableOpacity
             key={t.key}

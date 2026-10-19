@@ -215,7 +215,7 @@ const ChildInfoScreen = ({ navigation }) => {
             <Text style={styles.label}>
               Gender <Text style={styles.required}>*</Text>
             </Text>
-            <ScrollView
+            <ScrollView showsVerticalScrollIndicator={false}
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.optionsContainer}
@@ -270,7 +270,7 @@ const ChildInfoScreen = ({ navigation }) => {
             <Text style={styles.label}>
               Grade <Text style={styles.required}>*</Text>
             </Text>
-            <ScrollView
+            <ScrollView showsVerticalScrollIndicator={false}
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.optionsContainer}
@@ -381,7 +381,7 @@ const ChildInfoScreen = ({ navigation }) => {
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Has your child received therapy before?</Text>
-            <ScrollView
+            <ScrollView showsVerticalScrollIndicator={false}
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.optionsContainer}

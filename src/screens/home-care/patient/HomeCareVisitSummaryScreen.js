@@ -23,7 +23,7 @@ export default function HomeCareVisitSummaryScreen({ route }) {
   const s = booking.patientVisitSummary || {};
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>Visit summary</Text>
       <View style={hc.card}>
         <Text style={hc.label}>Care provided</Text>

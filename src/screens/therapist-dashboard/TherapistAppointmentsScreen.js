@@ -221,7 +221,7 @@ export default function TherapistAppointmentsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
@@ -234,7 +234,7 @@ export default function TherapistAppointmentsScreen({ navigation }) {
             nothing is worth chasing. */}
         <AppointmentRiskCard />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
           {FILTERS.map((f) => (
             <TouchableOpacity
               key={f.id}

@@ -72,7 +72,7 @@ export default function RecordExplorerScreen({ route, title = 'My records' }) {
 
   return (
     <ZCGround>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets

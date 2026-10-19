@@ -155,7 +155,7 @@ export default function CarePlanComposerScreen({ role = 'DOCTOR' }) {
   return (
     <ZCGround>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
@@ -170,7 +170,7 @@ export default function CarePlanComposerScreen({ role = 'DOCTOR' }) {
           <View style={[styles.card, glassStyle]}>
             <GlassFill />
             <Text style={zcStyles.label}>Patient</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+            <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
               {patients.map((p) => (
                 <TouchableOpacity
                   key={p.id}

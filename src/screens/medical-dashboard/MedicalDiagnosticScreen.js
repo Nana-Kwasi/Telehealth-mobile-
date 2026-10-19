@@ -110,7 +110,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
       {loading ? (
         <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={filteredOrders}
           keyExtractor={i => i.id}
           renderItem={renderItem}
@@ -135,7 +135,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
                 <Ionicons name="close" size={24} color={C.text} />
               </TouchableOpacity>
             </View>
-            <ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false}>
               {selected && ['PENDING', 'IN_PROGRESS', 'SCHEDULED'].includes(normalizeDiagnosticOrderStatus(selected.status)) && (
               <View style={styles.idCard}>
                 <Ionicons name="id-card-outline" size={28} color={C.primary} />

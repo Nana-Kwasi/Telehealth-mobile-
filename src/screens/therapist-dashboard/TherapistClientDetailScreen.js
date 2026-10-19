@@ -536,7 +536,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
         <RecordGapsCard patientId={clientId} />
         <CodingAssistCard patientId={clientId} accent={TherapistColors.primary} />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
           {[...TABS, ...(canPrescribe ? PSYCHIATRY_TABS : [])].map((tab) => (
             <TouchableOpacity
               key={tab}
@@ -1026,7 +1026,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
               </TouchableOpacity>
             </View>
             {viewingRx && (
-              <ScrollView>
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={docStyles.dischargeSub}>Patient: {viewingRx.patientName || client?.name || 'Patient'}</Text>
                 <Text style={docStyles.dischargeSub}>Diagnosis: {viewingRx.diagnosis || '—'}</Text>
                 <Text style={docStyles.dischargeSub}>Date: {viewingRx.date || '—'}</Text>
@@ -1088,7 +1088,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
                 <Ionicons name="close" size={24} color={TherapistColors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false}>
               {getNoteSections(viewingNote?.note).map((s) => (
                 <View key={s.key} style={styles.noteSection}>
                   <Text style={styles.noteSectionLabel}>{s.label}</Text>

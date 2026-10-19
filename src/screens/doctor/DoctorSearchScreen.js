@@ -241,7 +241,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
         {item.consultationFee ? (
           <View style={styles.detailChip}>
             <Ionicons name="cash-outline" size={14} color={MedicalColors.textSecondary} />
-            <Text style={styles.detailText}>${item.consultationFee}</Text>
+            <Text style={styles.detailText}>GHS {item.consultationFee}</Text>
           </View>
         ) : null}
       </View>
@@ -301,7 +301,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
       {showFilters && (
         <View style={styles.filtersContainer}>
           <Text style={styles.filterLabel}>Specialty</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
+          <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
             <TouchableOpacity
               style={[styles.chip, !selectedSpecialty && styles.chipActive]}
               onPress={() => setSelectedSpecialty(null)}
@@ -325,7 +325,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
 
       {/* Sort & Favorites Bar */}
       <View style={styles.sortBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
           {SORT_OPTIONS.map(opt => (
             <TouchableOpacity
               key={opt.key}
@@ -385,7 +385,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
               ))}
             </View>
 
-            <Text style={styles.modalLabel}>Max Consultation Fee ($)</Text>
+            <Text style={styles.modalLabel}>Max Consultation Fee (GHS)</Text>
             <TextInput
               style={styles.modalInput}
               placeholder="e.g., 100"

@@ -90,7 +90,7 @@ export default function HomeCareBookingStatusScreen({ navigation, route }) {
   }
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>Booking status</Text>
       <View style={hc.card}>
         <Text style={{ fontWeight: '800', fontSize: 18 }}>{statusLabel(booking.status)}</Text>

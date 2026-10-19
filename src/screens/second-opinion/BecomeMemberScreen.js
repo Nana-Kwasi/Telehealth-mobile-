@@ -101,7 +101,7 @@ export default function BecomeMemberScreen({ navigation }) {
 
   return (
     <ZCGround>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <Text style={[zcStyles.display, styles.title]}>Continue your care with us</Text>
         <Text style={zcStyles.body}>
           Membership turns a one-off review into ongoing therapy — with a

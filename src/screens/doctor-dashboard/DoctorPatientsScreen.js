@@ -162,7 +162,7 @@ export default function DoctorPatientsScreen({ navigation }) {
       </View>
 
       {/* Status Tabs */}
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -188,7 +188,7 @@ export default function DoctorPatientsScreen({ navigation }) {
       {loading ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={filtered}
           keyExtractor={item => item.id}
           renderItem={renderItem}

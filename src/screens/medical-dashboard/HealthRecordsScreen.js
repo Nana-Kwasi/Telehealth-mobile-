@@ -277,7 +277,7 @@ const HealthRecordsScreen = () => {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {/* Header */}
         <View style={styles.headerCard}>
           <View style={styles.headerIcon}>

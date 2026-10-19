@@ -513,7 +513,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
       </View>
 
       {/* Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
         {TABS.map(t => (
           <TouchableOpacity key={t} style={[styles.tabItem, activeTab === t && styles.tabItemActive]} onPress={() => setActiveTab(t)}>
             <Text style={[styles.tabText, activeTab === t && styles.tabTextActive]}>{t}</Text>
@@ -522,7 +522,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
       </ScrollView>
 
       {/* Tab Content */}
-      <ScrollView style={styles.tabContent} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.tabContent} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
 
         {/* ── OVERVIEW ── */}
         {activeTab === 'Overview' && (
@@ -643,7 +643,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             {showNoteForm && (
               <View style={styles.formCard}>
                 <Text style={styles.formLabel}>Note Type</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
                   {NOTE_TYPES.map(t => (
                     <TouchableOpacity
                       key={t.value}
@@ -1147,7 +1147,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
             {viewingRx && (
-              <ScrollView>
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.dischargeSub}>Patient: {viewingRx.patientName || patient?.name || 'Patient'}</Text>
                 <Text style={styles.dischargeSub}>Diagnosis: {viewingRx.diagnosis || '—'}</Text>
                 <Text style={styles.dischargeSub}>Date: {viewingRx.date || '—'}</Text>
@@ -1202,7 +1202,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   </View>
                 </View>
                 <View style={{ height: 3, backgroundColor: tm.color + '33', borderTopWidth: 2, borderTopColor: tm.color }} />
-                <ScrollView style={{ maxHeight: 260, paddingHorizontal: 20, paddingVertical: 14 }}>
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 260, paddingHorizontal: 20, paddingVertical: 14 }}>
                   <Text style={{ fontSize: 15, color: DoctorColors.text, lineHeight: 24 }}>{viewingNote.content}</Text>
                 </ScrollView>
                 <View style={{ flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
@@ -1240,7 +1240,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   </TouchableOpacity>
                 </View>
 
-                <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 16 }}>
                   {recTypes.length > 0 ? (
                     <View>
                       <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 8 }}>Document types</Text>
@@ -1333,7 +1333,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                   </View>
                 </View>
 
-                <ScrollView style={{ paddingHorizontal: 20 }} contentContainerStyle={{ paddingVertical: 16, gap: 16 }}>
+                <ScrollView showsVerticalScrollIndicator={false} style={{ paddingHorizontal: 20 }} contentContainerStyle={{ paddingVertical: 16, gap: 16 }}>
                   {/* Pain level */}
                   {viewingFeeling.painLevel != null && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#e2e8f0' }}>

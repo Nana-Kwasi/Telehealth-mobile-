@@ -99,7 +99,7 @@ export default function MedPsychSignUpScreen({ navigation, route }) {
       style={zcStyles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* The mark, bleeding off the right edge. The ground behind it is the
             colour sampled from the artwork, so the seam does not show. */}
 

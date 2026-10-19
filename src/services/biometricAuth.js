@@ -1,6 +1,7 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from './apiClient';
 
 /**
  * Biometric sign-in: Face ID / Touch ID / fingerprint.
@@ -65,10 +66,22 @@ export async function promptBiometric(reason = 'Sign in to NessaHub') {
 }
 
 /** Called after a successful password login, when the user has opted in. */
-export async function enableBiometricLogin(refreshToken, email) {
-  if (!refreshToken) return false;
+export async function enableBiometricLogin(_sessionRefreshToken, email) {
+  // Face ID gets its OWN device sign-in from the server. Storing the session's
+  // refresh token broke it: logging out revokes that token, and every silent
+  // session renewal replaced it, so the saved copy was dead ("expired").
+  let deviceToken = null;
   try {
-    await SecureStore.setItemAsync(TOKEN_KEY, refreshToken);
+    const r = await api('/api/v1/auth/me/sessions/device-key', { method: 'POST' });
+    deviceToken = r?.refreshToken || null;
+  } catch {
+    deviceToken = null;
+  }
+  if (!deviceToken) return false;
+  try {
+    const old = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (old && old !== deviceToken) revokeQuietly(old);
+    await SecureStore.setItemAsync(TOKEN_KEY, deviceToken);
     await AsyncStorage.multiSet([[ENABLED_KEY, 'true'], [EMAIL_KEY, email || '']]);
     return true;
   } catch {
@@ -77,7 +90,16 @@ export async function enableBiometricLogin(refreshToken, email) {
 }
 
 /** Switching it off must destroy the stored token, not just hide the button. */
+/** End a device sign-in on the server too, so a removed key cannot be used. */
+function revokeQuietly(token) {
+  api('/api/v1/auth/logout', { method: 'POST', authenticated: false, body: { refreshToken: token } }).catch(() => {});
+}
+
 export async function disableBiometricLogin() {
+  try {
+    const old = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (old) revokeQuietly(old);
+  } catch { /* nothing stored */ }
   try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch { /* already gone */ }
   await AsyncStorage.multiRemove([ENABLED_KEY, EMAIL_KEY]);
 }

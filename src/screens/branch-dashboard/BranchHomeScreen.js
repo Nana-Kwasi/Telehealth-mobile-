@@ -38,7 +38,7 @@ export default function BranchHomeScreen({ profile, navigation }) {
 
   return (
     <>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadStats(); }} tintColor={C.primary} />}
       >

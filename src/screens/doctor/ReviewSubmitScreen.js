@@ -55,7 +55,7 @@ const ReviewSubmitScreen = ({ route, navigation }) => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {/* Header Card */}
         <View style={styles.headerCard}>
           <View style={styles.doctorAvatar}>

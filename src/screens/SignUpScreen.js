@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, storeSession } from '../services/apiClient';
+import { createAppointment } from '../services/doctorDataService';
 import { Colors } from '../constants/colors';
 import { COUPLE_STORAGE_KEYS } from '../constants/coupleTherapyConfig';
 import {
@@ -66,8 +67,12 @@ const SignUpScreen = ({ route, navigation }) => {
       const isCoupleEarly = clientData?.therapyType === 'couples' || !!coupleIdEarly;
       // Medical intent is set on IntentScreen ('userIntent'='medical') even if the
       // user bails before the doctor-booking intake (which sets th.medicalSkip).
+      // Therapy answers from the questionnaire (or the therapy intent) win: stale
+      // medical flags left on the phone by an earlier Doctor attempt used to turn a
+      // new therapy client into a medical patient, skipping the therapist picker.
+      const isTherapyEarly = !!clientData?.therapyType || storedIntentEarly === 'therapy' || storedIntentEarly === 'medpsych';
       const isMedicalEarly =
-        !isCoupleEarly &&
+        !isCoupleEarly && !isTherapyEarly &&
         (storedIntentEarly === 'medical' || !!(medicalSkipEarly || pendingBookingEarly));
       const regRole = isMedicalEarly ? 'PATIENT' : 'CLIENT';
       const sessionRole = isMedicalEarly ? 'patient' : 'client';
@@ -78,6 +83,7 @@ const SignUpScreen = ({ route, navigation }) => {
       });
       const userId = regData.userId;
       await storeSession({ token: regData.token, refreshToken: regData.refreshToken, userId, role: sessionRole });
+      try { (await import('../services/sessionIdle')).touchActivity(); } catch { /* ignore */ }
       let clientId = await AsyncStorage.getItem('th.clientId');
       const coupleId =
         clientData?.coupleId || (await AsyncStorage.getItem(COUPLE_STORAGE_KEYS.coupleId));
@@ -193,6 +199,21 @@ const SignUpScreen = ({ route, navigation }) => {
       }
 
       if (isMedical) {
+        // A doctor booked (and paid for) before sign-up becomes a real appointment now.
+        try {
+          const raw = await AsyncStorage.getItem('th.pendingBooking');
+          const pb = raw ? JSON.parse(raw) : null;
+          if (pb?.doctorId) {
+            await createAppointment({ ...pb, clientId: userId, clientName: name, patientId: userId });
+            if (pb.paymentReference) {
+              await api('/api/v1/payments/record', { method: 'POST', body: { reference: pb.paymentReference, description: `Consultation with Dr. ${pb.doctorName || ''}`.trim() } }).catch(() => {});
+            }
+            await AsyncStorage.removeItem('th.pendingBooking');
+          }
+        } catch (bookErr) {
+          // Kept for a retry; the payment reference is saved with it.
+          console.warn('Could not create the paid appointment yet:', bookErr?.message);
+        }
         await AsyncStorage.removeItem('th.medicalSkip');
         await AsyncStorage.setItem('userIntent', 'medical');
         navigation.replace('MedicalMain');
@@ -226,7 +247,7 @@ const SignUpScreen = ({ route, navigation }) => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <Text style={styles.title}>Create Your Account</Text>
           <Text style={styles.subtitle}>

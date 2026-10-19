@@ -45,12 +45,12 @@ export function ProviderClaimsMobile({ accent = '#0f766e' }) {
         <View style={s.kpi}><Text style={[s.kpiV, { color: '#0f766e' }]}>{money(sum(['APPROVED']))}</Text><Text style={s.kpiL}>Approved</Text></View>
         <View style={s.kpi}><Text style={[s.kpiV, { color: '#16a34a' }]}>{money(sum(['PAID']))}</Text><Text style={s.kpiL}>Paid</Text></View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingBottom: 8 }}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingBottom: 8 }}>
         {[['', 'All'], ['QUERIED', 'Queried'], ['SUBMITTED', 'With insurer'], ['APPROVED', 'Approved'], ['PAID', 'Paid'], ['REJECTED', 'Rejected']].map(([k, l]) => (
           <TouchableOpacity key={k || 'all'} onPress={() => setStatus(k)} style={[s.tab, status === k && { backgroundColor: accent, borderColor: accent }]}><Text style={[s.tabT, status === k && { color: '#fff' }]}>{l}</Text></TouchableOpacity>))}
       </ScrollView>
       {loading ? <ActivityIndicator style={{ margin: 30 }} color={accent} /> : (
-        <FlatList data={rows} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, gap: 8, flexGrow: 1 }}
+        <FlatList showsVerticalScrollIndicator={false} data={rows} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, gap: 8, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
           ListEmptyComponent={<Text style={s.empty}>No insurance claims yet.</Text>}
           renderItem={({ item: r }) => (
@@ -62,7 +62,7 @@ export function ProviderClaimsMobile({ accent = '#0f766e' }) {
       )}
       <Modal visible={!!open} transparent animationType="slide" onRequestClose={() => setOpen(null)}>
         <View style={s.overlay}><View style={s.sheet}>
-          {open && <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
+          {open && <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 8 }}>
             <View style={s.row}><Text style={[s.title, { fontSize: 17 }]}>Claim {open.claimRef}</Text><TouchableOpacity onPress={() => setOpen(null)}><Text style={{ fontSize: 22 }}>✕</Text></TouchableOpacity></View>
             <Pill map={CLAIM} k={open.status} />
             {open.status === 'QUERIED' || open.status === 'REJECTED' ? <View style={[s.note, { backgroundColor: open.status === 'QUERIED' ? '#fffbeb' : '#fef2f2' }]}><Text style={s.title}>{open.status === 'QUERIED' ? 'The insurer asks' : 'Rejected'}</Text><Text style={s.meta}>{open.decisionReason}</Text></View> : null}
@@ -131,7 +131,7 @@ export function ProviderPreauthMobile({ accent = '#0f766e', listPath = `${I}/pre
   };
   const cancel = (p) => Alert.alert('Cancel request?', '', [{ text: 'No', style: 'cancel' }, { text: 'Cancel it', style: 'destructive', onPress: async () => { try { await api(`${I}/preauth/${p.id}/cancel`, { method: 'POST' }); load(); } catch (e) { Alert.alert('Error', e?.message); } } }]);
   return (
-    <FlatList style={{ backgroundColor: '#f8fafc' }} data={rows} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, gap: 8, flexGrow: 1 }}
+    <FlatList showsVerticalScrollIndicator={false} style={{ backgroundColor: '#f8fafc' }} data={rows} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, gap: 8, flexGrow: 1 }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} />} ListEmptyComponent={<Text style={s.empty}>No approval requests yet.</Text>}
       renderItem={({ item: p }) => (
         <View style={s.card}>
@@ -170,7 +170,7 @@ export function PreauthRequestSheet({ visible, patientId, patientName, cards: gi
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={s.overlay}><View style={s.sheet}><ScrollView contentContainerStyle={{ padding: 16, gap: 8 }} keyboardShouldPersistTaps="handled">
+      <View style={s.overlay}><View style={s.sheet}><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 8 }} keyboardShouldPersistTaps="handled">
         <View style={s.row}><Text style={[s.title, { fontSize: 17 }]}>Ask the insurer for approval</Text><TouchableOpacity onPress={onClose}><Text style={{ fontSize: 22 }}>✕</Text></TouchableOpacity></View>
         <Text style={s.meta}>{patientName || 'Patient'} · {(initialItems || []).map(i => i.description).join(', ')}</Text>
         {cards == null ? <ActivityIndicator color={accent} /> : cards.length === 0 ? <Text style={{ color: '#b91c1c' }}>This patient has no verified insurance card.</Text> : cards.map(c => (

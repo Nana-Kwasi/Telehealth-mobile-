@@ -136,7 +136,7 @@ export default function TherapistCoupleCaseScreen({ route, navigation }) {
   // ── List mode ──
   if (!coupleId) {
     return (
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         style={styles.container}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
@@ -178,7 +178,7 @@ export default function TherapistCoupleCaseScreen({ route, navigation }) {
 
   // ── Case mode ──
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}

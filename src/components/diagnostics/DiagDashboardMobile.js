@@ -63,7 +63,7 @@ export default function DiagDashboardMobile({ type = 'lab', profile, isBranch, c
   );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.background }}
+    <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, backgroundColor: C.background }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.primary} />}>
       <View style={[st.hero, { backgroundColor: C.primary }]}>
         <Text style={st.heroGreet}>{hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'}</Text>

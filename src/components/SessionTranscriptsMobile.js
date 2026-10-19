@@ -101,7 +101,7 @@ export function SessionReviewSheet({ id, visible, onClose, onSaved, accent = '#2
         {busy === 'loading' ? (
           <View style={{ padding: 24, alignItems: 'center', gap: 10 }}><ActivityIndicator color={accent} /><Text style={s.muted}>Drafting the notes from the transcript… this can take 1–2 minutes.</Text></View>
         ) : !data ? <Text style={s.muted}>{msg}</Text> : (
-          <ScrollView contentContainerStyle={{ gap: 8, paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
             <Text style={s.muted}>{locked ? 'Saved to the record. You can re-read the transcript below.' : 'Drafted from the transcript only. Nothing is in the record until you save.'}</Text>
             {(data.flags || []).length ? <Text style={s.crisis}>Safety-related words were said: {data.flags.map((f) => `“${f.text}”`).join(' ')}</Text> : null}
             {!therapy && data.draft ? CONSULT_FIELDS.map(([k, l]) => (val(data.draft[k]) ? <Text key={k} style={s.field}><Text style={s.fieldLabel}>{l}: </Text>{val(data.draft[k])}</Text> : null)) : null}

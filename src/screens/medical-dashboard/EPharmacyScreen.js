@@ -201,7 +201,7 @@ export default function EPharmacyScreen() {
 
       {/* Prescriptions Tab */}
       {tab === 'prescriptions' && (
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -294,7 +294,7 @@ export default function EPharmacyScreen() {
       )}
 
       {tab === 'myPharmacies' && (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 12 }}>
           {loadingMyPh ? (
             <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} />
           ) : myPharmacies.length === 0 ? (
@@ -356,7 +356,7 @@ export default function EPharmacyScreen() {
           {loadingPh ? (
             <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} />
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 12 }}>
               {filteredPh.length === 0 ? (
                 <View style={styles.empty}>
                   <Text style={{ fontSize: 48 }}>🏪</Text>
@@ -408,7 +408,7 @@ export default function EPharmacyScreen() {
               </TouchableOpacity>
             </View>
             {viewingRx && (
-              <ScrollView style={{ marginTop: 8 }} contentContainerStyle={{ gap: 8 }}>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 8 }} contentContainerStyle={{ gap: 8 }}>
                 <Text style={styles.rxDoctor}>Dr. {viewingRx.doctorName || 'Doctor'}</Text>
                 <Text style={styles.rxDiag}>{viewingRx.diagnosis || '—'} · {viewingRx.date || ''}</Text>
                 {viewingRx.prescriptionRef ? <Text style={styles.refCode}>{viewingRx.prescriptionRef}</Text> : null}

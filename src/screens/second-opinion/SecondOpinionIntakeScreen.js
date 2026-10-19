@@ -56,7 +56,7 @@ export default function SecondOpinionIntakeScreen({ navigation }) {
 
   return (
     <ZCGround>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"

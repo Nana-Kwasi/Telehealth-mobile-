@@ -60,7 +60,7 @@ export default function SecondOpinionHomeScreen({ navigation }) {
 
   return (
     <ZCGround>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >

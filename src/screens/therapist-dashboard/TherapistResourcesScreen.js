@@ -604,7 +604,7 @@ export default function TherapistResourcesScreen({ profile }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filterScroll}
@@ -641,7 +641,7 @@ export default function TherapistResourcesScreen({ profile }) {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <SectionList
+      <SectionList showsVerticalScrollIndicator={false}
         sections={sections}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={listHeader}
@@ -709,7 +709,7 @@ export default function TherapistResourcesScreen({ profile }) {
                 )}
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
               <Text style={styles.fieldLabel}>Title *</Text>
               <TextInput
                 style={styles.input}
@@ -730,7 +730,7 @@ export default function TherapistResourcesScreen({ profile }) {
               />
 
               <Text style={styles.fieldLabel}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
                 {Object.entries(RESOURCE_CATEGORIES).map(([key, cat]) => (
                   <TouchableOpacity
                     key={key}
@@ -859,7 +859,7 @@ export default function TherapistResourcesScreen({ profile }) {
               </View>
 
               <Text style={styles.fieldLabel}>Target audience</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
                 {Object.entries(TARGET_AUDIENCES).map(([key, label]) => (
                   <TouchableOpacity
                     key={key}
@@ -992,7 +992,7 @@ export default function TherapistResourcesScreen({ profile }) {
             )}
           </View>
           {viewResource ? (
-            <ScrollView contentContainerStyle={styles.modalBody}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody}>
               <Text style={styles.viewBadge}>{getCategoryLabel(viewResource.category)}</Text>
               {viewResource.therapistId !== therapistUid ? (
                 <Text style={styles.authorMeta}>
@@ -1059,7 +1059,7 @@ export default function TherapistResourcesScreen({ profile }) {
                 )}
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
               <Text style={styles.fieldLabel}>Title *</Text>
               <TextInput
                 style={styles.input}
@@ -1095,7 +1095,7 @@ export default function TherapistResourcesScreen({ profile }) {
                 placeholderTextColor={TherapistColors.textLight}
               />
               <Text style={styles.fieldLabel}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
                 {Object.entries(WORKSHEET_CATEGORIES).map(([key, label]) => (
                   <TouchableOpacity
                     key={key}
@@ -1130,7 +1130,7 @@ export default function TherapistResourcesScreen({ profile }) {
                   No clients assigned to you yet — pull down on the library to refresh.
                 </Text>
               ) : null}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
                 {clients.map((c) => {
                   const selected = (worksheetForm.assignedTo || []).includes(c.id);
                   return (
@@ -1324,7 +1324,7 @@ export default function TherapistResourcesScreen({ profile }) {
             )}
           </View>
           {viewWorksheet ? (
-            <ScrollView contentContainerStyle={styles.modalBody}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody}>
               <Text style={[styles.viewBadge, { color: '#8b5cf6' }]}>
                 {WORKSHEET_CATEGORIES[viewWorksheet.category] || viewWorksheet.category}
               </Text>

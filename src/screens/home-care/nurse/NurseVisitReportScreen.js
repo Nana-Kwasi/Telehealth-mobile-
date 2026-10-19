@@ -96,7 +96,7 @@ export default function NurseVisitReportScreen({ navigation, route }) {
 
   if (!booking) {
     return (
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -108,7 +108,7 @@ export default function NurseVisitReportScreen({ navigation, route }) {
   }
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>{isPackage ? 'Visit log' : 'Visit report'}</Text>
       <Text style={hc.sub}>
         {isPackage ? 'Pick the calendar day you attended. Each submission appears in the patient’s visit timeline.' : 'Add care notes and vitals.'}

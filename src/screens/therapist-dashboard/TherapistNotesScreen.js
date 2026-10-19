@@ -281,7 +281,7 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
         <>
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Target audience</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+            <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
               {TARGET_AUDIENCE.map((opt) => (
                 <TouchableOpacity
                   key={opt.id}
@@ -358,7 +358,7 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
           ))}
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Difficulty</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+            <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
               {DIFFICULTY.map((d) => (
                 <TouchableOpacity
                   key={d}
@@ -388,7 +388,7 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
               No clients available yet — pull down on the notes list to refresh.
             </Text>
           ) : null}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+          <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
             {clients.map((c) => (
               <TouchableOpacity
                 key={c.id}
@@ -574,7 +574,7 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
         />
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
         {FILTER_OPTIONS.map((f) => (
           <TouchableOpacity
             key={f.id}
@@ -665,9 +665,9 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
                 <Ionicons name="close" size={22} color={TherapistColors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
               <Text style={styles.formLabel}>Note type</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.chipRow, { marginBottom: 12 }]}>
+              <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={[styles.chipRow, { marginBottom: 12 }]}>
                 {Object.entries(NOTE_TEMPLATES).map(([key, tpl]) => (
                   <TouchableOpacity
                     key={key}
@@ -712,7 +712,7 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
               </TouchableOpacity>
             </View>
             {viewNote && (
-              <ScrollView contentContainerStyle={styles.modalBody}>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody}>
                 <View style={styles.viewMetaRow}>
                   <Text style={styles.viewMeta}>
                     {viewNote.clientName || viewNote.bookTitle || '—'} ·{' '}

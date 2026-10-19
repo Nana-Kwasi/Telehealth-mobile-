@@ -111,7 +111,7 @@ export default function ClinicianFollowUpsScreen({ role = 'THERAPIST' }) {
 
   return (
     <View style={styles.flex}>
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -234,7 +234,7 @@ export default function ClinicianFollowUpsScreen({ role = 'THERAPIST' }) {
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Who</Text>
           {subject ? (
             <View style={styles.chosen}>

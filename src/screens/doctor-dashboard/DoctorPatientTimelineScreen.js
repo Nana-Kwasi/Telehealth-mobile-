@@ -102,7 +102,7 @@ export default function DoctorPatientTimelineScreen({ route }) {
       {loading ? (
         <ActivityIndicator color={C.primary} style={{ margin: 32 }} />
       ) : (
-        <SectionList
+        <SectionList showsVerticalScrollIndicator={false}
           sections={sections}
           keyExtractor={i => i.id}
           renderItem={renderItem}

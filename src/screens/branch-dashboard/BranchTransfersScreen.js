@@ -66,7 +66,7 @@ export default function BranchTransfersScreen({ profile }) {
   }
 
   return (
-    <FlatList
+    <FlatList showsVerticalScrollIndicator={false}
       style={styles.container}
       data={visible}
       keyExtractor={r => r.key}

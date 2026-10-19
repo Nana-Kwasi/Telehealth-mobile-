@@ -7,7 +7,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/apiClient';
 import { MedicalColors } from '../constants/colors';
 import { signOut } from '../services/authService';
-import { resolveFileUrl } from '../utils/mediaUrl';
+import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
+import { performLogout } from '../services/authService';
 
 const MedicalDrawerContent = ({ navigation, profile }) => {
   const [hasPrimaryDoctor, setHasPrimaryDoctor] = useState(false);
@@ -30,6 +31,11 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
   }, [profile?.id]);
   const handleLogout = async () => {
     try {
+      // This step was empty: "Log out" only jumped to the start screen and the
+      // session stayed on the phone, so the next "new patient" booked and paid as
+      // the previous person. Sign out for real: server session, push token and
+      // every local key.
+      await performLogout();
     } catch (error) {
       // Never block sign-out on a cleanup failure. The session token is
       // already gone by this point, so stranding the user on the dashboard
@@ -72,8 +78,8 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
           <Text style={styles.logoSubtext}>Medical</Text>
         </View>
         <View style={styles.userInfo}>
-          {profile?.photoURL ? (
-            <Image source={{ uri: resolveFileUrl(profile.photoURL)}} style={styles.avatar} />
+          {avatarOf(profile) ? (
+            <Image source={{ uri: avatarOf(profile)}} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>
@@ -86,7 +92,7 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
         </View>
       </View>
 
-      <ScrollView style={styles.menuContainer}>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
         {drawerItems.map((item) => (
           <TouchableOpacity
             key={item.name}

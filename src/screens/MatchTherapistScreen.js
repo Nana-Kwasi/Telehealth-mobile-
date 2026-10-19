@@ -259,7 +259,7 @@ const MatchTherapistScreen = ({ navigation, route }) => {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView showsVerticalScrollIndicator={false} style={styles.container} contentContainerStyle={styles.contentContainer}>
       <Text style={styles.title}>
         {coupleProfile ? 'Choose your couple therapist' : 'Choose your therapist'}
       </Text>

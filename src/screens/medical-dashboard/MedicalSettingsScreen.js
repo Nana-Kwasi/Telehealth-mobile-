@@ -327,8 +327,9 @@ export default function MedicalSettingsScreen({ navigation, variant = 'medical' 
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out All', style: 'destructive', onPress: async () => {
-          api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
-          await clearSession();
+          // End every other device on the server, then this one.
+          await api('/api/v1/auth/me/sessions/sign-out-others', { method: 'POST' }).catch(() => {});
+          try { const { performLogout } = await import('../../services/authService'); await performLogout(); } catch { await clearSession(); }
           navigation.getParent()?.replace('Intent');
         }
       }
@@ -424,7 +425,7 @@ export default function MedicalSettingsScreen({ navigation, variant = 'medical' 
   const handleLogout = async () => {
     Alert.alert('Log Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => { api('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); await clearSession(); await wipeLocalData(); navigation.getParent()?.replace('Intent'); } }
+      { text: 'Log Out', style: 'destructive', onPress: async () => { try { const { performLogout } = await import('../../services/authService'); await performLogout(); } catch { await clearSession(); await wipeLocalData(); } navigation.getParent()?.replace('Intent'); } }
     ]);
   };
 
@@ -436,7 +437,7 @@ export default function MedicalSettingsScreen({ navigation, variant = 'medical' 
   return (
     <View style={s.root}>
       {/* Tab bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
         {V.tabs.map(t => (
           <TouchableOpacity key={t.key} style={[s.tab, activeTab === t.key && (t.danger ? s.tabActiveDanger : s.tabActive)]} onPress={() => setActiveTab(t.key)}>
             <Ionicons name={t.icon} size={16} color={activeTab === t.key ? (t.danger ? '#dc2626' : C.primary) : '#94a3b8'} />

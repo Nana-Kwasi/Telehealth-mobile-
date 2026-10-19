@@ -200,7 +200,7 @@ const ParentGuardianInfoScreen = ({ navigation }) => {
             <Text style={styles.label}>
               Relationship to Child <Text style={styles.required}>*</Text>
             </Text>
-            <ScrollView
+            <ScrollView showsVerticalScrollIndicator={false}
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.optionsContainer}

@@ -67,7 +67,7 @@ export default function PharmacyActivityScreen({ profile, isBranch = false }) {
   }
 
   return (
-    <FlatList
+    <FlatList showsVerticalScrollIndicator={false}
       style={styles.container}
       data={events}
       keyExtractor={e => String(e.id)}

@@ -794,7 +794,7 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
           view, counted from scheduled sessions and clinical notes. */}
       <PracticeAnalyticsCard accent={TherapistColors.primary} />
 
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.kpiRow}
@@ -1212,7 +1212,7 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
                 <Ionicons name="close" size={22} color={TherapistColors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ maxHeight: 320 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 320 }}>
               {notifications.length === 0 ? (
                 <Text style={styles.notifEmpty}>No notifications</Text>
               ) : (

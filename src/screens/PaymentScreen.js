@@ -173,7 +173,7 @@ const PaymentScreen = ({ navigation, route }) => {
   if (blocked) return null;
 
   return (
-    <ScrollView
+    <ScrollView showsVerticalScrollIndicator={false}
       // The keyboard covered whatever was being typed into: this screen had
       // no keyboard handling at all. iOS insets the scroll view; Android
       // resizes the window (app.json softwareKeyboardLayoutMode default).
@@ -222,7 +222,7 @@ const PaymentScreen = ({ navigation, route }) => {
               onPress={() => setPlan(p.key)}
             >
               <Text style={styles.planTitle}>{p.title}</Text>
-              <Text style={styles.planPrice}>${p.price}</Text>
+              <Text style={styles.planPrice}>GHS {p.price}</Text>
               <Text style={styles.planPeriod}>/week</Text>
               <View style={styles.featuresContainer}>
                 {p.features.map((feature, index) => (

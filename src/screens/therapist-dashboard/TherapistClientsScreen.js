@@ -368,7 +368,7 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
           )}
         </View>
 
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
@@ -576,7 +576,7 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
                 <Ionicons name="close" size={22} color={TherapistColors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
               {allTherapists.length === 0 ? (
                 <Text style={styles.emptySubtitle}>No therapists found</Text>
               ) : (

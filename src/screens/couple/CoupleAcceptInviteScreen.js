@@ -70,7 +70,7 @@ export default function CoupleAcceptInviteScreen({ navigation, route }) {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           automaticallyAdjustKeyboardInsets
           keyboardShouldPersistTaps="handled"

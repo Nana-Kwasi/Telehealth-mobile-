@@ -284,7 +284,7 @@ export default function DoctorVideoScreen() {
       {loading ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={DoctorColors.primary} /></View>
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           // A FlatList defaults to keyboardShouldPersistTaps="never", so with the
           // search keyboard open the first tap on a result was swallowed
           // dismissing it — you had to tap every result twice. "handled" lets the

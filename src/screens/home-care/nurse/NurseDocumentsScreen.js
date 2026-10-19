@@ -61,7 +61,7 @@ export default function NurseDocumentsScreen({ profile, embedded = false }) {
   if (embedded) return <View>{body}</View>;
 
   return (
-    <ScrollView style={hc.screen} contentContainerStyle={hc.content}>
+    <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="Verification documents" subtitle={`Status: ${nurse?.documentsStatus || 'not submitted'}`} />
       {body}
     </ScrollView>

@@ -68,7 +68,7 @@ export default function PrescriptionRequestsInboxMobile({ rxRoute }) {
     const isOpen = ['PENDING_REVIEW', 'UNDER_REVIEW', 'NEEDS_CLARIFICATION'].includes(selected.status);
     const flags = selected.safety?.flags || [];
     return (
-      <ScrollView style={s.container} contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+      <ScrollView showsVerticalScrollIndicator={false} style={s.container} contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         <TouchableOpacity onPress={() => { setSelected(null); load(); }}><Text style={s.link}>← All requests</Text></TouchableOpacity>
         <Text style={s.h1}>{selected.patientName || 'Patient'}</Text>
         <Text style={s.sub}>
@@ -133,7 +133,7 @@ export default function PrescriptionRequestsInboxMobile({ rxRoute }) {
   }
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={{ padding: 16, gap: 8 }}
+    <ScrollView showsVerticalScrollIndicator={false} style={s.container} contentContainerStyle={{ padding: 16, gap: 8 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}>
       <Text style={s.h1}>Prescription Requests</Text>
       <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>

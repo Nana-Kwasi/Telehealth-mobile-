@@ -64,7 +64,7 @@ export default function MedPsychPsychiatristsScreen({ navigation }) {
   };
 
   return (
-    <ScrollView style={zcStyles.screen} contentContainerStyle={styles.scroll}>
+    <ScrollView showsVerticalScrollIndicator={false} style={zcStyles.screen} contentContainerStyle={styles.scroll}>
       <View style={zcStyles.badge}>
         <View style={styles.dot} />
         <Text style={zcStyles.badgeText}>Step 2 of 3</Text>

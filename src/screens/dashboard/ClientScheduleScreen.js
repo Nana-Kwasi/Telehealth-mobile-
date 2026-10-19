@@ -553,7 +553,7 @@ const ClientScheduleScreen = ({ navigation }) => {
                 <Text style={styles.loadingText}>Loading therapist information...</Text>
               </View>
             ) : therapistData ? (
-              <ScrollView style={styles.modalContent}>
+              <ScrollView showsVerticalScrollIndicator={false} style={styles.modalContent}>
                 {message.text ? (
                   <View style={[
                     styles.messageContainer,
