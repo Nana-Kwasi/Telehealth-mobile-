@@ -8,6 +8,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { patientPharmacyKey, removePatientPharmacyByKey, hasPatientPharmacy, dedupePatientPharmacies, pharmacyEntryFromDirectory } from '../../utils/patientPharmacyDedupe';
 import { MedicalColors as C } from '../../constants/colors';
+import { parseCoords, attachDistance, formatDistanceKm } from '../../utils/homeCareGeo';
 
 const DRUG_STATUS_META = {
   pending:               { icon: '⏳', label: 'Pending',       color: '#d97706' },
@@ -43,8 +44,7 @@ export default function EPharmacyScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [transferActionKey, setTransferActionKey] = useState('');
   // Browse → "Add to my pharmacies": which pharmacy is open, its branches, and the row being saved.
-  const [openPhId, setOpenPhId] = useState(null);
-  const [branchesByPh, setBranchesByPh] = useState({});
+  const [myAnchor, setMyAnchor] = useState(null);
   const [addingKey, setAddingKey] = useState(null);
 
   const isTransferRequestExpired = (med) => {
@@ -76,6 +76,7 @@ export default function EPharmacyScreen() {
       api(`/api/v1/patients/${uid}`).then(data => {
         if (!cancelled) {
           setMyPharmacies(data?.pharmacies || []);
+          setMyAnchor(parseCoords(data));
           setLoadingMyPh(false);
         }
       }).catch(() => setLoadingMyPh(false));
@@ -115,18 +116,27 @@ export default function EPharmacyScreen() {
   useEffect(() => {
     if (tab !== 'pharmacies') return;
     setLoadingPh(true);
-    api('/api/v1/pharmacies?status=active')
-      .then(data => setSystemPharmacies(data || []))
-      .catch(console.error)
-      .finally(() => setLoadingPh(false));
-  }, [tab]);
+    // Every BRANCH is its own entry (patients go to a branch, not a head
+    // office), nearest first. A pharmacy with no branches is listed as itself.
+    (async () => {
+      try {
+        const parents = await api('/api/v1/pharmacies?status=active').catch(() => []) || [];
+        const rows = [];
+        for (const ph of parents) {
+          const bs = await api(`/api/v1/pharmacy-branches?pharmacyId=${ph.id}&status=active`).catch(() => []) || [];
+          if (bs.length) bs.forEach(br => rows.push({ key: `${ph.id}:${br.id}`, ph, br, latitude: br.latitude ?? ph.latitude, longitude: br.longitude ?? ph.longitude }));
+          else rows.push({ key: ph.id, ph, br: null, latitude: ph.latitude, longitude: ph.longitude });
+        }
+        setSystemPharmacies(myAnchor ? attachDistance(rows, myAnchor) : rows);
+      } finally { setLoadingPh(false); }
+    })();
+  }, [tab, myAnchor]);
 
-  const filteredPh = systemPharmacies.filter(ph => {
+  const filteredPh = systemPharmacies.filter(({ ph, br }) => {
     if (!searchPh.trim()) return true;
     const q = searchPh.toLowerCase();
-    return (ph.pharmacyName || ph.name || '').toLowerCase().includes(q) ||
-           (ph.country || '').toLowerCase().includes(q) ||
-           (ph.address || '').toLowerCase().includes(q);
+    return [ph.pharmacyName, ph.name, br?.branchName, br?.address, br?.city, ph.address, ph.city, ph.country]
+      .some(v => String(v || '').toLowerCase().includes(q));
   });
 
   const deriveRxStatusFromMeds = (meds = []) => {
@@ -152,21 +162,6 @@ export default function EPharmacyScreen() {
     }
   };
 
-  // Tapping "Add" on a directory pharmacy: one branch (or none) saves straight
-  // away; several branches open a list so the patient picks the one they use.
-  const toggleAddPharmacy = async (ph) => {
-    if (openPhId === ph.id) { setOpenPhId(null); return; }
-    let branches = branchesByPh[ph.id];
-    if (!branches) {
-      setAddingKey(`ph:${ph.id}`);
-      branches = await api(`/api/v1/pharmacy-branches?pharmacyId=${ph.id}&status=active`).catch(() => []) || [];
-      setBranchesByPh((m) => ({ ...m, [ph.id]: branches }));
-      setAddingKey(null);
-    }
-    if (branches.length <= 1) addPharmacy(ph, branches[0] || null);
-    else setOpenPhId(ph.id);
-  };
-
   const addPharmacy = async (ph, br) => {
     const uid = await getStoredUserId();
     if (!uid) return;
@@ -185,7 +180,6 @@ export default function EPharmacyScreen() {
       const updated = [...current, entry];
       await api(`/api/v1/patients/${uid}`, { method: 'PATCH', body: { pharmacies: updated } });
       setMyPharmacies(updated);
-      setOpenPhId(null);
       Alert.alert('Pharmacy added', `${entry.name} is now in your pharmacies. Your doctor can send prescriptions there.`);
     } catch {
       Alert.alert('Error', 'Could not add this pharmacy. Please try again.');
@@ -195,7 +189,6 @@ export default function EPharmacyScreen() {
   };
 
   const isSaved = (ph, br) => hasPatientPharmacy(myPharmacies, pharmacyEntryFromDirectory(ph, br));
-  const savedCount = (ph) => myPharmacies.filter((m) => m.pharmacyId && m.pharmacyId === ph.id).length;
 
   const resolveTransferRequest = async (rx, medIndex, approve) => {
     const meds = Array.isArray(rx?.medications) ? rx.medications : [];
@@ -412,57 +405,28 @@ export default function EPharmacyScreen() {
                   <Text style={{ fontSize: 48 }}>🏪</Text>
                   <Text style={styles.emptyTitle}>{searchPh ? 'No matches found' : 'No pharmacies yet'}</Text>
                 </View>
-              ) : filteredPh.map(ph => {
-                const branches = branchesByPh[ph.id] || [];
-                const saved = savedCount(ph);
-                const single = branchesByPh[ph.id] && branches.length <= 1;
-                const singleSaved = single && isSaved(ph, branches[0] || null);
+              ) : filteredPh.map(({ key, ph, br, distanceKm }) => {
+                const saved = isSaved(ph, br);
+                const rowKey = patientPharmacyKey(pharmacyEntryFromDirectory(ph, br));
+                const title = br ? (br.branchName || 'Branch') : (ph.pharmacyName || ph.name);
+                const address = br ? (br.address || [br.city, br.country].filter(Boolean).join(', ')) : ph.address;
+                const phone = br?.phone || ph.phone;
+                const meta = [distanceKm != null ? formatDistanceKm(distanceKm) : null, phone ? `📞 ${phone}` : null].filter(Boolean).join(' · ');
                 return (
-                  <View key={ph.id} style={styles.phCardWrap}>
-                    <View style={styles.phCard}>
-                      <View style={styles.phIcon}>
-                        <Text style={{ fontSize: 22 }}>🏪</Text>
-                      </View>
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={styles.phName}>{ph.pharmacyName || ph.name}</Text>
-                        {ph.country && <Text style={styles.phDetail}>🌍 {ph.country}</Text>}
-                        {ph.address && <Text style={styles.phDetail}>📍 {ph.address}</Text>}
-                        {ph.phone && <Text style={styles.phDetail}>📞 {ph.phone}</Text>}
-                        {saved > 0 ? <Text style={styles.savedNote}>⭐ In your pharmacies{saved > 1 ? ` (${saved} branches)` : ''}</Text> : null}
-                      </View>
-                      {singleSaved ? (
-                        <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Added</Text></View>
-                      ) : (
-                        <TouchableOpacity style={styles.addBtn} onPress={() => toggleAddPharmacy(ph)} disabled={!!addingKey}>
-                          {addingKey === `ph:${ph.id}` ? <ActivityIndicator size="small" color="#fff" /> : (
-                            <Text style={styles.addBtnText}>{openPhId === ph.id ? 'Close' : '+ Add'}</Text>
-                          )}
-                        </TouchableOpacity>
-                      )}
+                  <View key={key} style={[styles.phCard, saved && { borderColor: '#c4b5fd' }]}>
+                    <View style={styles.phIcon}><Text style={{ fontSize: 22 }}>🏪</Text></View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.phName}>{title}</Text>
+                      {br ? <Text style={styles.savedNote}>{ph.pharmacyName || ph.name}</Text> : null}
+                      {address ? <Text style={styles.phDetail}>📍 {address}</Text> : null}
+                      {meta ? <Text style={styles.phDetail}>{meta}</Text> : null}
                     </View>
-                    {openPhId === ph.id && (
-                      <View style={styles.branchList}>
-                        <Text style={styles.branchHint}>Choose the branch you use</Text>
-                        {branches.map((br) => {
-                          const done = isSaved(ph, br);
-                          const key = patientPharmacyKey(pharmacyEntryFromDirectory(ph, br));
-                          return (
-                            <View key={br.id} style={styles.branchRow}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.branchName}>{br.branchName || 'Branch'}</Text>
-                                {br.address ? <Text style={styles.phDetail} numberOfLines={2}>📍 {br.address}</Text> : null}
-                              </View>
-                              {done ? (
-                                <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Added</Text></View>
-                              ) : (
-                                <TouchableOpacity style={styles.addBtn} onPress={() => addPharmacy(ph, br)} disabled={!!addingKey}>
-                                  {addingKey === key ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.addBtnText}>Add</Text>}
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                          );
-                        })}
-                      </View>
+                    {saved ? (
+                      <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Added</Text></View>
+                    ) : (
+                      <TouchableOpacity style={styles.addBtn} onPress={() => addPharmacy(ph, br)} disabled={!!addingKey}>
+                        {addingKey === rowKey ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.addBtnText}>+ Add</Text>}
+                      </TouchableOpacity>
                     )}
                   </View>
                 );

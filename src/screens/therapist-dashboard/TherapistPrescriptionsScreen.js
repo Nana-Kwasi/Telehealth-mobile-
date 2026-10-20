@@ -3,7 +3,7 @@
 // PSYCHIATRY care track through exactly the doctor's flow: same form, pharmacy
 // routing, safety checks and approvals. Differences are marked "Psychiatry:".
 // Keep fixes to the shared flow in step with DoctorPrescriptionsScreen.js.
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { RxAdviceMobile, RxInsurancePickerMobile, attachRxCardMobile } from '../../components/ProviderInsuranceMobile';
 import {
   View,
@@ -36,6 +36,13 @@ import PrescriptionAssistCard from '../../components/PrescriptionAssistCard';
 import PrescriptionCodeCardMobile from '../../components/PrescriptionCodeCardMobile';
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import { hasPendingDoctorNote, isRxDelivered } from '../../utils/pharmacyRxNotes';
+import * as Print from 'expo-print';
+import { parseCoords, attachDistance, formatDistanceKm } from '../../utils/homeCareGeo';
+import * as Sharing from 'expo-sharing';
+
+// Same status filters as web DoctorPrescriptions.js.
+const STATUS_FILTERS = ['all', 'active', 'completed', 'cancelled', 'expired'];
+const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -132,6 +139,7 @@ export default function TherapistPrescriptionsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -152,6 +160,10 @@ export default function TherapistPrescriptionsScreen() {
   });
   const [patientAllergies, setPatientAllergies] = useState([]);
   const [branchDirectory, setBranchDirectory] = useState([]);
+  // The chosen patient's saved pharmacies and location: the branch list shows
+  // only their pharmacies (nearest first) unless the doctor asks for all.
+  const [patientPh, setPatientPh] = useState({ id: null, list: [], anchor: null });
+  const [showAllBranches, setShowAllBranches] = useState(false);
   const [loadingBranchDirectory, setLoadingBranchDirectory] = useState(false);
   const [showBranchDirectoryPicker, setShowBranchDirectoryPicker] = useState(false);
   // Alternative drug approval
@@ -281,6 +293,8 @@ export default function TherapistPrescriptionsScreen() {
             pharmacyId: ph.id,
             pharmacyName: parentName,
             addressLine: [br.address, br.city].filter(Boolean).join(', '),
+            latitude: br.latitude ?? ph.latitude ?? null,
+            longitude: br.longitude ?? ph.longitude ?? null,
           });
         });
       }
@@ -289,6 +303,29 @@ export default function TherapistPrescriptionsScreen() {
     } catch {}
     finally { setLoadingBranchDirectory(false); }
   };
+
+  useEffect(() => {
+    const pid = form?.patientId;
+    setShowAllBranches(false);
+    if (!pid) { setPatientPh({ id: null, list: [], anchor: null }); return undefined; }
+    let live = true;
+    api(`/api/v1/patients/${pid}`).then((pd) => {
+      if (!live) return;
+      setPatientPh({ id: pid, list: Array.isArray(pd?.pharmacies) ? pd.pharmacies : [], anchor: parseCoords(pd) });
+    }).catch(() => { if (live) setPatientPh({ id: pid, list: [], anchor: null }); });
+    return () => { live = false; };
+  }, [form?.patientId]);
+
+  const branchOptions = useMemo(() => {
+    const saved = patientPh.list || [];
+    let rows = branchDirectory;
+    if (form?.patientId && !showAllBranches) {
+      rows = rows.filter(r => saved.some(s => (s.branchId && s.branchId === r.branchId)
+        || (!s.branchId && s.pharmacyId && s.pharmacyId === r.pharmacyId)));
+    }
+    return patientPh.anchor ? attachDistance(rows, patientPh.anchor) : rows;
+  }, [branchDirectory, patientPh, showAllBranches, form?.patientId]);
+  const patientFirstName = (form?.patientName || 'This patient').split(' ')[0];
 
   const openNew = () => {
     setRequestId(null);
@@ -589,13 +626,32 @@ export default function TherapistPrescriptionsScreen() {
   };
 
   const filtered = prescriptions.filter(r => {
+    if (statusFilter !== 'all' && (r.status || 'active') !== statusFilter) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (r.patientName || '').toLowerCase().includes(q) ||
            (r.diagnosis || '').toLowerCase().includes(q) ||
            (r.date || '').includes(q) ||
+           (r.prescriptionRef || '').toLowerCase().includes(q) ||
            (r.branchName || '').toLowerCase().includes(q);
   });
+  const altPendingCount = prescriptions.filter(r => (r.medications || []).some(m => m.drugStatus === 'alternative_suggested')).length;
+
+  // The web "Print" button: the same prescription sheet, as a PDF the doctor
+  // can print, save or send from the share sheet.
+  const shareRx = async (rx) => {
+    const meds = rx.medications?.length ? rx.medications : rx.medication ? [{ name: rx.medication, dosage: rx.dosage, frequency: rx.frequency, duration: rx.duration }] : [];
+    const e = escHtml;
+    const html = `<html><head><style>body{font-family:Arial,sans-serif;padding:2rem;max-width:700px;margin:auto}h1{color:#1e6bb8;border-bottom:2px solid #1e6bb8;padding-bottom:0.5rem}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{border:1px solid #ddd;padding:0.5rem;text-align:left;font-size:12px}th{background:#f0f6fc}.footer{margin-top:2rem;border-top:1px solid #ddd;padding-top:1rem;font-size:0.85rem;color:#666}.ref-box{background:#f0f9ff;border:2px solid #0ea5e9;border-radius:8px;padding:0.75rem 1rem;margin:1rem 0}.ref-label{font-size:0.75rem;color:#0369a1;font-weight:700;text-transform:uppercase}.ref-code{font-size:1.5rem;font-weight:900;color:#0c4a6e;letter-spacing:0.1em}</style></head><body>`
+      + `<h1>Psychiatric Prescription</h1><p><strong>Psychiatrist:</strong> ${e(doctorProfile?.name || rx.doctorName || 'Psychiatrist')}</p><p><strong>Client:</strong> ${e(rx.patientName || 'Client')}</p><p><strong>Date:</strong> ${e(rx.date || '')}</p><p><strong>Diagnosis:</strong> ${e(rx.diagnosis || '—')}</p>`
+      + `${rx.prescriptionRef ? `<div class="ref-box"><div class="ref-label">Prescription Reference</div><div class="ref-code">${e(rx.prescriptionRef)}</div></div>` : ''}${rx.branchName ? `<p><strong>Branch:</strong> ${e(rx.branchName)}</p>` : ''}`
+      + `<h3>Medications</h3><table><thead><tr><th>Medication</th><th>Strength</th><th>Dosage</th><th>Frequency</th><th>Direction</th><th>Duration</th></tr></thead><tbody>${meds.map(m => `<tr><td>${e(m.name || '')}</td><td>${e(m.strength || '—')}</td><td>${e(m.dosage || '—')}</td><td>${e(m.frequency || '—')}</td><td>${e(m.direction || '—')}</td><td>${e(m.duration ? `${m.duration} ${m.durationUnit || ''}` : '—')}</td></tr>`).join('')}</tbody></table>`
+      + `${rx.instructions ? `<p><strong>Instructions:</strong> ${e(rx.instructions)}</p>` : ''}${rx.followUpDate ? `<p><strong>Follow-up:</strong> ${e(rx.followUpDate)}</p>` : ''}<div class="footer"><p>Generated via NessaHub Medical Platform.</p></div></body></html>`;
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Prescription' });
+    } catch (err) { Alert.alert('Could not create the prescription PDF', err?.message || 'Please try again.'); }
+  };
 
   const STATUS_META = {
     active:    { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8', label: 'Active' },
@@ -635,17 +691,24 @@ export default function TherapistPrescriptionsScreen() {
             <Text style={styles.rxDiagnosis}>{item.diagnosis}</Text>
             {item.branchName ? (
               <Text style={styles.rxPharmacy}>🏥 {item.branchName}</Text>
+            ) : item.openToAll && !item.pharmacyId ? (
+              <Text style={[styles.rxPharmacy, { color: '#0369a1' }]}>🌐 Open to all pharmacies</Text>
             ) : null}
+            {item.lifecycleStatus === 'CANCELLED' ? <Text style={{ fontSize: 11, color: '#be123c', fontWeight: '700', marginTop: 2 }}>Cancelled</Text> : null}
           </View>
           <View style={{ alignItems: 'flex-end', gap: 6 }}>
             <View style={[styles.statusBadgeActive, { backgroundColor: sm.bg, borderColor: sm.border }]}>
               <Text style={[styles.statusBadgeActiveText, { color: sm.text }]}>{sm.label}</Text>
             </View>
             <View style={styles.rxActions}>
-              <TouchableOpacity onPress={() => openEdit(item)} style={styles.actionIcon}>
+              {/* Delivered prescriptions are locked, as on web. */}
+              <TouchableOpacity onPress={() => openEdit(item)} style={[styles.actionIcon, isRxDelivered(item) && { opacity: 0.35 }]} disabled={isRxDelivered(item)} accessibilityLabel="Edit">
                 <Ionicons name="pencil-outline" size={17} color={DoctorColors.primary} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionIcon}>
+              <TouchableOpacity onPress={() => shareRx(item)} style={styles.actionIcon} accessibilityLabel="Print or share">
+                <Ionicons name="print-outline" size={17} color="#475569" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)} style={[styles.actionIcon, isRxDelivered(item) && { opacity: 0.35 }]} disabled={isRxDelivered(item)} accessibilityLabel="Delete">
                 <Ionicons name="trash-outline" size={17} color="#ef4444" />
               </TouchableOpacity>
             </View>
@@ -752,12 +815,44 @@ export default function TherapistPrescriptionsScreen() {
           data={filtered}
           keyExtractor={item => item.id}
           renderItem={renderRx}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={{ padding: 16, paddingTop: 4 }}
+          ListHeaderComponent={(
+            <View style={{ marginBottom: 12, gap: 10 }}>
+              <View>
+                <Text style={styles.pageTitle}>Prescriptions</Text>
+                <Text style={styles.pageSub}>Prescriptions for your psychiatry clients</Text>
+              </View>
+              {altPendingCount > 0 ? (
+                <View style={styles.altBanner}>
+                  <Text style={{ fontSize: 18 }}>🔁</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.altBannerTitle}>{altPendingCount} alternative drug suggestion{altPendingCount > 1 ? 's' : ''} awaiting your approval</Text>
+                    <Text style={styles.altBannerSub}>A pharmacy has suggested replacement drugs for one or more prescriptions.</Text>
+                  </View>
+                  <TouchableOpacity style={styles.altBannerBtn} onPress={() => {
+                    const rx = prescriptions.find(r => (r.medications || []).some(m => m.drugStatus === 'alternative_suggested'));
+                    if (rx) setAltApprovalRx(rx);
+                  }}>
+                    <Text style={styles.altBannerBtnText}>Review now</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {STATUS_FILTERS.map(f => (
+                  <TouchableOpacity key={f} onPress={() => setStatusFilter(f)} style={[styles.filterChip, statusFilter === f && styles.filterChipOn]}>
+                    <Text style={[styles.filterChipText, statusFilter === f && { color: '#fff' }]}>{f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <Text style={styles.listCount}>Prescriptions ({filtered.length})</Text>
+            </View>
+          )}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} />}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="medkit-outline" size={48} color="#cbd5e1" />
-              <Text style={styles.emptyText}>{search ? 'No matching prescriptions' : 'No prescriptions yet'}</Text>
+              <Text style={styles.emptyText}>{search || statusFilter !== 'all' ? 'No prescriptions match' : 'No prescriptions yet'}</Text>
+              {!search && statusFilter === 'all' ? <Text style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>Tap "New Rx" to create one.</Text> : null}
             </View>
           }
         />
@@ -1092,6 +1187,117 @@ export default function TherapistPrescriptionsScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
+                )}
+              </View>
+
+              {/* Follow-up Date */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Follow-up Date</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#94a3b8"
+                  value={form.followUpDate}
+                  onChangeText={v => setForm(p => ({ ...p, followUpDate: v }))}
+                />
+              </View>
+
+              {/* E-pharmacy branch routing (optional); labels are branch-only */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>E-Pharmacy</Text>
+                {/* Specific pharmacy (default) or open to every onboarded NessaHub pharmacy.
+                    Locked once a pharmacy has taken an open prescription. */}
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                  {[[false, 'Specific pharmacy'], [true, 'Open to all pharmacies']].map(([value, label]) => {
+                    const active = !!form.openToAll === value;
+                    const locked = !!editing?.claimedAt;
+                    return (
+                      <TouchableOpacity key={label} disabled={locked}
+                        onPress={() => setForm(p => ({ ...p, openToAll: value, ...(value ? { pharmacyId: '', pharmacyName: '', branchId: '', branchName: '' } : {}) }))}
+                        style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: active ? 2 : 1.5,
+                          borderColor: active ? '#0369a1' : '#bae6fd', backgroundColor: active ? '#e0f2fe' : '#fff', opacity: locked ? 0.6 : 1 }}>
+                        <Text style={{ fontSize: 12.5, fontWeight: '700', color: active ? '#0c4a6e' : '#64748b' }}>{label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {editing?.claimedAt ? (
+                  <Text style={{ fontSize: 12, color: '#92400e', marginBottom: 6 }}>
+                    Taken by {editing.branchName || editing.pharmacyName || 'a pharmacy'} — this can no longer be changed.
+                  </Text>
+                ) : null}
+                {form.openToAll ? (
+                  <Text style={{ fontSize: 12, color: '#0369a1' }}>
+                    Every approved NessaHub pharmacy will see this prescription. The first to take it prepares it; if it does not confirm in time, it is offered to the others again.
+                  </Text>
+                ) : (
+                <>
+                <Text style={[styles.fieldLabel, { fontSize: 12 }]}>Branch (optional)</Text>
+                <TouchableOpacity
+                  style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                  onPress={() => { if (!loadingBranchDirectory) setShowBranchDirectoryPicker(v => !v); }}
+                >
+                  {loadingBranchDirectory
+                    ? <ActivityIndicator size="small" color={DoctorColors.primary} />
+                    : <>
+                        <Text style={{ color: form.branchId ? DoctorColors.text : '#94a3b8', fontSize: 14, flex: 1 }}>
+                          {form.branchId ? form.branchName : 'Select branch (optional)'}
+                        </Text>
+                        <Ionicons name={showBranchDirectoryPicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94a3b8" />
+                      </>
+                  }
+                </TouchableOpacity>
+                {showBranchDirectoryPicker && (
+                  <View style={styles.pickerDropdown}>
+                    <TouchableOpacity style={styles.pickerItem} onPress={() => {
+                      setForm(p => ({ ...p, pharmacyId: '', pharmacyName: '', branchId: '', branchName: '' }));
+                      setShowBranchDirectoryPicker(false);
+                    }}>
+                      <Text style={[styles.pickerItemText, { color: '#94a3b8' }]}>— None —</Text>
+                    </TouchableOpacity>
+                    {form.patientId ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f0f9ff' }}>
+                        <Text style={{ fontSize: 12, color: '#0c4a6e', flex: 1 }}>
+                          {showAllBranches ? 'Showing all pharmacies' : `Showing ${patientFirstName}'s pharmacies`}{patientPh.anchor ? ' · nearest first' : ''}
+                        </Text>
+                        <TouchableOpacity onPress={() => setShowAllBranches(v => !v)} hitSlop={8}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: DoctorColors.primary }}>{showAllBranches ? `Only ${patientFirstName}'s` : 'Show all'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                    {branchOptions.length === 0 && !loadingBranchDirectory && (
+                      <Text style={[styles.pickerItemText, { padding: 12, color: '#64748b' }]}>
+                        {form.patientId && !showAllBranches
+                          ? `${patientFirstName} has not saved a pharmacy yet. Choose "Open to all pharmacies" above, or tap Show all.`
+                          : 'No active branches found.'}
+                      </Text>
+                    )}
+                    {branchOptions.map(row => (
+                      <TouchableOpacity key={`${row.pharmacyId}-${row.branchId}`}
+                        style={[styles.pickerItem, form.branchId === row.branchId && styles.pickerItemActive]}
+                        onPress={() => {
+                          setForm(p => ({
+                            ...p,
+                            pharmacyId: row.pharmacyId,
+                            pharmacyName: row.pharmacyName,
+                            branchId: row.branchId,
+                            branchName: row.branchName,
+                          }));
+                          setShowBranchDirectoryPicker(false);
+                        }}>
+                        <Text style={[styles.pickerItemText, form.branchId === row.branchId && { color: DoctorColors.primary, fontWeight: '700' }]}>
+                          {row.branchName}
+                        </Text>
+                        {!!(row.addressLine || row.distanceKm != null) && (
+                          <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                            {[row.distanceKm != null ? formatDistanceKm(row.distanceKm) : null, row.addressLine].filter(Boolean).join(' · ')}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                </>
                 )}
               </View>
 
@@ -1471,100 +1677,6 @@ export default function TherapistPrescriptionsScreen() {
                 />
               </View>
 
-              {/* Follow-up Date */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Follow-up Date</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#94a3b8"
-                  value={form.followUpDate}
-                  onChangeText={v => setForm(p => ({ ...p, followUpDate: v }))}
-                />
-              </View>
-
-              {/* E-pharmacy branch routing (optional); labels are branch-only */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>E-Pharmacy</Text>
-                {/* Specific pharmacy (default) or open to every onboarded NessaHub pharmacy.
-                    Locked once a pharmacy has taken an open prescription. */}
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                  {[[false, 'Specific pharmacy'], [true, 'Open to all pharmacies']].map(([value, label]) => {
-                    const active = !!form.openToAll === value;
-                    const locked = !!editing?.claimedAt;
-                    return (
-                      <TouchableOpacity key={label} disabled={locked}
-                        onPress={() => setForm(p => ({ ...p, openToAll: value, ...(value ? { pharmacyId: '', pharmacyName: '', branchId: '', branchName: '' } : {}) }))}
-                        style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: active ? 2 : 1.5,
-                          borderColor: active ? '#0369a1' : '#bae6fd', backgroundColor: active ? '#e0f2fe' : '#fff', opacity: locked ? 0.6 : 1 }}>
-                        <Text style={{ fontSize: 12.5, fontWeight: '700', color: active ? '#0c4a6e' : '#64748b' }}>{label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {editing?.claimedAt ? (
-                  <Text style={{ fontSize: 12, color: '#92400e', marginBottom: 6 }}>
-                    Taken by {editing.branchName || editing.pharmacyName || 'a pharmacy'} — this can no longer be changed.
-                  </Text>
-                ) : null}
-                {form.openToAll ? (
-                  <Text style={{ fontSize: 12, color: '#0369a1' }}>
-                    Every approved NessaHub pharmacy will see this prescription. The first to take it prepares it; if it does not confirm in time, it is offered to the others again.
-                  </Text>
-                ) : (
-                <>
-                <Text style={[styles.fieldLabel, { fontSize: 12 }]}>Branch (optional)</Text>
-                <TouchableOpacity
-                  style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-                  onPress={() => { if (!loadingBranchDirectory) setShowBranchDirectoryPicker(v => !v); }}
-                >
-                  {loadingBranchDirectory
-                    ? <ActivityIndicator size="small" color={DoctorColors.primary} />
-                    : <>
-                        <Text style={{ color: form.branchId ? DoctorColors.text : '#94a3b8', fontSize: 14, flex: 1 }}>
-                          {form.branchId ? form.branchName : 'Select branch (optional)'}
-                        </Text>
-                        <Ionicons name={showBranchDirectoryPicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94a3b8" />
-                      </>
-                  }
-                </TouchableOpacity>
-                {showBranchDirectoryPicker && (
-                  <View style={styles.pickerDropdown}>
-                    <TouchableOpacity style={styles.pickerItem} onPress={() => {
-                      setForm(p => ({ ...p, pharmacyId: '', pharmacyName: '', branchId: '', branchName: '' }));
-                      setShowBranchDirectoryPicker(false);
-                    }}>
-                      <Text style={[styles.pickerItemText, { color: '#94a3b8' }]}>— None —</Text>
-                    </TouchableOpacity>
-                    {branchDirectory.length === 0 && !loadingBranchDirectory && (
-                      <Text style={[styles.pickerItemText, { padding: 12, color: '#94a3b8' }]}>No active branches found.</Text>
-                    )}
-                    {branchDirectory.map(row => (
-                      <TouchableOpacity key={`${row.pharmacyId}-${row.branchId}`}
-                        style={[styles.pickerItem, form.branchId === row.branchId && styles.pickerItemActive]}
-                        onPress={() => {
-                          setForm(p => ({
-                            ...p,
-                            pharmacyId: row.pharmacyId,
-                            pharmacyName: row.pharmacyName,
-                            branchId: row.branchId,
-                            branchName: row.branchName,
-                          }));
-                          setShowBranchDirectoryPicker(false);
-                        }}>
-                        <Text style={[styles.pickerItemText, form.branchId === row.branchId && { color: DoctorColors.primary, fontWeight: '700' }]}>
-                          {row.branchName}
-                        </Text>
-                        {!!row.addressLine && (
-                          <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{row.addressLine}</Text>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                </>
-                )}
-              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1586,6 +1698,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: DoctorColors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   toolbar: { flexDirection: 'row', padding: 12, gap: 10, alignItems: 'center' },
+  pageTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
+  pageSub: { fontSize: 13, color: '#64748b', marginTop: 2 },
+  altBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fdf4ff', borderWidth: 1.5, borderColor: '#e9d5ff', borderRadius: 12, padding: 12 },
+  altBannerTitle: { fontSize: 13, fontWeight: '800', color: '#7c3aed' },
+  altBannerSub: { fontSize: 12, color: '#6d28d9', marginTop: 2 },
+  altBannerBtn: { backgroundColor: '#7c3aed', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
+  altBannerBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  filterChip: { borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#fff' },
+  filterChipOn: { backgroundColor: DoctorColors.primary, borderColor: DoctorColors.primary },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
+  listCount: { fontSize: 15, fontWeight: '800', color: '#0f172a', marginTop: 2 },
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,

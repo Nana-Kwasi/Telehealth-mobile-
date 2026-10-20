@@ -1,3 +1,4 @@
+import PhoneForSmsMobile from '../../components/PhoneForSmsMobile';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
@@ -504,6 +505,9 @@ export default function MedicalSettingsScreen({ navigation, variant = 'medical' 
                 <Text style={s.label}>Email (read-only)</Text>
                 <TextInput style={[s.input, { backgroundColor: '#f8fafc', color: C.textSecondary }]} value={form.email} editable={false} />
               </View>
+              {/* Verify the number texts go to (prescription codes, reminders).
+                  Only a home-screen banner offered this before. */}
+              <View style={{ marginBottom: 14 }}><PhoneForSmsMobile /></View>
               <TouchableOpacity
                 style={[s.outlineBtn, { marginBottom: 10, alignSelf: 'flex-start' }]}
                 onPress={() => detectAddress((loc) => {

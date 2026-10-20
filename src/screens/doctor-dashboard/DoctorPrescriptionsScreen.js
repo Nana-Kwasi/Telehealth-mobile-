@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { RxAdviceMobile, RxInsurancePickerMobile, attachRxCardMobile } from '../../components/ProviderInsuranceMobile';
 import {
   View,
@@ -32,6 +32,7 @@ import PrescriptionCodeCardMobile from '../../components/PrescriptionCodeCardMob
 import { enrichPatientNames } from '../../utils/doctorUtils';
 import { hasPendingDoctorNote, isRxDelivered } from '../../utils/pharmacyRxNotes';
 import * as Print from 'expo-print';
+import { parseCoords, attachDistance, formatDistanceKm } from '../../utils/homeCareGeo';
 import * as Sharing from 'expo-sharing';
 
 // Same status filters as web DoctorPrescriptions.js.
@@ -154,6 +155,10 @@ export default function DoctorPrescriptionsScreen() {
   });
   const [patientAllergies, setPatientAllergies] = useState([]);
   const [branchDirectory, setBranchDirectory] = useState([]);
+  // The chosen patient's saved pharmacies and location: the branch list shows
+  // only their pharmacies (nearest first) unless the doctor asks for all.
+  const [patientPh, setPatientPh] = useState({ id: null, list: [], anchor: null });
+  const [showAllBranches, setShowAllBranches] = useState(false);
   const [loadingBranchDirectory, setLoadingBranchDirectory] = useState(false);
   const [showBranchDirectoryPicker, setShowBranchDirectoryPicker] = useState(false);
   // Alternative drug approval
@@ -274,6 +279,8 @@ export default function DoctorPrescriptionsScreen() {
             pharmacyId: ph.id,
             pharmacyName: parentName,
             addressLine: [br.address, br.city].filter(Boolean).join(', '),
+            latitude: br.latitude ?? ph.latitude ?? null,
+            longitude: br.longitude ?? ph.longitude ?? null,
           });
         });
       }
@@ -282,6 +289,29 @@ export default function DoctorPrescriptionsScreen() {
     } catch {}
     finally { setLoadingBranchDirectory(false); }
   };
+
+  useEffect(() => {
+    const pid = form?.patientId;
+    setShowAllBranches(false);
+    if (!pid) { setPatientPh({ id: null, list: [], anchor: null }); return undefined; }
+    let live = true;
+    api(`/api/v1/patients/${pid}`).then((pd) => {
+      if (!live) return;
+      setPatientPh({ id: pid, list: Array.isArray(pd?.pharmacies) ? pd.pharmacies : [], anchor: parseCoords(pd) });
+    }).catch(() => { if (live) setPatientPh({ id: pid, list: [], anchor: null }); });
+    return () => { live = false; };
+  }, [form?.patientId]);
+
+  const branchOptions = useMemo(() => {
+    const saved = patientPh.list || [];
+    let rows = branchDirectory;
+    if (form?.patientId && !showAllBranches) {
+      rows = rows.filter(r => saved.some(s => (s.branchId && s.branchId === r.branchId)
+        || (!s.branchId && s.pharmacyId && s.pharmacyId === r.pharmacyId)));
+    }
+    return patientPh.anchor ? attachDistance(rows, patientPh.anchor) : rows;
+  }, [branchDirectory, patientPh, showAllBranches, form?.patientId]);
+  const patientFirstName = (form?.patientName || 'This patient').split(' ')[0];
 
   const openNew = () => {
     setRequestId(null);
@@ -1211,10 +1241,24 @@ export default function DoctorPrescriptionsScreen() {
                     }}>
                       <Text style={[styles.pickerItemText, { color: '#94a3b8' }]}>— None —</Text>
                     </TouchableOpacity>
-                    {branchDirectory.length === 0 && !loadingBranchDirectory && (
-                      <Text style={[styles.pickerItemText, { padding: 12, color: '#94a3b8' }]}>No active branches found.</Text>
+                    {form.patientId ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f0f9ff' }}>
+                        <Text style={{ fontSize: 12, color: '#0c4a6e', flex: 1 }}>
+                          {showAllBranches ? 'Showing all pharmacies' : `Showing ${patientFirstName}'s pharmacies`}{patientPh.anchor ? ' · nearest first' : ''}
+                        </Text>
+                        <TouchableOpacity onPress={() => setShowAllBranches(v => !v)} hitSlop={8}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: DoctorColors.primary }}>{showAllBranches ? `Only ${patientFirstName}'s` : 'Show all'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                    {branchOptions.length === 0 && !loadingBranchDirectory && (
+                      <Text style={[styles.pickerItemText, { padding: 12, color: '#64748b' }]}>
+                        {form.patientId && !showAllBranches
+                          ? `${patientFirstName} has not saved a pharmacy yet. Choose "Open to all pharmacies" above, or tap Show all.`
+                          : 'No active branches found.'}
+                      </Text>
                     )}
-                    {branchDirectory.map(row => (
+                    {branchOptions.map(row => (
                       <TouchableOpacity key={`${row.pharmacyId}-${row.branchId}`}
                         style={[styles.pickerItem, form.branchId === row.branchId && styles.pickerItemActive]}
                         onPress={() => {
@@ -1230,8 +1274,10 @@ export default function DoctorPrescriptionsScreen() {
                         <Text style={[styles.pickerItemText, form.branchId === row.branchId && { color: DoctorColors.primary, fontWeight: '700' }]}>
                           {row.branchName}
                         </Text>
-                        {!!row.addressLine && (
-                          <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{row.addressLine}</Text>
+                        {!!(row.addressLine || row.distanceKm != null) && (
+                          <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                            {[row.distanceKm != null ? formatDistanceKm(row.distanceKm) : null, row.addressLine].filter(Boolean).join(' · ')}
+                          </Text>
                         )}
                       </TouchableOpacity>
                     ))}
