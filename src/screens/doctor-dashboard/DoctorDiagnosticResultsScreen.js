@@ -15,8 +15,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import DiagnosticCodeCardMobile from '../../components/DiagnosticCodeCardMobile';
 import { api, getStoredUserId } from '../../services/apiClient';
 import { DoctorColors as C } from '../../constants/colors';
 import { formatDate, formatDateTime, dateMillis } from '../../utils/dateDisplay';
@@ -44,6 +45,9 @@ const rowCenter = (r) => r.centerName || r.branchName || r.uploaderName || '';
 
 export default function DoctorDiagnosticResultsScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
+  // The therapist drawer reuses this screen; its order screen has its own name.
+  const isTherapist = route?.name === 'TherapistDiagnosticResults';
   const [orders, setOrders] = useState([]);
   const [results, setResults] = useState([]);
   const [drafts, setDrafts] = useState([]);
@@ -59,8 +63,8 @@ export default function DoctorDiagnosticResultsScreen() {
   useEffect(() => { getStoredUserId().then(setDoctorId); }, []);
 
   const goOrderLabScan = useCallback(() => {
-    navigation.getParent()?.navigate('DoctorDiagnosticOrder');
-  }, [navigation]);
+    navigation.getParent()?.navigate(isTherapist ? 'TherapistDiagnosticOrder' : 'DoctorDiagnosticOrder');
+  }, [navigation, isTherapist]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -336,6 +340,7 @@ export default function DoctorDiagnosticResultsScreen() {
                     <Text style={styles.detailLabel}>Notes</Text>
                     <Text style={[styles.detailValue, { flex: 1, lineHeight: 20, textAlign: 'left' }]}>{selected.notes || '—'}</Text>
                   </View>
+                  <View style={{ marginTop: 12 }}><DiagnosticCodeCardMobile order={selected} canManage /></View>
                 </>
               )}
               {selected?.kind === 'result' && (

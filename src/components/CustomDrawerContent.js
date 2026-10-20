@@ -98,6 +98,13 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
       psychiatryOnly: true,
     },
     {
+      name: 'LabScan',
+      icon: 'flask-outline',
+      label: 'Lab & Scan',
+      screen: 'MedicalDiagnostic',
+      psychiatryOnly: true,
+    },
+    {
       name: 'Timeline',
       icon: 'time-outline',
       label: 'Health Timeline',

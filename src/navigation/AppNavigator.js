@@ -412,7 +412,7 @@ const LabDrawerNavigator = ({ profile }) => (
     <LabDrawer.Screen name="LabOrders"  options={{ title: 'Orders' }}>
       {() => <LabOrdersScreen profile={profile} />}
     </LabDrawer.Screen>
-    <LabDrawer.Screen name="LabVerify"  options={{ title: 'Verify Patient' }}>
+    <LabDrawer.Screen name="LabVerify"  options={{ title: 'Check In Patient' }}>
       {() => <LabVerifyScreen profile={profile} />}
     </LabDrawer.Screen>
     <LabDrawer.Screen name="LabResults" options={{ title: 'Results' }}>
@@ -473,7 +473,7 @@ const LabBranchDrawerNavigator = ({ profile }) => (
     <LabBranchDrawer.Screen name="LabBranchOrders"  options={{ title: 'Orders' }}>
       {() => <LabOrdersScreen profile={profile} />}
     </LabBranchDrawer.Screen>
-    <LabBranchDrawer.Screen name="LabBranchVerify"  options={{ title: 'Verify Patient' }}>
+    <LabBranchDrawer.Screen name="LabBranchVerify"  options={{ title: 'Check In Patient' }}>
       {() => <LabVerifyScreen profile={profile} />}
     </LabBranchDrawer.Screen>
     <LabBranchDrawer.Screen name="LabBranchResults" options={{ title: 'Results' }}>
@@ -528,7 +528,7 @@ const ScanDrawerNavigator = ({ profile }) => (
     <ScanDrawer.Screen name="ScanOrders"  options={{ title: 'Orders' }}>
       {() => <ScanOrdersScreen profile={profile} />}
     </ScanDrawer.Screen>
-    <ScanDrawer.Screen name="ScanVerify"  options={{ title: 'Verify Patient' }}>
+    <ScanDrawer.Screen name="ScanVerify"  options={{ title: 'Check In Patient' }}>
       {() => <ScanVerifyScreen profile={profile} />}
     </ScanDrawer.Screen>
     <ScanDrawer.Screen name="ScanResults" options={{ title: 'Reports' }}>
@@ -589,7 +589,7 @@ const ScanBranchDrawerNavigator = ({ profile }) => (
     <ScanBranchDrawer.Screen name="ScanBranchOrders"  options={{ title: 'Orders' }}>
       {() => <ScanOrdersScreen profile={profile} />}
     </ScanBranchDrawer.Screen>
-    <ScanBranchDrawer.Screen name="ScanBranchVerify"  options={{ title: 'Verify Patient' }}>
+    <ScanBranchDrawer.Screen name="ScanBranchVerify"  options={{ title: 'Check In Patient' }}>
       {() => <ScanVerifyScreen profile={profile} />}
     </ScanBranchDrawer.Screen>
     <ScanBranchDrawer.Screen name="ScanBranchResults" options={{ title: 'Reports' }}>
@@ -740,6 +740,8 @@ const TherapistDrawerNavigator = ({ profile }) => {
       </TherapistDrawer.Screen>
       {/* Psychiatry: the doctor's prescription flow, for psychiatry-track clients. */}
       <TherapistDrawer.Screen name="TherapistPrescriptions" component={TherapistPrescriptionsScreen} options={{ title: 'Prescriptions' }} />
+      {/* Psychiatry: lab tests and scans for psychiatry-track clients (the doctor's screens). */}
+      <TherapistDrawer.Screen name="TherapistDiagnosticResults" component={DoctorDiagnosticResultsScreen} options={{ title: 'Lab & Scan' }} />
       <TherapistDrawer.Screen name="TherapistRxRequests" options={{ title: 'Prescription Requests' }}>
         {() => <PrescriptionRequestsInboxMobile rxRoute="TherapistPrescriptions" />}
       </TherapistDrawer.Screen>
@@ -864,6 +866,9 @@ const TherapyDrawerNavigator = ({ profile }) => {
           (the timeline opens 'MedicalPrescriptions') resolve here too. */}
       {isPsychiatry ? (
         <TherapyDrawer.Screen name="MedicalPrescriptions" component={MedicalPrescriptionsScreen} options={{ title: 'Prescriptions' }} />
+      ) : null}
+      {isPsychiatry ? (
+        <TherapyDrawer.Screen name="MedicalDiagnostic" component={MedicalDiagnosticScreen} options={{ title: 'Lab & Scan' }} />
       ) : null}
       {isPsychiatry ? (
         <TherapyDrawer.Screen name="MedicalTimeline" component={MedicalTimelineScreen} options={{ title: 'Health Timeline' }} />
@@ -1309,6 +1314,7 @@ const AppNavigator = () => {
         <Stack.Screen name="Support" component={SupportScreen} options={{ title: 'Support & Report', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
         <Stack.Screen name="DoctorPatientDetail" component={DoctorPatientDetailScreen} options={{ title: 'Patient Detail', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
         <Stack.Screen name="DoctorPatientOverview" component={DoctorPatientOverviewScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TherapistDiagnosticOrder" component={DoctorDiagnosticScreen} options={{ title: 'Order Lab / Scan', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
         <Stack.Screen name="DoctorDiagnosticOrder" component={DoctorDiagnosticScreen} options={{ title: 'Order Lab / Scan', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
         <Stack.Screen name="DoctorDiagnosticDraftDetail" component={DoctorDiagnosticDraftDetailScreen} options={{ title: 'Draft order', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
         <Stack.Screen name="DoctorPatientTimeline" component={DoctorPatientTimelineScreen} options={{ title: 'Patient Timeline', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />

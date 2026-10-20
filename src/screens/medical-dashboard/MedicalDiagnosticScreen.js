@@ -9,6 +9,7 @@ import { api, getStoredUserId } from '../../services/apiClient';
 import { MedicalColors as C } from '../../constants/colors';
 import { normalizeDiagnosticOrderStatus, patientMobileStatusStyleKey } from '../../utils/diagnosticOrderStatus';
 import { formatDate } from '../../utils/dateDisplay';
+import DiagnosticCodeCardMobile from '../../components/DiagnosticCodeCardMobile';
 
 const STATUS_CONFIG = {
   pending:     { label: 'Pending',     bg: '#fef3c7', text: '#92400e', icon: 'time-outline' },
@@ -136,15 +137,8 @@ export default function MedicalDiagnosticScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-              {selected && ['PENDING', 'IN_PROGRESS', 'SCHEDULED'].includes(normalizeDiagnosticOrderStatus(selected.status)) && (
-              <View style={styles.idCard}>
-                <Ionicons name="id-card-outline" size={28} color={C.primary} />
-                <View style={{ marginLeft: 12 }}>
-                  <Text style={styles.idTitle}>Present Your National ID</Text>
-                  <Text style={styles.idSub}>Show your National ID at {selected?.branchName || selected?.centerName} so staff can verify your name matches this order.</Text>
-                </View>
-              </View>
-              )}
+              {/* QR + 8-digit check-in code, shown at the centre. */}
+              {selected ? <DiagnosticCodeCardMobile order={selected} /> : null}
               {selected && sharedByOrder[selected.id] ? (() => {
                 const res = sharedByOrder[selected.id];
                 const file = res.reportUrl || res.fileUrl;
@@ -186,7 +180,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
                 </View>
               ) : null}
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Center</Text><Text style={styles.detailValue}>{selected?.branchName || selected?.centerName || '—'}</Text></View>
-              <View style={styles.detailRow}><Text style={styles.detailLabel}>Doctor</Text><Text style={styles.detailValue}>Dr. {selected?.doctorName || 'Your Doctor'}</Text></View>
+              <View style={styles.detailRow}><Text style={styles.detailLabel}>Doctor</Text><Text style={styles.detailValue}>{selected?.doctorName || 'Your clinician'}</Text></View>
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Ordered</Text>
                 <Text style={styles.detailValue}>
                   {selected?.createdAt ? formatDate(selected.createdAt) : 'Recently'}

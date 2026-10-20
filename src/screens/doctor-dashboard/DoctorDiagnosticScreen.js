@@ -43,7 +43,10 @@ function customEntryLabel(entry) {
   return String(entry?.label ?? entry?.name ?? '').trim();
 }
 
-export default function DoctorDiagnosticScreen({ navigation }) {
+// clinician="therapist": a psychiatrist ordering for psychiatry-track clients
+// (the server refuses anyone else). Same flow as the doctor's.
+export default function DoctorDiagnosticScreen({ navigation, route }) {
+  const isTherapist = route?.name === 'TherapistDiagnosticOrder' || route?.params?.clinician === 'therapist';
   const [step, setStep] = useState(1);
   const [orderType, setOrderType] = useState(null); // 'lab' | 'scan'
   const [testTypes, setTestTypes] = useState([]); // one or more selected tests/scans
@@ -108,6 +111,26 @@ export default function DoctorDiagnosticScreen({ navigation }) {
 
   const loadPatients = async () => {
     setLoading(true);
+    if (isTherapist) {
+      try {
+        const assignments = await api(`/api/v1/therapy-management/assignments?therapistId=${doctorId}`).catch(() => []) || [];
+        const seen = new Map();
+        for (const a of assignments) {
+          if (!a.clientId || seen.has(a.clientId)) continue;
+          try {
+            const raw = await api(`/api/v1/clients/${a.clientId}`);
+            let prefs = {};
+            try { prefs = raw?.preferencesJson ? JSON.parse(raw.preferencesJson) : {}; } catch { /* ignore */ }
+            if (String(prefs.careTrack || '').toLowerCase() !== 'psychiatry') continue;
+            const name = a.clientName || a.clientDisplayName || raw?.fullName || raw?.name || prefs.name || 'Client';
+            seen.set(a.clientId, { id: a.clientId, name, clientName: name });
+          } catch { /* skip */ }
+        }
+        setPatients(Array.from(seen.values()).sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+      return;
+    }
     try {
       const appts = await api(`/api/v1/medical/appointments/doctor/${doctorId}`).catch(() => []) || [];
       const patMap = new Map();
@@ -293,7 +316,9 @@ export default function DoctorDiagnosticScreen({ navigation }) {
     setSubmitting(true);
     try {
       const centerIdField = orderType === 'lab' ? 'labId' : 'scanId';
-      const doctorName = await getDoctorDisplayName(null, doctorId, []);
+      const doctorName = isTherapist
+        ? await api(`/api/v1/therapists/${doctorId}`).then(t => t?.name || t?.fullName || t?.displayName || 'Psychiatrist').catch(() => 'Psychiatrist')
+        : await getDoctorDisplayName(null, doctorId, []);
       // One order per selected test/scan, sharing patient / center / notes.
       const orderIds = [];
       for (const testType of testTypes) {
@@ -313,7 +338,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
         });
         api('/api/v1/patient-timeline', {
           method: 'POST',
-          body: { patientId: selectedPatient.id, type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER', title: `${orderType === 'lab' ? 'Lab test' : 'Scan'} ordered: ${testType}`, status: 'PENDING', relatedId: newOrder?.id || orderId, actor: { role: 'DOCTOR', name: doctorName } },
+          body: { patientId: selectedPatient.id, type: orderType === 'lab' ? 'LAB_ORDER' : 'SCAN_ORDER', title: `${orderType === 'lab' ? 'Lab test' : 'Scan'} ordered: ${testType}`, status: 'PENDING', relatedId: newOrder?.id || orderId, actor: { role: isTherapist ? 'THERAPIST' : 'DOCTOR', name: doctorName } },
         }).catch(() => {});
         api('/api/v1/notifications/events', {
           method: 'POST',
@@ -325,7 +350,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
       const refLines = orderIds.length > 1
         ? `Order IDs:\n${orderIds.join('\n')}`
         : `Order ID: ${orderIds[0]}`;
-      Alert.alert('Order Created', `${refLines}\n\nPatient has been notified to visit ${selectedBranch.branchName} with their National ID.`, [
+      Alert.alert('Order Created', `${refLines}\n\nThe patient gets a QR code and 8-digit check-in code in their app (and by SMS if their phone is verified) to show at ${selectedBranch.branchName}.`, [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (e) {
@@ -591,7 +616,7 @@ export default function DoctorDiagnosticScreen({ navigation }) {
             />
             <View style={styles.patientNote}>
               <Ionicons name="information-circle-outline" size={18} color={C.primary} />
-              <Text style={styles.patientNoteText}>Patient will be notified to visit {selectedBranch?.branchName} with their National ID.</Text>
+              <Text style={styles.patientNoteText}>The patient gets a check-in code to show at {selectedBranch?.branchName}.</Text>
             </View>
             <TouchableOpacity
               style={[styles.draftBtn, draftSaving && { opacity: 0.6 }]}
