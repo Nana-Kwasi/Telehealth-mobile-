@@ -198,7 +198,9 @@ export async function api(path, { method = 'GET', body, authenticated = true, _r
       if (res.status === 403 && err.verifyEmail === true) notifyOnce('verify', 'Confirm your email', errMsg + ' Check your inbox for the link from NessaHub.');
     } catch {}
     if (maintenance) notifyMaintenance(errMsg);
-    throw new Error(errMsg);
+    const error = new Error(errMsg);
+    if (maintenance) error.maintenance = true;
+    throw error;
   }
 
   const text = await res.text();

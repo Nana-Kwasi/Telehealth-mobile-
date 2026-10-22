@@ -127,7 +127,9 @@ const LoginScreen = ({ navigation, route }) => {
       await completeSignIn(result.role, result.profile, result.refreshToken);
     } catch (err) {
       const msg = String(err?.message || '');
-      if (msg.includes('reuse detected') || msg.includes('revoked') || msg.includes('expired')) {
+      // Maintenance refuses the session without spending the saved sign-in, so
+      // Face ID must stay set up for when the platform is back.
+      if (!err?.maintenance && (msg.includes('reuse detected') || msg.includes('revoked') || msg.includes('expired'))) {
         await disableBiometricLogin();
         setBiometricEnabled(false);
         setBiometricReady(false);
