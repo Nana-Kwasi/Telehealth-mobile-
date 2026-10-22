@@ -16,6 +16,7 @@ import useAddressAutofillMobile from '../../hooks/useAddressAutofillMobile';
 import { resolveFileUrl } from '../../utils/mediaUrl';
 import SecuritySettingsSection from '../../components/SecuritySettingsSection';
 import ConsentHistory from '../../components/ConsentHistory';
+import ClinicianProfileFormMobile from '../../components/ClinicianProfileFormMobile';
 import { ClinicianAccountNote } from '../../components/AccountSecurityExtras';
 import {
   changeTherapistLoginEmail,
@@ -206,6 +207,7 @@ const TherapistSettingsScreen = ({ navigation }) => {
 
   const sections = [
     { id:'profile', label:'Profile', icon:'person-outline' },
+    { id:'professional', label:'Professional', icon:'ribbon-outline' },
     { id:'security', label:'Security', icon:'shield-outline' },
     { id:'availability', label:'Availability', icon:'calendar-outline' },
     { id:'notifications', label:'Notifications', icon:'notifications-outline' },
@@ -394,6 +396,10 @@ const TherapistSettingsScreen = ({ navigation }) => {
         {/* ── Security Section ── */}
         {/* Two-step sign-in and biometrics — shared with every role. It used to be
             rendered inside the horizontal tab strip, covering the tabs. */}
+        {activeSection === 'professional' && (
+          <ClinicianProfileFormMobile kind="therapist" userId={therapistId} accent={TherapistColors.primary} />
+        )}
+
         {activeSection === 'security' && <SecuritySettingsSection accent={TherapistColors.primary} />}
         {activeSection === 'security' && (
           <View style={styles.sectionCard}>

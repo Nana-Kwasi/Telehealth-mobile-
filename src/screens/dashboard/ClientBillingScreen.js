@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCachedClientData } from '../../services/clientDataService';
 import { TherapyColors as Colors } from '../../constants/colors';
 import BillingAssistantCard from '../../components/BillingAssistantCard';
+import PaymentsAndRefunds from '../../components/PaymentsAndRefunds';
 
 const ClientBillingScreen = ({ navigation }) => {
   const [billingHistory, setBillingHistory] = useState([]);
@@ -244,6 +245,8 @@ const ClientBillingScreen = ({ navigation }) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Payments, with the refund policy applied before asking. */}
+        <PaymentsAndRefunds accent="#4f46e5" />
         {/* Invoices, insurance verification and claims. */}
         <BillingAssistantCard accent={Colors.primary} />
 

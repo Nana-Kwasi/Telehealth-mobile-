@@ -132,6 +132,8 @@ export async function createAppointment(data = {}) {
       scheduledAt,
       notes,
       status: data.status || 'pending',
+      // Ties the payment to this appointment (refund window, doctor's earning).
+      ...(data.paymentReference ? { paymentReference: data.paymentReference } : {}),
     },
   });
 

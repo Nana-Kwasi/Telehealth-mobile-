@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signInWithEmailOrUsername, completeTwoFactorSignIn, signInWithRefreshToken } from '../services/authService';
+import { activeService } from '../utils/careServices';
 import { api } from '../services/apiClient';
 import { fetchClientData } from '../services/clientDataService';
 import { Colors } from '../constants/colors';
@@ -331,15 +332,18 @@ const LoginScreen = ({ navigation, route }) => {
         return;
       }
 
-      // Medical patients (role PATIENT) go straight to the medical dashboard.
-      // Routing here avoids the therapy-only fetchClientData() call below, which
-      // 403s for a patient, and guarantees the correct intent independent of
-      // any locally-cached userIntent.
-      if (role === 'patient') {
+      // Medical care and therapy share one account: open the service this person
+      // last used (see utils/careServices). Medical goes straight to its
+      // dashboard, skipping the therapy client-data fetch below.
+      const service = await activeService(profile, role);
+      if (service === 'medical') {
         await AsyncStorage.setItem('userIntent', 'medical');
         if (profile?.id) await AsyncStorage.setItem('th.clientId', profile.id);
         navigation.replace('MedicalMain');
         return;
+      }
+      if ((await AsyncStorage.getItem('userIntent')) !== 'homecare') {
+        await AsyncStorage.setItem('userIntent', 'therapy');
       }
 
       if (profile?.clientId) {
@@ -369,10 +373,7 @@ const LoginScreen = ({ navigation, route }) => {
         if (coupleHandled) return;
       }
 
-      const intent = profile?.userIntent || await AsyncStorage.getItem('userIntent');
-      if (intent === 'medical') {
-        navigation.replace('MedicalMain');
-      } else if (intent === 'homecare') {
+      if (profile?.userIntent === 'homecare') {
         resetToHomeCarePatientDashboard(navigation);
       } else {
         navigation.replace('Main');

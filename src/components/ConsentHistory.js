@@ -20,6 +20,7 @@ const CONTEXT_LABELS = {
   psychiatry_registration: 'Psychiatry sign-up',
   second_opinion: 'Second opinion',
   in_call: 'During a session',
+  care_transfer: 'Transfer of care',
 };
 
 function policyLink(key) {

@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MedicalColors } from '../../constants/colors';
+import { getStoredToken, getStoredUserId, getStoredRole } from '../../services/apiClient';
+import { chooseService } from '../../utils/careServices';
 
 const { width } = Dimensions.get('window');
 
@@ -45,6 +47,13 @@ export default function MedicalIntakeScreen({ navigation }) {
   };
 
   const handleSkip = async () => {
+    // Already signed in (e.g. a therapy client): same account, no sign-up step.
+    const [token, userId, role] = await Promise.all([getStoredToken(), getStoredUserId(), getStoredRole()]);
+    if (token && userId && (role === 'client' || role === 'patient')) {
+      await chooseService(userId, 'medical');
+      (navigation.getParent() || navigation).reset({ index: 0, routes: [{ name: 'MedicalMain' }] });
+      return;
+    }
     try {
       await AsyncStorage.setItem('th.medicalSkip', 'true');
       await AsyncStorage.setItem('userIntent', 'medical');

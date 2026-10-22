@@ -24,12 +24,15 @@ import { resolveFileUrl } from '../../utils/mediaUrl';
 import SecuritySettingsSection from '../../components/SecuritySettingsSection';
 
 import ConsentHistory from '../../components/ConsentHistory';
+import ClinicianProfileFormMobile from '../../components/ClinicianProfileFormMobile';
 import NotificationTogglesSection from '../../components/NotificationTogglesSection';
 import { ChangePasswordCard, ClinicianAccountNote } from '../../components/AccountSecurityExtras';
-const TABS = ['Profile', 'Security', 'Availability', 'Notifications', 'Legal'];
+const TABS = ['Profile', 'Professional', 'Security', 'Availability', 'Notifications', 'Legal'];
 
 export default function DoctorSettingsScreen() {
   const [tab, setTab] = useState('Profile');
+  const [myId, setMyId] = useState('');
+  useEffect(() => { getStoredUserId().then((id) => setMyId(id || '')); }, []);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingAvail, setSavingAvail] = useState(false);
@@ -467,6 +470,12 @@ export default function DoctorSettingsScreen() {
 
       {/* Security Tab — two-step sign-in and biometrics, shared with every role
           (was squeezed in above the profile header). */}
+      {tab === 'Professional' && (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+          <ClinicianProfileFormMobile kind="doctor" userId={myId} accent={DoctorColors.primary} />
+        </ScrollView>
+      )}
+
       {tab === 'Security' && (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <SecuritySettingsSection accent={DoctorColors.primary} />

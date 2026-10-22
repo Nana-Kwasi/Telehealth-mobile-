@@ -145,7 +145,7 @@ export default function IntroHomeScreen({ navigation }) {
             <Text style={styles.modalFootnote}>
               You can review policies anytime at{' '}
               <Text style={styles.modalFootnoteLink} onPress={openPolicies}>
-                teleehealth.firebaseapp.com
+                policy.nessahub.com
               </Text>
             </Text>
           </View>

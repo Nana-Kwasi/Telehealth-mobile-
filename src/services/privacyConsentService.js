@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './apiClient';
 
 export const PRIVACY_STORAGE_KEY = 'nessaHubPrivacyAccepted';
-export const POLICIES_URL = 'https://teleehealth.firebaseapp.com/';
+export const POLICIES_URL = 'https://policy.nessahub.com/';
 export const POLICY_VERSION = '2025-05';
 
 const DEVICE_ID_KEY = 'nessaHubDeviceId';

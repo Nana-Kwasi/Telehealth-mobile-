@@ -6,6 +6,7 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { View, ActivityIndicator, DeviceEventEmitter, AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resolveRole, performLogout } from '../services/authService';
+import { activeService } from '../utils/careServices';
 import { touchActivity, isIdleExpired, clearActivity } from '../services/sessionIdle';
 import { api, clearSession } from '../services/apiClient';
 import { applyCoupleLandingIfNeeded } from '../services/coupleTherapyService';
@@ -94,6 +95,9 @@ import RecordExplorerScreen from '../screens/shared/RecordExplorerScreen';
 import CarePlanComposerScreen from '../screens/shared/CarePlanComposerScreen';
 import AdminDocComposerScreen from '../screens/shared/AdminDocComposerScreen';
 import ReferralComposerScreen from '../screens/shared/ReferralComposerScreen';
+import TransfersScreen from '../screens/shared/TransfersScreen';
+import EarningsScreen from '../screens/shared/EarningsScreen';
+import TransferPatientScreen from '../screens/shared/TransferPatientScreen';
 import ProviderPricePromotionsScreen from '../screens/shared/ProviderPricePromotionsScreen';
 import NotificationPreferencesScreen from '../screens/shared/NotificationPreferencesScreen';
 // One assistant, not two.
@@ -677,6 +681,12 @@ const DoctorDrawerNavigator = ({ profile }) => {
       <DoctorDrawer.Screen name="DoctorReferrals" options={{ title: 'Referrals' }}>
         {(props) => <ReferralComposerScreen {...props} role="DOCTOR" />}
       </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorEarnings" options={{ title: 'Earnings' }}>
+        {(props) => <EarningsScreen {...props} serviceKey="consultation" accent="#1e6bb8" />}
+      </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorTransfers" options={{ title: 'Transfers' }}>
+        {(props) => <TransfersScreen {...props} role="DOCTOR" />}
+      </DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorDiagnosticResults"  component={DoctorDiagnosticResultsScreen}  options={{ title: 'Lab & Scan Results' }} />
       <DoctorDrawer.Screen name="DoctorPreauth" options={{ title: 'Insurer approvals' }}>{() => <PreauthScreen accent={DoctorColors.primary} />}</DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorReviews"            component={DoctorReviewsScreen}            options={{ title: 'Reviews' }} />
@@ -753,6 +763,12 @@ const TherapistDrawerNavigator = ({ profile }) => {
       </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistReferrals" options={{ title: 'Referrals' }}>
         {(props) => <ReferralComposerScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistEarnings" options={{ title: 'Earnings' }}>
+        {(props) => <EarningsScreen {...props} serviceKey="therapy" accent="#4f46e5" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistTransfers" options={{ title: 'Transfers' }}>
+        {(props) => <TransfersScreen {...props} role="THERAPIST" />}
       </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistMood"      component={TherapistMoodScreen}      options={{ title: 'Client Moods' }} />
       <TherapistDrawer.Screen name="TherapistReportIssue" options={{ title: 'Report Issue' }}>
@@ -1005,8 +1021,10 @@ const AppNavigator = () => {
         else if (role === 'scan')         intent = 'scan';
         else if (role === 'scan_branch')  intent = 'scan_branch';
         else if (role === 'homecare_nurse') intent = 'homecare_nurse';
-        else if (role === 'patient')      intent = 'medical';
-        else intent = resolvedProfile?.userIntent || await AsyncStorage.getItem('userIntent') || 'therapy';
+        else if (resolvedProfile?.userIntent === 'homecare') intent = 'homecare';
+        // Patients and therapy clients share one account: reopen the service they
+        // last used (see utils/careServices).
+        else intent = await activeService(resolvedProfile, role);
 
         await AsyncStorage.setItem('isAuthenticated', 'true');
         await AsyncStorage.setItem('userId', userId);
@@ -1312,6 +1330,7 @@ const AppNavigator = () => {
         <Stack.Screen name="EPharmacy" component={EPharmacyScreen} options={{ title: 'My E-Pharmacies', headerStyle: { backgroundColor: '#7c3aed' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
         <Stack.Screen name="DoctorDetail" component={DoctorDetailScreen} options={{ title: 'Doctor Profile', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
         <Stack.Screen name="Support" component={SupportScreen} options={{ title: 'Support & Report', headerStyle: { backgroundColor: MedicalColors.primary }, headerTintColor: '#fff' }} />
+        <Stack.Screen name="TransferPatient" component={TransferPatientScreen} options={{ title: 'Transfer patient', headerStyle: { backgroundColor: '#0f172a' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
         <Stack.Screen name="DoctorPatientDetail" component={DoctorPatientDetailScreen} options={{ title: 'Patient Detail', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />
         <Stack.Screen name="DoctorPatientOverview" component={DoctorPatientOverviewScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TherapistDiagnosticOrder" component={DoctorDiagnosticScreen} options={{ title: 'Order Lab / Scan', headerStyle: { backgroundColor: DoctorColors.primaryDark }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '700' } }} />

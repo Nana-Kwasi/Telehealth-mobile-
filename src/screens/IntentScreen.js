@@ -6,12 +6,15 @@ import {
   TouchableOpacity,
   ImageBackground,
   StatusBar,
+  ScrollView,
+  Linking,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/colors';
 import TherapyTypeModal from '../components/TherapyTypeModal';
 import { clearFlow, updateFlow } from '../services/medpsychFlow';
+import { PROVIDER_PORTAL_LINKS } from '../constants/providerPortal';
 
 const INTENT_OPTIONS = [
   {
@@ -153,7 +156,9 @@ const IntentScreen = ({ navigation }) => {
       resizeMode="cover"
     >
       <StatusBar barStyle="light-content" />
-      <View style={styles.overlay}>
+      {/* Scrolls only when the screen is too short for everything (small phones,
+          large text); otherwise it lays out exactly as before. */}
+      <ScrollView style={styles.overlayScroll} contentContainerStyle={styles.overlay} showsVerticalScrollIndicator={false} bounces={false}>
         <View style={styles.brand}>
           <View style={styles.logoMark}>
             <Text style={styles.logoLetter}>N</Text>
@@ -188,14 +193,34 @@ const IntentScreen = ({ navigation }) => {
           ))}
         </View>
 
-        <TouchableOpacity
-          style={styles.loginBtn}
-          onPress={() => navigation.navigate('Login')}
-          activeOpacity={0.75}
-        >
-          <Text style={styles.loginBtnText}>Already have an account? Sign in</Text>
-        </TouchableOpacity>
-      </View>
+        <View>
+          {/* Healthcare providers apply on the provider portal in the browser. */}
+          <TouchableOpacity
+            style={styles.providerCard}
+            onPress={() => Linking.openURL(PROVIDER_PORTAL_LINKS.home).catch(() => {})}
+            activeOpacity={0.85}
+            accessibilityRole="link"
+            accessibilityLabel="Healthcare provider? Apply to join NessaHub. Opens onboard.nessahub.com"
+          >
+            <MaterialCommunityIcons name="hospital-building" size={18} color="#5eead4" />
+            <Text style={styles.providerText} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+              Healthcare provider? <Text style={styles.providerTextStrong}>Join NessaHub</Text>
+            </Text>
+            <View style={styles.providerBtn}>
+              <Text style={styles.providerBtnText} maxFontSizeMultiplier={1.2}>Apply</Text>
+              <Ionicons name="open-outline" size={13} color="#0b2a4a" />
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.loginBtn}
+            onPress={() => navigation.navigate('Login')}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.loginBtnText}>Already have an account? Sign in</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
       <TherapyTypeModal
         visible={showTypeModal}
         onClose={() => setShowTypeModal(false)}
@@ -212,13 +237,17 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  overlay: {
+  overlayScroll: {
     flex: 1,
     backgroundColor: 'rgba(10,20,14,0.72)',
+  },
+  overlay: {
+    flexGrow: 1,
     paddingHorizontal: 16,
-    paddingTop: 80,
-    paddingBottom: 48,
+    paddingTop: 72,
+    paddingBottom: 32,
     justifyContent: 'space-between',
+    gap: 20,
   },
   brand: {
     flexDirection: 'row',
@@ -306,6 +335,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.65)',
     lineHeight: 16,
+  },
+  providerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 9,
+    paddingLeft: 14,
+    paddingRight: 9,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(94,234,212,0.3)',
+    backgroundColor: 'rgba(11,42,74,0.5)',
+  },
+  providerText: {
+    flex: 1,
+    fontSize: 13.5,
+    color: 'rgba(255,255,255,0.75)',
+  },
+  providerTextStrong: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
+  providerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  providerBtnText: {
+    color: '#0b2a4a',
+    fontWeight: '800',
+    fontSize: 13,
   },
   loginBtn: {
     alignItems: 'center',

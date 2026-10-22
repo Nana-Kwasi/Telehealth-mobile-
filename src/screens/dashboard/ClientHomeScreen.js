@@ -40,6 +40,7 @@ import GlassFill, { glassStyle } from '../../components/GlassFill';
 import AiAssistantFab from '../../components/AiAssistantFab';
 
 import FaqSection from '../../components/FaqSection';
+import TransferConsentCard from '../../components/TransferConsentCard';
 const { width } = Dimensions.get('window');
 
 async function resolveMoodClientId(client) {
@@ -493,6 +494,8 @@ const ClientHomeScreen = ({ navigation }) => {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
+      {/* A transfer to another therapist waiting for this client's consent. */}
+      <TransferConsentCard kind="THERAPY" />
       <View style={[styles.header, glassStyle]}>
         <GlassFill />
         {/* Behind the header content, faded left-to-right so the greeting

@@ -12,6 +12,7 @@ import { getStoredUserId } from '../../services/apiClient';
 import { fetchClientAppointments } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 import BillingAssistantCard from '../../components/BillingAssistantCard';
+import PaymentsAndRefunds from '../../components/PaymentsAndRefunds';
 
 const MedicalBillingScreen = () => {
   const [completedAppts, setCompletedAppts] = useState([]);
@@ -61,6 +62,8 @@ const MedicalBillingScreen = () => {
       automaticallyAdjustKeyboardInsets
       keyboardShouldPersistTaps="handled"
     >
+      {/* Payments, with the refund policy applied before asking. */}
+      <PaymentsAndRefunds accent={MedicalColors.primary} />
       {/* Invoices, insurance verification and claims. */}
       <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
         <BillingAssistantCard accent={MedicalColors.primary} />

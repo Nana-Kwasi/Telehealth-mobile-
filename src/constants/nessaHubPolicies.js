@@ -1,5 +1,5 @@
 /** Hosted policy site — same project as Nessa-Hub-Policies (Firebase Hosting). */
-const DEFAULT_POLICIES_BASE = 'https://teleehealth.web.app';
+const DEFAULT_POLICIES_BASE = 'https://policy.nessahub.com';
 
 export function getNessaHubPoliciesBase() {
   return DEFAULT_POLICIES_BASE.replace(/\/+$/, '');

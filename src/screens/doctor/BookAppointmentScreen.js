@@ -17,6 +17,7 @@ import { api, getStoredUserId, getStoredEmail } from '../../services/apiClient';
 import { payForBooking } from '../../services/paystack';
 import { createAppointment } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
+import { chooseService } from '../../utils/careServices';
 
 const EMPTY_VITALS = {
   bpSystolic: '',
@@ -76,8 +77,11 @@ const BookAppointmentScreen = ({ route, navigation }) => {
   const goNext = (s = success) => {
     setSuccess(null);
     if (!s) return;
-    if (s.next === 'signup') navigation.navigate('SignUp');
-    else navigation.navigate('MedicalMain');
+    if (s.next === 'signup') { navigation.navigate('SignUp'); return; }
+    // Signed in (possibly a therapy client): the booking lives on the medical
+    // dashboard, so open that one next time too.
+    getStoredUserId().then((id) => chooseService(id, 'medical')).catch(() => {});
+    navigation.navigate('MedicalMain');
   };
   useEffect(() => {
     if (!success) return undefined;

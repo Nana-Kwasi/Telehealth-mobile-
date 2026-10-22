@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchDoctors, getSpecializations } from '../../services/doctorDataService';
 import { MedicalColors } from '../../constants/colors';
 import { resolveFileUrl } from '../../utils/mediaUrl';
+import { api } from '../../services/apiClient';
 
 const SORT_OPTIONS = [
   { key: 'rating', label: 'Highest Rated' },
@@ -47,6 +48,22 @@ const DoctorSearchScreen = ({ navigation, route }) => {
   const [genderFilter, setGenderFilter] = useState(null);
   const [maxFeeFilter, setMaxFeeFilter] = useState('');
   const [languageFilter, setLanguageFilter] = useState('');
+  // Server matching for the chosen specialty: exact specialists (best), then
+  // related specialties (close) — the same ranking transfers use. Keyed by id.
+  const [matchMap, setMatchMap] = useState({});
+  useEffect(() => {
+    if (!selectedSpecialty) { setMatchMap({}); return undefined; }
+    let live = true;
+    api(`/api/v1/matching/doctors?specialty=${encodeURIComponent(selectedSpecialty)}`, { authenticated: false })
+      .then((m) => {
+        if (!live) return;
+        const map = {};
+        [...(m?.best || []), ...(m?.close || [])].forEach((d) => { map[d.id] = d; });
+        setMatchMap(map);
+      })
+      .catch(() => { if (live) setMatchMap({}); });
+    return () => { live = false; };
+  }, [selectedSpecialty]);
 
   const specializations = getSpecializations();
 
@@ -57,7 +74,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     applyFilters();
-  }, [searchQuery, selectedSpecialty, doctors, sortBy, showFavoritesOnly, favorites, genderFilter, maxFeeFilter, languageFilter]);
+  }, [searchQuery, selectedSpecialty, doctors, sortBy, showFavoritesOnly, favorites, genderFilter, maxFeeFilter, languageFilter, matchMap]);
 
   const loadDoctors = async () => {
     setIsLoading(true);
@@ -122,8 +139,11 @@ const DoctorSearchScreen = ({ navigation, route }) => {
       results = results.filter(d => {
         // Always include general doctors
         if (isGeneralDoctor(d)) return true;
-        // Specialty match
-        if (selectedSpecialty && d.specialization !== selectedSpecialty) return false;
+        // Specialty match: a server match (exact or related specialty) when available.
+        if (selectedSpecialty) {
+          const matched = Object.keys(matchMap).length > 0;
+          if (matched ? !matchMap[d.id] : d.specialization !== selectedSpecialty) return false;
+        }
         // Text search
         if (q) {
           return (
@@ -153,6 +173,12 @@ const DoctorSearchScreen = ({ navigation, route }) => {
       case 'name':
         results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         break;
+    }
+    // Best matches first, then close ones, keeping the chosen sort within each.
+    if (Object.keys(matchMap).length) {
+      const rank = (d) => (matchMap[d.id]?.tier === 'best' ? 0 : matchMap[d.id] ? 1 : 2);
+      results = results.map((d, i) => ({ d, i })).sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i)
+        .map(({ d }) => ({ ...d, matchTier: matchMap[d.id]?.tier || null }));
     }
 
     setFilteredDoctors(results);
@@ -216,6 +242,11 @@ const DoctorSearchScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
           <Text style={styles.specialization}>{item.specialization || 'General Practitioner'}</Text>
+          {item.matchTier ? (
+            <Text style={{ fontSize: 12, fontWeight: '700', color: item.matchTier === 'best' ? '#166534' : '#075985' }}>
+              {item.matchTier === 'best' ? 'Best match' : 'Close match'}
+            </Text>
+          ) : null}
           <View style={styles.ratingRow}>
             <View style={styles.stars}>{renderStars(item.averageRating)}</View>
             <Text style={styles.ratingText}>

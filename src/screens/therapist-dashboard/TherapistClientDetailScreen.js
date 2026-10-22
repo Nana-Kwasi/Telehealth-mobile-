@@ -510,6 +510,9 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowStatusMenu(true)} disabled={statusUpdating}>
               <Text style={styles.outlineBtnText}>{statusUpdating ? '…' : 'Status'}</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.outlineBtn} onPress={() => navigation.navigate('TransferPatient', { patientId: clientId, patientName: clientName, role: 'THERAPIST' })}>
+              <Text style={styles.outlineBtnText}>Transfer</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.dischargeBtn} onPress={handleDischarge}>
               <Text style={styles.dischargeBtnText}>Discharge</Text>
             </TouchableOpacity>

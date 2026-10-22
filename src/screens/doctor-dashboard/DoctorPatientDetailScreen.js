@@ -423,6 +423,13 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             <Ionicons name="time-outline" size={14} color="#065f46" />
             <Text style={[styles.dischargeBtnText, { color: '#065f46' }]}>Timeline</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.dischargeBtn, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}
+            onPress={() => navigation.navigate('TransferPatient', { patientId, patientName: patient?.name, role: 'DOCTOR' })}
+          >
+            <Ionicons name="swap-horizontal-outline" size={14} color="#1e3a8a" />
+            <Text style={[styles.dischargeBtnText, { color: '#1e3a8a' }]}>Transfer</Text>
+          </TouchableOpacity>
           {patientStatus === 'active' && (
             <TouchableOpacity
               style={[styles.dischargeBtn, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}

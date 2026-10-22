@@ -25,6 +25,9 @@ import {
   validateQuestionnaireAge,
 } from '../constants/therapyAgeValidation';
 import { updateFlow as updateMedPsychFlow } from '../services/medpsychFlow';
+import { getStoredToken, getStoredUserId, getStoredRole } from '../services/apiClient';
+import { saveTherapyIntake } from '../services/therapyIntake';
+import { chooseService } from '../utils/careServices';
 
 const STORAGE_KEY = 'th.onboard';
 
@@ -225,6 +228,19 @@ const QuestionnaireScreen = ({ route, navigation }) => {
           step: 'therapist',
         });
         navigation.navigate('MedPsychPsychiatrists');
+        return;
+      }
+
+      // Already signed in (e.g. a medical patient adding therapy): one account
+      // covers both, so attach the intake to it and skip the account step.
+      const [signedInToken, signedInId, signedInRole] = await Promise.all([
+        getStoredToken(), getStoredUserId(), getStoredRole(),
+      ]);
+      if (signedInToken && signedInId && (signedInRole === 'client' || signedInRole === 'patient')) {
+        await saveTherapyIntake(signedInId, clientData);
+        await AsyncStorage.setItem('th.clientId', signedInId);
+        await chooseService(signedInId, 'therapy');
+        navigation.navigate('MatchTherapist');
         return;
       }
 

@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/apiClient';
 import { MedicalColors } from '../constants/colors';
+import ServiceSwitchRow from './ServiceSwitchRow';
 import { signOut } from '../services/authService';
 import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
 import { performLogout } from '../services/authService';
@@ -95,6 +96,7 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
+        <ServiceSwitchRow navigation={navigation} profile={profile} current="medical" color={MedicalColors.primary} />
         {drawerItems.map((item) => (
           <TouchableOpacity
             key={item.name}

@@ -22,6 +22,7 @@ import AiAssistantFab from '../../components/AiAssistantFab';
 import SymptomTriageCard from '../../components/SymptomTriageCard';
 
 import FaqSection from '../../components/FaqSection';
+import TransferConsentCard from '../../components/TransferConsentCard';
 const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
 // How the daily check-in prompt paces itself. A logged check-in keeps it away
@@ -476,6 +477,8 @@ const MedicalHomeScreen = ({ navigation }) => {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={MedicalColors.primary} />
       }
     >
+      {/* A transfer of this patient's care waiting for their consent. */}
+      <TransferConsentCard kind="MEDICAL" />
       {/* Welcome Banner */}
       <View style={styles.welcomeCard}>
         {/* Behind the header content, faded left-to-right so the

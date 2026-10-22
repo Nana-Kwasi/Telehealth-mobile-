@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TherapyColors as Colors } from '../constants/colors';
+import ServiceSwitchRow from './ServiceSwitchRow';
 import { performLogout } from '../services/authService';
 import { api } from '../services/apiClient';
 import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
@@ -225,6 +226,7 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
       </ImageBackground>
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
+        <ServiceSwitchRow navigation={navigation} profile={profile} current="therapy" color="#5046bd" />
         {visibleItems.map((item) => (
           <TouchableOpacity
             key={item.name}

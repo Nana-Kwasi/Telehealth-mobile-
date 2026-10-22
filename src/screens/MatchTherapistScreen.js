@@ -144,6 +144,22 @@ const MatchTherapistScreen = ({ navigation, route }) => {
         return;
       }
 
+      // The server matches from the client's questionnaire (same as the web):
+      // therapists who see the kind of therapy chosen, ranked by how much of what
+      // the client needs they cover, preferences weighed in. Best matches first.
+      try {
+        const match = await api('/api/v1/matching/therapists', {
+          method: 'POST',
+          body: { intake: data, therapyType: data.therapyType || null },
+        });
+        const ranked = [...(match?.best || []), ...(match?.close || []), ...(match?.other || [])];
+        setTherapists(ranked.map((t) => ({ ...t, therapyType: t.professionalType, languagesSpoken: t.languages })));
+        return;
+      } catch (matchErr) {
+        // An older server without matching: fall back to the basic list below.
+        console.warn('Matching unavailable, using the basic list:', matchErr?.message);
+      }
+
       const allTherapistsRaw = await api('/api/v1/therapists').catch(() => []);
       const allTherapists = Array.isArray(allTherapistsRaw) ? allTherapistsRaw : [];
       // Only exclude a therapist on a *definite* mismatch. These filters used to read
@@ -318,6 +334,11 @@ const MatchTherapistScreen = ({ navigation, route }) => {
                   </View>
                 )}
                 <View style={styles.therapistInfo}>
+                  {therapist.tier ? (
+                    <Text style={[styles.therapistExp, { fontWeight: '700', color: therapist.tier === 'best' ? '#166534' : '#075985' }]}>
+                      {therapist.tier === 'best' ? 'Best match' : therapist.tier === 'close' ? 'Close match' : 'Available'}
+                    </Text>
+                  ) : null}
                   <Text style={styles.therapistName}>
                     {therapist.name || therapist.fullName || therapist.displayName || 'Therapist'}
                   </Text>
@@ -351,11 +372,14 @@ const MatchTherapistScreen = ({ navigation, route }) => {
                   <Text style={styles.rateMissing}>Rate not published</Text>
                 )}
               </View>
-              {therapist.score && (
+              {therapist.score ? (
                 <View style={styles.matchScore}>
                   <Text style={styles.matchScoreText}>Match: {Math.round(therapist.score)}%</Text>
                 </View>
-              )}
+              ) : null}
+              {Array.isArray(therapist.reasons) && therapist.reasons.length ? (
+                <Text style={styles.languages}>{therapist.reasons.join(' · ')}</Text>
+              ) : null}
               {!awaitingMyConfirm ? (
                 <TouchableOpacity style={styles.selectButton} onPress={() => chooseTherapist(therapist)}>
                   <Text style={styles.selectButtonText}>

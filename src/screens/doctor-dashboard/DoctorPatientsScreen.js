@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/apiClient';
 import { DoctorColors } from '../../constants/colors';
 import { enrichPatientNames } from '../../utils/doctorUtils';
+import { incomingTransferPatients } from '../../services/careTransfers';
 
 function getInitials(name) {
   if (!name) return 'P';
@@ -78,6 +79,18 @@ export default function DoctorPatientsScreen({ navigation }) {
         }
       });
 
+      // Patients transferred in join the list like a new patient, with their
+      // whole record behind them, even before a first appointment here.
+      (await incomingTransferPatients()).forEach((t) => {
+        const prev = patMap.get(t.id);
+        if (prev) { prev.transferredFrom = t.from_name || null; return; }
+        patMap.set(t.id, {
+          id: t.id, name: t.name || '', email: t.email || '',
+          lastVisit: String(t.transferred_at || '').split('T')[0], visitCount: 0, completedCount: 0,
+          transferredFrom: t.from_name || null,
+        });
+      });
+
       const enriched = await enrichPatientNames(patMap);
       const list = Array.from(enriched.values()).map(p => ({ ...p, status: 'active' }));
       const sorted = list.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit));
@@ -106,6 +119,7 @@ export default function DoctorPatientsScreen({ navigation }) {
           <View style={styles.patientInfo}>
             <Text style={styles.patientName}>{item.name}</Text>
             {item.email ? <Text style={styles.patientEmail}>{item.email}</Text> : null}
+            {item.transferredFrom ? <Text style={[styles.patientEmail, { color: '#1e6bb8' }]}>Transferred from Dr. {item.transferredFrom}</Text> : null}
             <View style={styles.metaRow}>
               <Text style={styles.meta}>{item.visitCount} appointment{item.visitCount !== 1 ? 's' : ''}</Text>
               {item.lastVisit ? <Text style={styles.meta}>· Last: {item.lastVisit}</Text> : null}
