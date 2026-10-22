@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, storeSession, clearSession, STORAGE_KEYS, getStoredToken, getStoredUserId } from './apiClient';
 import { registerForPushNotifications, unregisterPushNotifications } from './notificationService';
 import { isBiometricLoginEnabled, enableBiometricLogin, disableBiometricLogin } from './biometricAuth';
+import { PRIVACY_STORAGE_KEY, DEVICE_ID_KEY } from './privacyConsentService';
 
 // ─── Role mapping: backend enum → mobile string ───────────────────────────────
 function mapRole(backendRole) {
@@ -263,6 +264,11 @@ export async function wipeLocalData() {
       'nessa.biometric.enabled',
       'nessa.biometric.email',
       'nessa.biometric.refreshToken',
+      // The device's privacy-policy acceptance (and the device id it is recorded
+      // against) belongs to the phone, not the session. Wiping it made the
+      // "Privacy & policies" prompt reappear after every sign-out or expiry.
+      PRIVACY_STORAGE_KEY,
+      DEVICE_ID_KEY,
     ]);
     const keys = await AsyncStorage.getAllKeys();
     const removable = keys.filter((key) => !keepKeys.has(key));

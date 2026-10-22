@@ -6,7 +6,7 @@ export const PRIVACY_STORAGE_KEY = 'nessaHubPrivacyAccepted';
 export const POLICIES_URL = 'https://policy.nessahub.com/';
 export const POLICY_VERSION = '2025-05';
 
-const DEVICE_ID_KEY = 'nessaHubDeviceId';
+export const DEVICE_ID_KEY = 'nessaHubDeviceId';
 
 export async function getOrCreateDeviceId() {
   let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
