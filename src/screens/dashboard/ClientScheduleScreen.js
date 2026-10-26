@@ -38,6 +38,19 @@ const ClientScheduleScreen = ({ navigation, route }) => {
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  // The session being changed, when the form is open to edit one rather than book.
+  const [editingSession, setEditingSession] = useState(null);
+  // When a client may still move a session — the platform rule from System Config
+  // (the server enforces the same). Until it loads, the platform default applies.
+  const [changeRules, setChangeRules] = useState({ allowRescheduling: true, cutoffHours: 2 });
+  useEffect(() => {
+    api('/api/v1/admin/system-config/public/settings', { authenticated: false })
+      .then((s) => {
+        const a = s?.appointments;
+        if (a) setChangeRules({ allowRescheduling: a.allowRescheduling !== false, cutoffHours: Number(a.cancelCutoffHours) || 0 });
+      })
+      .catch(() => {});
+  }, []);
   
   // Sessions for the day the user tapped, shown in a detail sheet.
   const [dayDetail, setDayDetail] = useState(null);
@@ -250,7 +263,78 @@ const ClientScheduleScreen = ({ navigation, route }) => {
     setShowScheduleForm(true);
   };
 
+  // A session can be changed until the cut-off before it starts, unless it is over.
+  const canChangeSession = (appt) => {
+    if (!changeRules.allowRescheduling) return false;
+    if (['completed', 'cancelled', 'canceled', 'in_progress', 'missed'].includes(String(appt.status || '').toLowerCase())) return false;
+    const hoursAway = (new Date(appt.scheduledTime) - new Date()) / 3_600_000;
+    return hoursAway > 0 && hoursAway >= changeRules.cutoffHours;
+  };
+
+  const openEditSession = (appt) => {
+    const when = new Date(appt.scheduledTime);
+    const pad = (n) => String(n).padStart(2, '0');
+    setScheduleForm({
+      date: `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`,
+      time: `${pad(when.getHours())}:${pad(when.getMinutes())}`,
+      duration: String(appt.durationMinutes || 30),
+      notes: appt.notes || '',
+    });
+    setEditingSession(appt);
+    setMessage({ type: '', text: '' });
+    setDayDetail(null);
+    setShowScheduleForm(true);
+  };
+
+  const closeScheduleForm = () => {
+    setShowScheduleForm(false);
+    setEditingSession(null);
+    setScheduleForm({ date: '', time: '', duration: '30', notes: '' });
+    setMessage({ type: '', text: '' });
+  };
+
+  // Save a change to an existing session. It is already paid for, so no payment step; a new
+  // time goes back to the therapist to confirm, as a first booking does.
+  const handleUpdateSession = async () => {
+    const appt = editingSession;
+    if (!scheduleForm.date || !scheduleForm.time) {
+      setMessage({ type: 'error', text: 'Please fill in all required fields' });
+      return;
+    }
+    const dateTime = new Date(`${scheduleForm.date}T${scheduleForm.time}`);
+    if (dateTime <= new Date()) {
+      setMessage({ type: 'error', text: 'Please select a future date and time' });
+      return;
+    }
+    const timeChanged = new Date(appt.scheduledTime).getTime() !== dateTime.getTime();
+    setIsSubmitting(true);
+    setMessage({ type: '', text: '' });
+    try {
+      // No whole-day busy check here: it counted this very session, so moving it to another
+      // time the same day was refused. The server checks for a real clash (ignoring this
+      // session) and its reason is shown below.
+      const patch = {
+        scheduledTime: dateTime.toISOString(),
+        durationMinutes: parseInt(scheduleForm.duration, 10),
+        notes: scheduleForm.notes || '',
+        ...(timeChanged ? { status: 'pending' } : {}),
+      };
+      const saved = await api(`/api/v1/scheduled-calls/${appt.id}`, { method: 'PATCH', body: patch });
+      setAppointments((prev) => prev.map((a) => (a.id === appt.id ? { ...a, ...patch, ...(saved || {}) } : a)));
+      setMessage({ type: 'success', text: timeChanged
+        ? 'Session moved. Your therapist will confirm the new time.'
+        : 'Session updated.' });
+      setTimeout(closeScheduleForm, 1600);
+    } catch (error) {
+      // The server explains a refusal (for example the cut-off has passed) — show its words.
+      setMessage({ type: 'error', text: error?.message || 'Could not change the session. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleScheduleSubmit = async () => {
+    if (editingSession) { await handleUpdateSession(); return; }
     if (!scheduleForm.date || !scheduleForm.time) {
       setMessage({ type: 'error', text: 'Please fill in all required fields' });
       return;
@@ -529,6 +613,13 @@ const ClientScheduleScreen = ({ navigation, route }) => {
                     {appt.notes ? (
                       <Text style={styles.detailNotes}>{appt.notes}</Text>
                     ) : null}
+                    {canChangeSession(appt) ? (
+                      <TouchableOpacity style={styles.detailChange} onPress={() => openEditSession(appt)}
+                        accessibilityLabel="Change this session">
+                        <Ionicons name="create-outline" size={16} color={Colors.primary} />
+                        <Text style={styles.detailChangeText}>Change date, time or notes</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 );
               })}
@@ -549,7 +640,7 @@ const ClientScheduleScreen = ({ navigation, route }) => {
         visible={showScheduleForm}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowScheduleForm(false)}
+        onRequestClose={closeScheduleForm}
       >
         <KeyboardAvoidingView
         style={styles.modalOverlay}
@@ -557,14 +648,8 @@ const ClientScheduleScreen = ({ navigation, route }) => {
       >
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Schedule Call</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowScheduleForm(false);
-                  setScheduleForm({ date: '', time: '', duration: '30', notes: '' });
-                  setMessage({ type: '', text: '' });
-                }}
-              >
+              <Text style={styles.modalTitle}>{editingSession ? 'Change session' : 'Schedule Call'}</Text>
+              <TouchableOpacity onPress={closeScheduleForm}>
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
@@ -716,7 +801,7 @@ const ClientScheduleScreen = ({ navigation, route }) => {
                   {isSubmitting ? (
                     <ActivityIndicator color={Colors.surface} />
                   ) : (
-                    <Text style={styles.submitButtonText}>Schedule Session</Text>
+                    <Text style={styles.submitButtonText}>{editingSession ? 'Save changes' : 'Schedule Session'}</Text>
                   )}
                 </TouchableOpacity>
               </ScrollView>
@@ -886,6 +971,12 @@ const styles = StyleSheet.create({
   detailChipText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   detailPerson: { fontSize: 14, fontWeight: '600', color: '#0d0d0d' },
   detailMeta: { fontSize: 13, color: '#0d0d0d', textTransform: 'capitalize' },
+  detailChange: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    marginTop: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.primary,
+  },
+  detailChangeText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
   detailNotes: {
     marginTop: 6,
     fontSize: 13,
