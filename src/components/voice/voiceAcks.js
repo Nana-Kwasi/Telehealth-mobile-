@@ -87,3 +87,15 @@ export function chooseAck(text, lastAck) {
   const pool = options.length ? options : set;
   return pool[Math.floor(Math.random() * pool.length)];
 }
+
+/**
+ * Greetings, thanks, goodbyes, "are you there?" — answered at once, so nothing should be said
+ * while waiting for them ("Hi" answered with "Just a second, I'm looking into it" is wrong).
+ */
+export function isSmallTalk(text) {
+  const t = String(text || '').toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return true;
+  if (QUIET.includes(t)) return true;
+  return /^(hi|hii+|hello|hey|hiya|good (morning|afternoon|evening|night)|thanks?|thank you|ok(ay)?|bye|goodbye|cool|great|nice|yes|yeah|no|nope)( (there|nessa|nessahub|assistant|so much|again|then))?$/.test(t)
+    || t.split(' ').length <= 2 && /^(hi|hello|hey|thanks|bye|ok|okay)\b/.test(t);
+}

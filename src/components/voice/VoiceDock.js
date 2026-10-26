@@ -1,11 +1,12 @@
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import VoiceIo from '../../../modules/voice-io';
 import VoiceOrb from './VoiceOrb';
 import { pickOrbTheme } from './orbThemes';
 import { speak, transcribe } from './speechApi';
-import { ALL_PHRASES, DIDNT_CATCH, NO_CONNECTION, THINKING, STILL_THINKING, chooseAck, pickPhrase } from './voiceAcks';
+import { ALL_PHRASES, DIDNT_CATCH, NO_CONNECTION, THINKING, STILL_THINKING, chooseAck, isSmallTalk, pickPhrase } from './voiceAcks';
 import { ALL_BACKCHANNELS, classifyTurn, pickBackchannel } from './voiceTurn';
 import { ZC } from '../../constants/zencare';
 
@@ -317,6 +318,8 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
       waitSaid.current = 1;   // the acknowledgement already says it is working on it
       speakPhrase(ack);
     }
+    // "Hi" or "thanks" is answered at once; a waiting phrase over it would be absurd.
+    if (isSmallTalk(text)) waitSaid.current = 2;
     if (phaseRef.current === 'transcribing') go('thinking');
     onUtterance?.(text);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -325,7 +328,8 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
   // "Mm-hmm." while still listening (native only — the microphone stays open under the echo
   // canceller).
   const playAside = async (phrase) => {
-    const uri = (await ackAudio.current[phrase])?.uri;
+    // Only if it is ready now: a late "mm-hmm" would land on the person's next words.
+    const uri = (await within(ackAudio.current[phrase], 200))?.uri;
     if (!uri || !alive.current || phaseRef.current !== 'listening') return;
     try {
       nativeEnd.current = null;
@@ -438,6 +442,7 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
   };
 
   const detectBargeIn = (db) => {
+    if (deviceSpeaking.current) return;   // its own voice is not cancelled: tap to interrupt
     const b = barge.current;
     if (b.floor === null) b.floor = roomFloor.db ?? QUIET_ROOM_DB;
     if (db < BARGE_MIN_DB) b.floor = db < b.floor ? db : b.floor + (db - b.floor) * 0.02;
@@ -479,7 +484,39 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
       });
   };
 
+  // How long to wait for the natural voice before the phone's own voice says it instead.
+  // A short phrase must be instant; a sentence of the answer can wait a little longer.
+  const PHRASE_WAIT_MS = 350;
+  const SENTENCE_WAIT_MS = 4500;
+  const within = (promise, ms) => Promise.race([promise, new Promise((r) => setTimeout(() => r(null), ms))]);
+
+  /**
+   * The phone's own voice (expo-speech). Used when the natural voice is not ready in time — the
+   * speech provider can be busy — so the answer is always spoken, never left as text alone. It
+   * plays outside the echo canceller, so talking over it is not detected; tap the orb instead.
+   */
+  const deviceSpeaking = useRef(false);
+  const sayOnDevice = (text) => {
+    deviceSpeaking.current = true;
+    const ended = new Promise((resolve) => {
+      Speech.stop();
+      Speech.speak(text, {
+        language: 'en-GB',
+        rate: 1.0,
+        onDone: resolve,
+        onStopped: resolve,
+        onError: resolve,
+      });
+    }).then(() => { deviceSpeaking.current = false; });
+    return { ms: (text.length / CHARS_PER_SECOND) * 1000, ended };
+  };
+  const stopDeviceVoice = () => {
+    deviceSpeaking.current = false;
+    try { Speech.stop(); } catch { /* nothing playing */ }
+  };
+
   const stopPlayer = () => {
+    stopDeviceVoice();
     if (NATIVE) {
       nativeEnd.current = null;
       try { VoiceIo.stopPlayback(); } catch { /* not playing */ }
@@ -536,11 +573,22 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
     // Waiting for this clip's audio is not speaking: stay thinking, microphone open, until
     // there is sound — or the first syllable of a cut-in is lost to the mute.
     if (phaseRef.current === 'speaking') go('thinking');
-    const clip = await next.audio;
+    const clip = await within(next.audio, next.keep ? PHRASE_WAIT_MS : SENTENCE_WAIT_MS);
     const uri = clip?.uri;
     if (!alive.current || ignoreReply.current) { playing.current = false; return; }
     if (!uri) {
-      if (next.reply) onVoiceText?.({ type: 'chunk', text: next.text, ms: 0 });
+      // The natural voice is not ready (or failed): say it with the phone's voice instead.
+      if (phaseRef.current !== 'speaking') {
+        if (!NATIVE) {
+          await stopRecorder();
+          await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+        }
+        go('speaking');
+      }
+      const said = sayOnDevice(next.text.trim());
+      if (next.reply) onVoiceText?.({ type: 'chunk', text: next.text, ms: said.ms });
+      await said.ended;
+      if (ignoreReply.current) return;
       playing.current = false;
       playNext();
       return;
@@ -669,7 +717,7 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
       done?.();
     });
     const cutIn = VoiceIo.addListener('onSpeechWhileMuted', () => {
-      if (phaseRef.current === 'speaking') interruptRef.current({ byVoice: true });
+      if (phaseRef.current === 'speaking' && !deviceSpeaking.current) interruptRef.current({ byVoice: true });
     });
     return () => { lv.remove(); end.remove(); cutIn.remove(); };
   }, []);
@@ -695,8 +743,13 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
         }
       }
       // Every acknowledgement synthesised up front: they must be instant when needed.
+      // ONE AT A TIME: sending them all together made the speech provider answer "busy" to
+      // everything, the reply included. The server keeps them, so after the first session they
+      // come back at once. Until a phrase is ready, the phone's voice says it.
+      let chain = Promise.resolve();
       for (const phrase of [...ALL_PHRASES, ...ALL_BACKCHANNELS]) {
-        ackAudio.current[phrase] = fetchClip(phrase);
+        chain = chain.then(() => (alive.current ? fetchClip(phrase) : null));
+        ackAudio.current[phrase] = chain;
       }
       startListening();
     })();
