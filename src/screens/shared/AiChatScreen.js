@@ -13,6 +13,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Speech from 'expo-speech';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
+import VoiceDock, { useVoiceReveal } from '../../components/voice/VoiceDock';
+import { voiceAvailable } from '../../components/voice/speechApi';
 
 /**
  * Conversational AI assistant.
@@ -73,6 +75,18 @@ export default function AiChatScreen({ clinician = false }) {
   const [speakReplies, setSpeakReplies] = useState(false);
   const spokenRef = useRef(-1);
   const scrollRef = useRef(null);
+
+  // Hands-free conversation (components/voice/VoiceDock). The reply streams here as usual and
+  // is forwarded to the dock, which speaks it; its text is revealed at the pace of the voice.
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceOk, setVoiceOk] = useState(false);
+  const voiceRef = useRef(null);
+  const voiceModeRef = useRef(false);
+  voiceModeRef.current = voiceMode;
+  const streamAbort = useRef(null);
+  const reveal = useVoiceReveal(voiceMode);
+  const sendRef = useRef(null);
+  useEffect(() => { voiceAvailable().then(setVoiceOk); }, []);
 
   useEffect(() => {
     (async () => {
@@ -295,9 +309,15 @@ export default function AiChatScreen({ clinician = false }) {
 
     routeServiceInBackground(message);
 
-    streamAssist({
+    // Voice mode: a typed message or a tapped suggestion is spoken too.
+    const voice = voiceModeRef.current ? voiceRef.current : null;
+    if (voice) { voice.onTurnStart(); reveal.beginReply(); }
+    const said = (t) => { if (voice && t) { voice.onDelta(t); voice.onDone(); } };
+
+    streamAbort.current = streamAssist({
       body: { task, message, history },
-      onChunk: (piece) =>
+      onChunk: (piece) => {
+        voice?.onDelta(piece);
         setMessages((m) => {
           const next = [...m];
           const i = next.length - 1;
@@ -305,21 +325,26 @@ export default function AiChatScreen({ clinician = false }) {
             next[i] = { ...next[i], content: (next[i].content || '') + piece };
           }
           return next;
-        }),
+        });
+      },
       onEscalation: (p) => {
+        said(p.text);
         patchLast({ content: p.text, escalated: true, streaming: false });
         setBusy(false);
       },
       onRefusal: (p) => {
+        said(p.text);
         patchLast({ content: p.text, ok: false, streaming: false });
         setBusy(false);
       },
       // The finished answer failed output screening — discard what was shown.
       onRetract: (p) => {
+        voice?.onError(p.text);
         patchLast({ content: p.text, ok: false, streaming: false });
         setBusy(false);
       },
       onDone: (p) => {
+        voice?.onDone();
         patchLast({
           disclaimer: p?.disclaimer || null,
           streaming: false,
@@ -330,6 +355,7 @@ export default function AiChatScreen({ clinician = false }) {
         scrollToEnd();
       },
       onError: (e) => {
+        voice?.onError(e?.message);
         patchLast({
           content: e?.message || 'The assistant could not be reached. Please continue with your healthcare professional.',
           ok: false, streaming: false,
@@ -338,6 +364,31 @@ export default function AiChatScreen({ clinician = false }) {
       },
     });
   };
+
+  sendRef.current = send;
+  const onVoiceUtterance = useCallback((text) => sendRef.current?.(text), []);
+  const onVoiceEscalation = useCallback((text) => {
+    setMessages((m) => [...m, { role: 'assistant', content: text, escalated: true }]);
+  }, []);
+  const onVoiceClose = useCallback(() => setVoiceMode(false), []);
+  // Talking over the reply: the stream stops, and the text ends where the voice did.
+  const onVoiceText = useCallback((e) => {
+    reveal.onVoiceText(e);
+    if (e.type !== 'stop') return;
+    streamAbort.current?.();
+    const heard = reveal.stoppedAt();
+    setMessages((m) => {
+      const next = [...m];
+      const i = next.length - 1;
+      if (i >= 0 && next[i].role === 'assistant' && next[i].streaming !== undefined) {
+        const cut = heard == null ? next[i].content : (next[i].content || '').slice(0, heard);
+        next[i] = { ...next[i], content: cut ? `${cut.trimEnd()} …` : '…', streaming: false };
+      }
+      return next;
+    });
+    setBusy(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Create the booking the person just confirmed.
@@ -437,14 +488,14 @@ export default function AiChatScreen({ clinician = false }) {
 
   // Each finished reply is read once, as plain words.
   useEffect(() => {
-    if (!speakReplies) return;
+    if (!speakReplies || voiceMode) return;
     const i = messages.length - 1;
     const last = messages[i];
     if (!last || last.role !== 'assistant' || last.streaming || !last.content || spokenRef.current === i) return;
     spokenRef.current = i;
     Speech.stop();
     Speech.speak(last.content.replace(/[*_#`>|-]+/g, ' ').replace(/\s+/g, ' ').slice(0, 1200));
-  }, [messages, speakReplies]);
+  }, [messages, speakReplies, voiceMode]);
 
   const toggleRecording = async () => {
     if (recording) {
@@ -607,7 +658,7 @@ export default function AiChatScreen({ clinician = false }) {
                 <ThinkingLine reading={m.pending} />
               ) : (
                 <View>
-                  <AiMarkdown text={m.content} />
+                  <AiMarkdown text={voiceMode && i === messages.length - 1 ? reveal.visible(m.content) : m.content} />
                   {m.streaming ? <Text style={styles.caret}>▍</Text> : null}
                 </View>
               )}
@@ -670,6 +721,10 @@ export default function AiChatScreen({ clinician = false }) {
 
       </ScrollView>
 
+      {voiceMode ? (
+        <VoiceDock ref={voiceRef} onUtterance={onVoiceUtterance} onEscalation={onVoiceEscalation}
+          onClose={onVoiceClose} onVoiceText={onVoiceText} />
+      ) : (
       <View style={styles.composer}>
         <TextInput
           style={styles.input}
@@ -698,6 +753,16 @@ export default function AiChatScreen({ clinician = false }) {
           <Ionicons name={speakReplies ? 'volume-high-outline' : 'volume-mute-outline'} size={20}
             color={speakReplies ? ZC.accent : ZC.ink2} />
         </TouchableOpacity>
+        {voiceOk ? (
+          <TouchableOpacity
+            style={[styles.micBtn, styles.talkBtn]}
+            onPress={() => { Speech.stop(); setVoiceMode(true); }}
+            disabled={recording}
+            accessibilityLabel="Start a voice conversation"
+          >
+            <Ionicons name="headset-outline" size={20} color="#ffffff" />
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={[styles.micBtn, recording && styles.micBtnOn]}
           onPress={toggleRecording}
@@ -716,6 +781,7 @@ export default function AiChatScreen({ clinician = false }) {
           <Ionicons name="arrow-up" size={20} color="#ffffff" />
         </TouchableOpacity>
       </View>
+      )}
 
       {status?.remainingRequests !== undefined ? (
         <Text style={styles.quota}>{status.remainingRequests} requests left this hour</Text>
@@ -917,6 +983,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   sendBtnOff: { opacity: 0.35 },
+  talkBtn: { backgroundColor: ZC.accent, borderColor: ZC.accent },
   micBtn: {
     width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(13,13,13,0.16)', backgroundColor: '#ffffff',

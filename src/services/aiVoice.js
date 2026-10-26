@@ -1,5 +1,5 @@
 import { Audio } from 'expo-av';
-import { api } from './apiClient';
+import { transcribe } from '../components/voice/speechApi';
 
 /**
  * Voice input for the assistant.
@@ -70,40 +70,14 @@ export async function stopRecording() {
   const uri = rec.getURI();
   if (!uri) throw new Error('Nothing was recorded.');
 
-  // fetch + FileReader rather than expo-file-system: that package is not
-  // installed here, and both of these are built into React Native, so voice
-  // does not cost the project a new dependency.
-  const base64 = await fileToBase64(uri);
-
-  const res = await api('/api/v1/ai/transcribe', {
-    method: 'POST',
-    body: { audioBase64: base64, mimeType: 'm4a' },
-  });
-
-  if (!res?.ok) throw new Error(res?.text || 'That recording could not be understood.');
-  return res;
+  // The dedicated speech recogniser (Whisper), not a chat model given audio: a chat model
+  // "transcribed" an unclear clip as a whole made-up sentence, which then became the message.
+  const r = await transcribe(uri);
+  if (r.escalated) return { ok: true, transcript: r.text, escalated: true, text: r.safetyText };
+  if (!r.text) throw new Error('Nothing could be heard in that recording.');
+  return { ok: true, transcript: r.text, escalated: false };
 }
 
 export async function cancelRecording() {
   await forceRelease();
-}
-
-/** Read a local file URI as base64, without expo-file-system. */
-function fileToBase64(uri) {
-  return new Promise((resolve, reject) => {
-    fetch(uri)
-      .then((r) => r.blob())
-      .then((blob) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error('The recording could not be read.'));
-        reader.onloadend = () => {
-          const result = String(reader.result || '');
-          // Strip the "data:audio/...;base64," prefix the reader adds.
-          const comma = result.indexOf(',');
-          resolve(comma >= 0 ? result.slice(comma + 1) : result);
-        };
-        reader.readAsDataURL(blob);
-      })
-      .catch(() => reject(new Error('The recording could not be read.')));
-  });
 }

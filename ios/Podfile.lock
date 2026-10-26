@@ -2162,6 +2162,8 @@ PODS:
   - SDWebImageWebPCoder (0.15.0):
     - libwebp (~> 1.0)
     - SDWebImage/Core (~> 5.17)
+  - VoiceIo (0.1.0):
+    - ExpoModulesCore
   - Yoga (0.0.0)
   - ZXingObjC/Core (3.6.9)
   - ZXingObjC/OneD (3.6.9):
@@ -2271,6 +2273,7 @@ DEPENDENCIES:
   - RNSVG (from `../node_modules/react-native-svg`)
   - RNVectorIcons (from `../node_modules/react-native-vector-icons`)
   - RNWorklets (from `../node_modules/react-native-worklets`)
+  - VoiceIo (from `../modules/voice-io/ios`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 SPEC REPOS:
@@ -2482,6 +2485,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-vector-icons"
   RNWorklets:
     :path: "../node_modules/react-native-worklets"
+  VoiceIo:
+    :path: "../modules/voice-io/ios"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
@@ -2589,6 +2594,7 @@ SPEC CHECKSUMS:
   RNWorklets: 76fce72926e28e304afb44f0da23b2d24f2c1fa0
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageWebPCoder: 0e06e365080397465cc73a7a9b472d8a3bd0f377
+  VoiceIo: f38c2f4aa4e0a855ed4a485e7d38ff1ad364b222
   Yoga: 5934998fbeaef7845dbf698f698518695ab4cd1a
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
