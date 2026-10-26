@@ -57,7 +57,7 @@ const ClientSupportScreen = ({ navigation }) => {
     },
     {
       question: 'Can I reschedule or cancel a session?',
-      answer: 'Yes, you can reschedule or cancel sessions up to 24 hours before the scheduled time. Go to your Schedule screen and select the session you want to modify.'
+      answer: 'Yes, until shortly before the session starts (the cut-off is shown if it has passed). Go to your Schedule screen and select the session you want to change. After the cut-off, message your therapist.'
     },
     {
       question: 'How do I contact my therapist?',
