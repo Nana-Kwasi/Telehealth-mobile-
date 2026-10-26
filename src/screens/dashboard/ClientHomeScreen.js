@@ -375,6 +375,19 @@ const ClientHomeScreen = ({ navigation }) => {
     return days;
   };
   const isScheduledDay = (date) => scheduledDates.has(date.toISOString().split('T')[0]);
+  // Opens the Calendar screen's booking form on this day. `force` books even on a day that
+  // already has a session (from the day's pop-up), instead of showing that day's sessions.
+  const bookOnDay = (date, force = false) => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    if (date < startOfToday) {
+      Alert.alert('Invalid date', 'You cannot schedule sessions in the past.');
+      return;
+    }
+    const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    navigation.navigate('Schedule', { focusDate: ymd, book: force || undefined });
+  };
+
   const isCurrentMonthDay = (date) => date.getMonth() === calendarMonth.getMonth();
   const isToday = (date) => {
     const t = new Date();
@@ -892,21 +905,21 @@ const ClientHomeScreen = ({ navigation }) => {
                 isToday(day) && styles.calendarDayToday,
                 scheduled && styles.calendarDayScheduled,
               ];
-              return scheduled ? (
+              // A day with a session shows it; a free day from today on opens booking on that
+              // date — as on the therapist home.
+              return (
                 <TouchableOpacity
                   key={i}
                   style={dayStyle}
-                  onPress={() => setSelectedDateForModal(dateStr)}
+                  onPress={() => (scheduled ? setSelectedDateForModal(dateStr) : bookOnDay(day))}
                   activeOpacity={0.7}
                 >
                   {dayContent}
                 </TouchableOpacity>
-              ) : (
-                <View key={i} style={dayStyle}>{dayContent}</View>
               );
             })}
           </View>
-          <Text style={styles.calendarLegend}>✓ = day with a session (tap for details)</Text>
+          <Text style={styles.calendarLegend}>✓ = day with a session (tap for details) · tap a free day to book</Text>
         </View>
       </View>
 
@@ -945,6 +958,19 @@ const ClientHomeScreen = ({ navigation }) => {
             ) : (
               <Text style={styles.dateModalEmpty}>No session details for this date.</Text>
             )}
+            {selectedDateForModal && selectedDateForModal >= new Date().toISOString().split('T')[0] ? (
+              <TouchableOpacity
+                style={styles.dateModalBook}
+                onPress={() => {
+                  const d = new Date(selectedDateForModal + 'T12:00:00');
+                  setSelectedDateForModal(null);
+                  bookOnDay(d, true);
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#fff" />
+                <Text style={styles.dateModalBookText}>Book a session on this day</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               style={styles.dateModalClose}
               onPress={() => setSelectedDateForModal(null)}
@@ -1432,6 +1458,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  dateModalBook: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, marginTop: 14,
+  },
+  dateModalBookText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   dateModalClose: {
     backgroundColor: Colors.primary,
     paddingVertical: 12,

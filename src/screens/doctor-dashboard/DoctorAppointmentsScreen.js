@@ -39,7 +39,7 @@ function toDateStr(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-export default function DoctorAppointmentsScreen() {
+export default function DoctorAppointmentsScreen({ route, navigation }) {
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [doctorProfile, setDoctorProfile] = useState(null);
@@ -164,6 +164,20 @@ export default function DoctorAppointmentsScreen() {
     setSelectedDay(null);
     setShowBook(true);
   };
+
+  // Arrived from a day tapped on the home calendar: open the schedule form on that date once
+  // the patient list has loaded, then clear the request so coming back does not reopen it.
+  const requestedDate = route?.params?.scheduleDate;
+  useEffect(() => {
+    if (!requestedDate || loading) return;
+    navigation?.setParams({ scheduleDate: undefined });
+    const [y, m] = requestedDate.split('-').map(Number);
+    setCalYear(y);
+    setCalMonth(m - 1);
+    setMainTab('Calendar');
+    openBook(requestedDate);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedDate, loading]);
 
   const handleBook = async () => {
     if (!bookForm.patientId) { Alert.alert('Required', 'Please select a patient.'); return; }

@@ -52,7 +52,7 @@ function getInitials(name) {
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
 }
 
-const MedicalAppointmentsScreen = ({ navigation }) => {
+const MedicalAppointmentsScreen = ({ navigation, route }) => {
   const [appointments, setAppointments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [view, setView] = useState('list');
@@ -163,8 +163,23 @@ const MedicalAppointmentsScreen = ({ navigation }) => {
     else setCalMonth(m => m + 1);
   };
 
-  const onDayPress = (day) => {
-    const dateStr = toDateStr(calYear, calMonth, day);
+  const onDayPress = (day) => openDate(toDateStr(calYear, calMonth, day));
+
+  // Arrived from a day tapped on the home calendar: open it here once appointments and doctors
+  // have loaded, then clear the request so coming back does not reopen it.
+  const focusDate = route?.params?.focusDate;
+  useEffect(() => {
+    if (!focusDate || isLoading) return;
+    navigation?.setParams({ focusDate: undefined });
+    const [y, m] = focusDate.split('-').map(Number);
+    setCalYear(y);
+    setCalMonth(m - 1);
+    setView('calendar');
+    openDate(focusDate);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDate, isLoading]);
+
+  const openDate = (dateStr) => {
     const isPast = dateStr < TODAY;
     const dayAppts = apptsByDate[dateStr] || [];
     if (isPast && dayAppts.length === 0) return;

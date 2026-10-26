@@ -803,9 +803,18 @@ const MedicalHomeScreen = ({ navigation }) => {
             const booked = appointmentDates.has(key);
             const inMonth = day.getMonth() === calendarMonth.getMonth();
             const today = ymdLocal(new Date()) === key;
+            const past = key < ymdLocal(new Date());
             return (
-              <View
+              <TouchableOpacity
                 key={i}
+                activeOpacity={0.7}
+                onPress={() => {
+                  // A booked day shows its appointment; a free day from today on opens the
+                  // booking form on that date — as on the therapist home.
+                  if (!booked && past) { Alert.alert('Invalid date', 'You cannot book appointments in the past.'); return; }
+                  navigation.navigate('MedicalAppointments', { focusDate: key });
+                }}
+                accessibilityLabel={booked ? 'View this appointment' : 'Book an appointment on this day'}
                 style={[
                   styles.calDay,
                   today && styles.calDayToday,
@@ -820,15 +829,15 @@ const MedicalHomeScreen = ({ navigation }) => {
                   {day.getDate()}
                 </Text>
                 {booked ? <View style={styles.calDot} /> : null}
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
 
         <Text style={styles.calLegend}>
           {appointmentDates.size > 0
-            ? 'Highlighted days have a scheduled appointment.'
-            : 'No appointments scheduled yet.'}
+            ? 'Highlighted days have an appointment. Tap a free day to book.'
+            : 'No appointments yet — tap a day to book one.'}
         </Text>
       </View>
 

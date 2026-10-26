@@ -25,7 +25,7 @@ import { therapistFee } from '../../utils/therapistFee';
 
 const { width } = Dimensions.get('window');
 
-const ClientScheduleScreen = ({ navigation }) => {
+const ClientScheduleScreen = ({ navigation, route }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [appointments, setAppointments] = useState([]);
@@ -104,7 +104,7 @@ const ClientScheduleScreen = ({ navigation }) => {
         const data = await api(`/api/v1/scheduled-calls?clientId=${clientId}`);
         const sorted = (Array.isArray(data) ? data : []).sort((a, b) =>
           new Date(a.scheduledTime || a.scheduledAt || a.startsAt || 0) - new Date(b.scheduledTime || b.scheduledAt || b.startsAt || 0));
-        if (!cancelled) setAppointments(sorted);
+        if (!cancelled) { setAppointments(sorted); setAppointmentsLoaded(true); }
       } catch {}
     };
     poll();
@@ -178,6 +178,28 @@ const ClientScheduleScreen = ({ navigation }) => {
     }));
     setShowScheduleForm(true);
   };
+
+  // Arrived from a day tapped on the home calendar: open that day here — its sessions if it has
+  // any, otherwise the booking form on that date — once the therapist and sessions have loaded.
+  // The request is then cleared so coming back to this screen does not reopen it.
+  const [appointmentsLoaded, setAppointmentsLoaded] = useState(false);
+  const focusDate = route?.params?.focusDate;
+  useEffect(() => {
+    if (!focusDate || isLoadingTherapist || (!appointmentsLoaded && clientData?.id)) return;
+    const forceBook = !!route?.params?.book;
+    navigation?.setParams({ focusDate: undefined, book: undefined });
+    const [y, m, d] = focusDate.split('-').map(Number);
+    const day = new Date(y, m - 1, d);
+    setCurrentMonth(day);
+    // "Book a session on this day" from the home pop-up books even on a day with a session.
+    const dayAppointments = forceBook ? [] : getAppointmentsForDate(day);
+    if (dayAppointments.length === 0 && !therapistData) {
+      Alert.alert('No therapist yet', 'You need an assigned therapist before you can schedule a session.');
+      return;
+    }
+    handleDayPress(day, dayAppointments);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDate, isLoadingTherapist, appointmentsLoaded]);
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp?.toDate?.() || timestamp);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Dimensions, DeviceEventEmitter,
-  Modal, TextInput, FlatList,
+  Modal, TextInput, FlatList, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HeroArt from '../../components/HeroArt';
@@ -21,6 +21,11 @@ import AiAssistantFab from '../../components/AiAssistantFab';
 import FaqSection from '../../components/FaqSection';
 import WeatherCardMobile from '../../components/WeatherCardMobile';
 const TODAY = new Date().toISOString().split('T')[0];
+// The local date, for "is this day in the past": TODAY above is UTC.
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const SCREEN_W = Dimensions.get('window').width;
@@ -597,8 +602,14 @@ export default function DoctorHomeScreen({ navigation }) {
               <TouchableOpacity
                 key={idx}
                 style={[styles.calCell, { backgroundColor: cellBg, borderColor: cellBorder, borderWidth: cellBorder !== 'transparent' ? 1 : 0 }]}
-                onPress={() => dayAppts.length > 0 && navigation.navigate('DoctorAppointments')}
-                activeOpacity={dayAppts.length > 0 ? 0.7 : 1}
+                onPress={() => {
+                  // A day with appointments opens them; an empty day from today on opens the
+                  // schedule form on that date — as on the therapist home.
+                  if (dayAppts.length > 0) { navigation.navigate('DoctorAppointments'); return; }
+                  if (dateStr < localToday()) { Alert.alert('Invalid date', 'You cannot schedule appointments in the past.'); return; }
+                  navigation.navigate('DoctorAppointments', { scheduleDate: dateStr });
+                }}
+                activeOpacity={0.7}
               >
                 <Text style={[styles.calDayNum, isToday && styles.calDayNumToday]}>{day}</Text>
                 {dayAppts.slice(0, 1).map((a, i) => {
