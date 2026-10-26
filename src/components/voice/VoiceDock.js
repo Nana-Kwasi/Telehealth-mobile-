@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Audio } from 'expo-av';
 import VoiceIo from '../../../modules/voice-io';
 import VoiceOrb from './VoiceOrb';
+import { pickOrbTheme } from './orbThemes';
 import { speak, transcribe } from './speechApi';
 import { ALL_PHRASES, DIDNT_CATCH, NO_CONNECTION, chooseAck } from './voiceAcks';
 import { ALL_BACKCHANNELS, classifyTurn, pickBackchannel } from './voiceTurn';
@@ -93,6 +94,8 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
   const [phase, setPhase] = useState('warming');
   const [caption, setCaption] = useState('Getting ready…');
   const [heard, setHeard] = useState('');
+  // A different orb design for each conversation.
+  const [orbVariant] = useState(pickOrbTheme);
   const phaseRef = useRef('warming');
   const gotLevel = useRef(false);
   const levelRef = useRef(0);
@@ -727,7 +730,7 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
 
   return (
     <View style={styles.dock}>
-      <VoiceOrb state={orbState} levelRef={levelRef} onPress={onOrb} />
+      <VoiceOrb state={orbState} levelRef={levelRef} onPress={onOrb} variant={orbVariant} />
       <Text style={styles.caption} numberOfLines={2}>{statusLine}</Text>
       <Text style={styles.hint}>{hint}</Text>
       <View style={styles.controls}>

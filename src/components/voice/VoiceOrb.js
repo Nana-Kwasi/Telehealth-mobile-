@@ -1,58 +1,35 @@
-import React, { memo, useEffect, useRef, useState } from "react";
-import { TouchableOpacity } from "react-native";
-import Svg, { Circle, Defs, Path, RadialGradient, Stop } from "react-native-svg";
-import { ZC } from "../../constants/zencare";
-
-// NessaHub's colours in the places the Bankai orb used its own.
-const brand = { teal: ZC.accent, tealDeep: ZC.accentDeep, orange: "#e8a33d" };
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { TouchableOpacity } from 'react-native';
+import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
+import { ORB_THEMES, layerPoints } from './orbThemes';
 
 /**
- * The voice-mode visual: three wavy rings in NessaHub's colours around a glowing core.
+ * The voice-mode orb: one of five glassy, layered designs (see orbThemes), chosen at random
+ * for each conversation by the dock. The same designs as the web orb.
  *
- * Each state has its own motion so the person can tell, without reading anything, whose turn
- * it is:
- *   listening — the rings ripple with the microphone level; silence is almost still.
- *   thinking  — the rings draw in and spin, and an orange spark circles them.
- *   speaking  — the core breathes and the rings pulse at speech rhythm.
- *   muted     — grey and still.
+ * Each state has its own motion so the person can tell whose turn it is without reading:
+ *   listening — the layers swell and ripple with the microphone level
+ *   thinking  — the layers turn, alternate ones the other way
+ *   speaking  — the core breathes and the layers pulse at speech rhythm
+ *   muted     — faded and still
  *
  * The level arrives through a ref, not a prop: it changes ~10 times a second, and every change
  * as a prop would re-render the parent chat screen with it.
- *
- * Ported from the Bankai care assistant (fnb-ai/mobile), colours aside.
  */
 const SIZE = 168;
 const C = SIZE / 2;
-const POINTS = 48;
-// Each frame is a React render plus three SVG paths sent to native. At the display's 60Hz that
-// starved the JS thread the chat also runs on, and a reply took over a minute to type out.
+// Each frame is a React render plus a few SVG paths sent to native. At the display's 60Hz that
+// starved the JS thread the chat also runs on, so frames are capped at about 30 a second.
 const FRAME_MS = 33;
 
-const RINGS = [
-  { color: brand.teal, base: 50, lobes: 3, speed: 0.9, amp: 0.16, width: 3.2, opacity: 0.95 },
-  { color: ZC.accentLight, base: 56, lobes: 5, speed: -0.7, amp: 0.12, width: 2.4, opacity: 0.8 },
-  { color: brand.orange, base: 44, lobes: 4, speed: 1.3, amp: 0.1, width: 2, opacity: 0.75 },
-];
+const toD = (pts) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join('') + 'Z';
 
-function ringPath(ring, t, energy, spin) {
-  let d = "";
-  for (let i = 0; i <= POINTS; i += 1) {
-    const a = (i / POINTS) * Math.PI * 2;
-    const wobble =
-      Math.sin(ring.lobes * a + t * ring.speed * 2 + spin) * ring.amp * energy +
-      Math.sin((ring.lobes + 2) * a - t * 1.7) * 0.03 * (0.4 + energy);
-    const r = ring.base * (1 + wobble);
-    const x = C + r * Math.cos(a + spin * ring.speed);
-    const y = C + r * Math.sin(a + spin * ring.speed);
-    d += `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
-  }
-  return `${d}Z`;
-}
-
-function VoiceOrb({ state = "listening", levelRef, onPress }) {
-  const [t, setT] = useState(0);
+function VoiceOrb({ state = 'listening', levelRef, onPress, variant = 0 }) {
+  const [, setFrame] = useState(0);
   const smooth = useRef(0);
   const spin = useRef(0);
+  const time = useRef(0);
+  const theme = ORB_THEMES[variant % ORB_THEMES.length];
 
   useEffect(() => {
     let raf;
@@ -68,72 +45,82 @@ function VoiceOrb({ state = "listening", levelRef, onPress }) {
       drawn = now;
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      const time = (now - start) / 1000;
-
+      const t = (now - start) / 1000;
       let target;
-      if (state === "listening") target = levelRef?.current ?? 0;
-      else if (state === "speaking")
-        // No output meter on every platform, so speech rhythm is synthesised: two slow beats
-        // multiplied give an uneven, syllable-like pulse instead of a metronome.
-        target = 0.35 + 0.45 * Math.abs(Math.sin(time * 6.1)) * Math.abs(Math.sin(time * 2.3));
-      else if (state === "thinking") target = 0.25;
-      else target = 0.05;
-      // Rise fast, fall slow: how a VU meter reads, and why it looks alive rather than jittery.
-      const k = target > smooth.current ? 0.35 : 0.08;
-      smooth.current += (target - smooth.current) * k;
-      spin.current += dt * (state === "thinking" ? 2.4 : 0.25);
-
-      setT(time);
+      if (state === 'listening') target = levelRef?.current ?? 0;
+      // No output meter, so speech rhythm is synthesised: two slow beats multiplied give an
+      // uneven, syllable-like pulse instead of a metronome.
+      else if (state === 'speaking') target = 0.3 + 0.45 * Math.abs(Math.sin(t * 6.1)) * Math.abs(Math.sin(t * 2.3));
+      else if (state === 'thinking') target = 0.15;
+      else target = 0;
+      // Rise fast, fall slow — reads as alive rather than jittery.
+      smooth.current += (target - smooth.current) * (target > smooth.current ? 0.35 : 0.08);
+      spin.current += dt * (state === 'thinking' ? 1.1 : 0.06);
+      time.current = t;
+      setFrame((n) => n + 1);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [state, levelRef]);
 
-  const energy = smooth.current;
-  const muted = state === "muted";
-  const coreR = 30 + energy * (state === "speaking" ? 9 : 6) + (state === "thinking" ? -4 : 0);
-  const sparkA = spin.current * 1.6;
+  const muted = state === 'muted';
+  const energy = muted ? 0 : smooth.current;
+  const n = theme.layers;
+  // A star's points are its full radius; outward lobes need room to swell inside the circle.
+  const outerR = (C * 0.88) / (theme.shape === 'star' ? 1 : 1 + theme.amp * 1.25);
+  const innerR = C * 0.3;
+
+  const layers = [];
+  for (let k = 0; k < n; k += 1) {
+    const f = n === 1 ? 1 : k / (n - 1);                   // 0 outer … 1 core
+    const radius = (outerR - (outerR - innerR) * f) * (1 + energy * (0.1 - f * 0.05));
+    const dir = k % 2 ? -1 : 1;
+    const rotation = (theme.interleave ? (k * Math.PI) / theme.lobes : 0) + spin.current * dir * (1 - f * 0.4);
+    const wobble = energy * 0.025 * Math.sin(time.current * (3 + k));
+    layers.push({
+      k,
+      core: k === n - 1,
+      f,
+      d: toD(layerPoints(theme, C, C, radius, rotation, energy * (1 - f), wobble, 72)),
+      inner: toD(layerPoints(theme, C, C, radius * 0.985, rotation, energy * (1 - f), wobble, 56)),
+    });
+  }
+  const hole = toD(layerPoints(theme, C, C, C * 0.055 * (1 + energy * 0.3), spin.current * 2, 0, 0, 36));
 
   return (
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={state === "speaking" ? "Interrupt" : "Voice"}
+      accessibilityLabel={state === 'speaking' ? 'Interrupt' : 'Voice'}
     >
-      <Svg width={SIZE} height={SIZE}>
+      <Svg width={SIZE} height={SIZE} opacity={muted ? 0.45 : 1}>
         <Defs>
-          <RadialGradient id="core" cx="45%" cy="40%" r="60%">
-            <Stop offset="0" stopColor={muted ? "#C9D4D3" : "#E8FFFC"} />
-            <Stop offset="0.55" stopColor={muted ? "#9FB1AF" : brand.teal} />
-            <Stop offset="1" stopColor={muted ? "#7E918F" : brand.tealDeep} />
+          <RadialGradient id="bd" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor={theme.bg} />
+            <Stop offset="0.93" stopColor={theme.bg} />
+            <Stop offset="1" stopColor={theme.bg} stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id="halo" cx="50%" cy="50%" r="50%">
-            <Stop offset="0.5" stopColor={brand.teal} stopOpacity={muted ? 0 : 0.18 + energy * 0.2} />
-            <Stop offset="1" stopColor={brand.teal} stopOpacity={0} />
+          <RadialGradient id="glass" cx="45%" cy="40%" r="60%">
+            <Stop offset="0" stopColor={theme.light} stopOpacity={0.5} />
+            <Stop offset="1" stopColor={theme.base} stopOpacity={0.45} />
+          </RadialGradient>
+          <RadialGradient id="core" cx="45%" cy="40%" r="60%">
+            <Stop offset="0" stopColor={theme.light} />
+            <Stop offset="0.55" stopColor={theme.core} />
+            <Stop offset="1" stopColor={theme.deep} />
           </RadialGradient>
         </Defs>
-        <Circle cx={C} cy={C} r={C} fill="url(#halo)" />
-        {RINGS.map((ring, i) => (
-          <Path
-            key={i}
-            d={ringPath(ring, t, muted ? 0 : energy, spin.current)}
-            stroke={muted ? "#B7C4C2" : ring.color}
-            strokeWidth={ring.width}
-            strokeOpacity={ring.opacity}
-            fill="none"
-          />
+        <Circle cx={C} cy={C} r={C} fill="url(#bd)" />
+        {layers.map((l) => (
+          <React.Fragment key={l.k}>
+            <Path d={l.d} fill={l.core ? 'url(#core)' : 'url(#glass)'} stroke={theme.rim}
+              strokeOpacity={0.95} strokeWidth={l.core ? 1.4 : 1.8} strokeLinejoin="round" />
+            <Path d={l.inner} fill="none" stroke={theme.deep} strokeOpacity={0.55} strokeWidth={0.8} />
+          </React.Fragment>
         ))}
-        <Circle cx={C} cy={C} r={coreR} fill="url(#core)" />
-        {state === "thinking" && (
-          <Circle
-            cx={C + 62 * Math.cos(sparkA)}
-            cy={C + 62 * Math.sin(sparkA)}
-            r={4}
-            fill={brand.orange}
-          />
-        )}
+        <Path d={hole} fill={theme.bg} fillOpacity={0.55} stroke={theme.rim} strokeOpacity={0.9} strokeWidth={1} />
       </Svg>
     </TouchableOpacity>
   );
