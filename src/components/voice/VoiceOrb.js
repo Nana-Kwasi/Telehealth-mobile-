@@ -83,7 +83,7 @@ function VoiceOrb({ state = 'listening', levelRef, onPress, variant = 0 }) {
       core: k === n - 1,
       f,
       d: toD(layerPoints(theme, C, C, radius, rotation, energy * (1 - f), wobble, 72)),
-      inner: toD(layerPoints(theme, C, C, radius * 0.985, rotation, energy * (1 - f), wobble, 56)),
+      inner: toD(layerPoints(theme, C, C, radius * 0.975, rotation, energy * (1 - f), wobble, 56)),
     });
   }
   const hole = toD(layerPoints(theme, C, C, C * 0.055 * (1 + energy * 0.3), spin.current * 2, 0, 0, 36));
@@ -97,14 +97,14 @@ function VoiceOrb({ state = 'listening', levelRef, onPress, variant = 0 }) {
     >
       <Svg width={SIZE} height={SIZE} opacity={muted ? 0.45 : 1}>
         <Defs>
+          {/* On white: no tinted tile behind the orb, just a faint glow of its own colour. */}
           <RadialGradient id="bd" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor={theme.bg} />
-            <Stop offset="0.93" stopColor={theme.bg} />
-            <Stop offset="1" stopColor={theme.bg} stopOpacity={0} />
+            <Stop offset="0.3" stopColor={theme.base} stopOpacity={0.16 + energy * 0.14} />
+            <Stop offset="1" stopColor={theme.base} stopOpacity={0} />
           </RadialGradient>
           <RadialGradient id="glass" cx="45%" cy="40%" r="60%">
-            <Stop offset="0" stopColor={theme.light} stopOpacity={0.5} />
-            <Stop offset="1" stopColor={theme.base} stopOpacity={0.45} />
+            <Stop offset="0" stopColor={theme.light} stopOpacity={0.55} />
+            <Stop offset="1" stopColor={theme.base} stopOpacity={0.52} />
           </RadialGradient>
           <RadialGradient id="core" cx="45%" cy="40%" r="60%">
             <Stop offset="0" stopColor={theme.light} />
@@ -115,12 +115,13 @@ function VoiceOrb({ state = 'listening', levelRef, onPress, variant = 0 }) {
         <Circle cx={C} cy={C} r={C} fill="url(#bd)" />
         {layers.map((l) => (
           <React.Fragment key={l.k}>
-            <Path d={l.d} fill={l.core ? 'url(#core)' : 'url(#glass)'} stroke={theme.rim}
-              strokeOpacity={0.95} strokeWidth={l.core ? 1.4 : 1.8} strokeLinejoin="round" />
-            <Path d={l.inner} fill="none" stroke={theme.deep} strokeOpacity={0.55} strokeWidth={0.8} />
+            {/* A coloured edge (it has to show on white) with a bright line just inside. */}
+            <Path d={l.d} fill={l.core ? 'url(#core)' : 'url(#glass)'} stroke={theme.deep}
+              strokeOpacity={l.core ? 0.7 : 0.6} strokeWidth={l.core ? 1.3 : 1.5} strokeLinejoin="round" />
+            <Path d={l.inner} fill="none" stroke={theme.rim} strokeOpacity={0.95} strokeWidth={1.1} />
           </React.Fragment>
         ))}
-        <Path d={hole} fill={theme.bg} fillOpacity={0.55} stroke={theme.rim} strokeOpacity={0.9} strokeWidth={1} />
+        <Path d={hole} fill="#ffffff" stroke={theme.deep} strokeOpacity={0.8} strokeWidth={1} />
       </Svg>
     </TouchableOpacity>
   );

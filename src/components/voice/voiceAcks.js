@@ -28,7 +28,20 @@ export const DIDNT_CATCH = "Sorry, I didn't catch that. Could you say it again?"
 /** Said when the words could not be sent at all — the network, not the person. */
 export const NO_CONNECTION = "Sorry, I'm having trouble with the connection. Could you say that again in a moment?";
 
-export const ALL_PHRASES = [...new Set([...Object.values(SETS).flat(), DIDNT_CATCH, NO_CONNECTION])];
+/**
+ * Said while the answer is being worked out and nothing is being said yet — so a pause is
+ * heard as "it is thinking", not "it has stopped". The first after a short wait, the second
+ * if it is still working; never more than that in one turn.
+ */
+export const THINKING = ["Let me think this through.", "Give me a moment, I'm working it out.", "Just a second, I'm looking into it."];
+export const STILL_THINKING = ["Still working on it, thanks for waiting.", "Almost there, one moment."];
+
+export const ALL_PHRASES = [...new Set([...Object.values(SETS).flat(), ...THINKING, ...STILL_THINKING, DIDNT_CATCH, NO_CONNECTION])];
+
+export function pickPhrase(list, last) {
+  const pool = list.filter((p) => p !== last);
+  return (pool.length ? pool : list)[Math.floor(Math.random() * (pool.length || list.length))];
+}
 
 const has = (t, list) => list.some((w) => t.includes(w));
 

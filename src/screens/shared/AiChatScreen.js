@@ -651,7 +651,9 @@ export default function AiChatScreen({ clinician = false }) {
           return (
             <View key={i} style={styles.aiRow}>
               {m.disclaimer ? <Text style={styles.label}>{m.disclaimer}</Text> : null}
-              {(m.streaming || m.pending) && !m.content ? (
+              {/* In voice mode the words wait for the voice; until it starts, say it is thinking
+                  rather than show an empty bubble. */}
+              {((m.streaming || m.pending) && !m.content) || (voiceMode && i === messages.length - 1 && m.content && !reveal.visible(m.content)) ? (
                 /* `pending` is the document-reading path. It was checked
                    nowhere, so uploading an image showed no indicator for the
                    ten-odd seconds the read takes — which reads as a hang. */

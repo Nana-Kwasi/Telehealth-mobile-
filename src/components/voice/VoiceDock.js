@@ -5,7 +5,7 @@ import VoiceIo from '../../../modules/voice-io';
 import VoiceOrb from './VoiceOrb';
 import { pickOrbTheme } from './orbThemes';
 import { speak, transcribe } from './speechApi';
-import { ALL_PHRASES, DIDNT_CATCH, NO_CONNECTION, chooseAck } from './voiceAcks';
+import { ALL_PHRASES, DIDNT_CATCH, NO_CONNECTION, THINKING, STILL_THINKING, chooseAck, pickPhrase } from './voiceAcks';
 import { ALL_BACKCHANNELS, classifyTurn, pickBackchannel } from './voiceTurn';
 import { ZC } from '../../constants/zencare';
 
@@ -124,7 +124,21 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
   const deciding = useRef(false);
   const lastBackchannel = useRef(null);
 
+  // Spoken waiting: while the answer is being worked out and nothing is being said, say so —
+  // a silent pause sounds like it has stopped. At most two phrases a turn (see voiceAcks).
+  const WAIT_FIRST_MS = 2500;
+  const WAIT_AGAIN_MS = 7000;
+  const waitSaid = useRef(0);
+  const waitTimer = useRef(null);
+  const lastWait = useRef(null);
+  const waitCheckRef = useRef(() => {});
+
   const go = (p) => {
+    clearTimeout(waitTimer.current);
+    if (p === 'thinking' && waitSaid.current < 2) {
+      waitTimer.current = setTimeout(() => waitCheckRef.current(),
+        waitSaid.current === 0 ? WAIT_FIRST_MS : WAIT_AGAIN_MS);
+    }
     const prev = phaseRef.current;
     if (NATIVE && prev !== p) {
       try {
@@ -230,6 +244,7 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
   };
 
   const resetReply = () => {
+    waitSaid.current = 0;
     replyBuf.current = '';
     spokenChars.current = 0;
     capped.current = false;
@@ -299,6 +314,7 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
     const ack = chooseAck(text, lastAck.current);
     if (ack) {
       lastAck.current = ack;
+      waitSaid.current = 1;   // the acknowledgement already says it is working on it
       speakPhrase(ack);
     }
     if (phaseRef.current === 'transcribing') go('thinking');
@@ -431,6 +447,16 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
     } else {
       b.speechMs = Math.max(0, b.speechMs - METER_MS / 2);
     }
+  };
+
+  // Still thinking, nothing playing and no part of the answer queued yet: say a waiting phrase.
+  waitCheckRef.current = () => {
+    if (!alive.current || phaseRef.current !== 'thinking' || playing.current) return;
+    if (clips.current.length || spokenChars.current > 0 || replyDone.current || ignoreReply.current) return;
+    const phrase = pickPhrase(waitSaid.current === 0 ? THINKING : STILL_THINKING, lastWait.current);
+    waitSaid.current += 1;
+    lastWait.current = phrase;
+    if (!speakPhrase(phrase)) go('thinking'); // not synthesised: keep the next check scheduled
   };
 
   const onMeterRef = useRef(onMeter);
@@ -677,6 +703,7 @@ const VoiceDock = forwardRef(function VoiceDock({ onUtterance, onEscalation, onC
     return () => {
       onVoiceText?.({ type: 'all' });
       alive.current = false;
+      clearTimeout(waitTimer.current);
       ignoreReply.current = true;
       clips.current = [];
       stopPlayer();
@@ -764,7 +791,12 @@ export function useVoiceReveal(active) {
     const v = sched.current;
     if (v.all) return Infinity;
     if (v.stopped) return v.base;
-    if (Date.now() - v.at > 8000) return Infinity; // the voice went quiet: stop holding back
+    // Safety net, only once the voice has begun: if it then goes quiet for a long time after the
+    // sentence it was saying (synthesis stuck), stop holding the words back. It used to count
+    // from the question, so any answer the model took more than 8 s to start was shown as text
+    // before a word of it was spoken. Before the first sentence nothing is shown: a sentence
+    // that fails to synthesise is reported at once, and done or error releases everything.
+    if (v.len > 0 && Date.now() - (v.start + v.ms) > 12000) return Infinity;
     const elapsed = Date.now() - v.start;
     const marks = v.marks;
     if (marks && marks.length > 1) {

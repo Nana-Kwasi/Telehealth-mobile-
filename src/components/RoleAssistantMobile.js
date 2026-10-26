@@ -107,7 +107,7 @@ export default function RoleAssistantMobile({ kind = 'pharmacy', accent = '#0f76
             {thread.map((m, i) => (
               <View key={i} style={m.role === 'me' ? [s.me, { backgroundColor: accent }] : s.ai}>
                 <Text style={m.role === 'me' ? s.meText : s.aiText}>
-                  {m.role === 'ai' ? (voiceMode && i === thread.length - 1 ? reveal.visible(strip(m.text)) : strip(m.text)) : m.text}
+                  {m.role === 'ai' ? (voiceMode && i === thread.length - 1 ? (reveal.visible(strip(m.text)) || 'Thinking…') : strip(m.text)) : m.text}
                 </Text>
                 {m.people?.length > 1 ? m.people.map((p) => (
                   <TouchableOpacity key={p.id} style={[s.chip, { marginTop: 6 }]} onPress={() => ask(`Tell me about ${p.name} (${p.hint})`)}>
