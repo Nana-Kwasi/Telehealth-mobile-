@@ -31,6 +31,8 @@ export const consentToTransfer = (id, agree, declineReason) =>
     method: 'POST',
     body: { agree, declineReason, platform: Platform.OS === 'ios' ? 'ios' : 'android' },
   });
+export const askToReconsider = (id, note) =>
+  api(`/api/v1/care-transfers/${id}/reconsider`, { method: 'POST', body: { note } });
 export const decideTransfer = (id, accept, note) =>
   api(`/api/v1/care-transfers/${id}/decision`, { method: 'POST', body: { accept, note } });
 export const redirectTransfer = (id, toClinicianId) =>

@@ -21,6 +21,7 @@ const EVENT_LABELS = {
   TIMED_OUT: 'No answer within 24 hours',
   REASSIGN_TIMED_OUT: 'No new clinician chosen within 24 hours',
   AUTO_REASSIGNED: 'Reassigned automatically by NessaHub',
+  RECONSIDERATION_REQUESTED: 'Patient asked for a review of the automatic transfer',
   COMPLETED: 'Transfer completed',
   APPOINTMENTS_MOVED: 'Upcoming appointments moved',
   SESSIONS_CANCELLED: 'Upcoming sessions cancelled',

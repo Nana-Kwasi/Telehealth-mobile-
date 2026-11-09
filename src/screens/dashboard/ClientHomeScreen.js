@@ -108,10 +108,9 @@ const CRISIS_HOTLINES = [
   // Ghana national crisis and emergency lines — the previous list was US-only
   // (988 / 741741 / 911) and unreachable from Ghana.
   { name: 'National Emergency — 112', desc: 'Police, ambulance & fire · 24/7 toll-free', tel: '112', icon: 'warning-outline' },
-  { name: 'Mental Health Authority Helpline', desc: '0509 405 480 · 24/7 crisis counselling', tel: '+233509405480', icon: 'call-outline' },
-  { name: 'Suicide Prevention (Ghana)', desc: '0244 846 701 · trained volunteers', tel: '+233244846701', icon: 'heart-outline' },
+  { name: 'Mental Health Authority Helpline', desc: '0800 678 678 · toll-free, 24/7', tel: '0800678678', icon: 'call-outline' },
   { name: 'National Ambulance — 193', desc: 'Ambulance dispatch, nationwide', tel: '193', icon: 'medkit-outline' },
-  { name: 'Accra Psychiatric Hospital', desc: '030 266 6987 · emergency psychiatric care', tel: '+233302666987', icon: 'business-outline' },
+  { name: 'Accra Psychiatric Hospital', desc: '0302 228 688 · emergency psychiatric care', tel: '+233302228688', icon: 'business-outline' },
 ];
 
 const MOOD_OPTIONS = [

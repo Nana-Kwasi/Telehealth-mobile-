@@ -2,13 +2,15 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getStoredUserId } from '../services/apiClient';
-import { consentToTransfer, fmtWhen, getTransfer, listTransfers } from '../services/careTransfers';
+import { askToReconsider, consentToTransfer, fmtWhen, getTransfer, listTransfers } from '../services/careTransfers';
 
 /**
  * Top of the patient's Home: a transfer of their care that needs their consent,
  * or a one-line status for one in progress or just completed. The consent
  * wording comes from the server and is stored with the decision and its time.
  */
+const REVIEW_DAYS_MS = 21 * 86400000;
+
 export default function TransferConsentCard({ kind }) {
   const [pending, setPending] = useState([]);
   const [recent, setRecent] = useState(null);
@@ -21,7 +23,7 @@ export default function TransferConsentCard({ kind }) {
       setPending(await Promise.all(waiting.map((t) => getTransfer(t.id).catch(() => t))));
       const weekAgo = Date.now() - 7 * 86400000;
       setRecent(rows.find((t) => ['AWAITING_RECIPIENT', 'REJECTED_AWAITING_REASSIGN'].includes(t.status)
-        || (t.status === 'COMPLETED' && new Date(t.completedAt).getTime() > weekAgo)) || null);
+        || (t.status === 'COMPLETED' && new Date(t.completedAt).getTime() > (t.autoReassigned ? Date.now() - REVIEW_DAYS_MS : weekAgo))) || null);
     } catch {
       setPending([]);
     }
@@ -41,6 +43,40 @@ export default function TransferConsentCard({ kind }) {
             ? `You agreed to transfer your care to ${recent.toName}. We are waiting for them to accept and will let you know.`
             : 'Your transfer is still in progress: we are arranging another clinician and will let you know who.'}
       </Text>
+      <ReconsiderTransfer t={recent} onDone={load} />
+    </View>
+  );
+}
+
+/** An automatic move can be looked at again by a person, within 21 days. */
+function ReconsiderTransfer({ t, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  if (t.status !== 'COMPLETED' || !t.autoReassigned) return null;
+  if (t.reconsiderationRequestedAt) {
+    return <Text style={[s.noteText, { marginTop: 8 }]}>You asked for a review. NessaHub will reply to you in writing within 21 days.</Text>;
+  }
+  if (new Date(t.completedAt).getTime() <= Date.now() - REVIEW_DAYS_MS) return null;
+
+  const send = async () => {
+    setBusy(true); setError('');
+    try { await askToReconsider(t.id, note); onDone(); }
+    catch (e) { setError(e?.message || 'Your request could not be sent. Please try again.'); setBusy(false); }
+  };
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      <Text style={s.noteText}>This was decided automatically because no clinician confirmed in time. You can ask a person to reconsider it.</Text>
+      {open ? (
+        <TextInput style={s.input} placeholder="Anything you would like us to know (optional)" value={note} onChangeText={setNote} multiline />
+      ) : null}
+      {error ? <Text style={[s.noteText, { color: '#b91c1c' }]}>{error}</Text> : null}
+      <TouchableOpacity style={[s.btn, { marginTop: 8, alignSelf: 'flex-start' }]} disabled={busy} onPress={open ? send : () => setOpen(true)}>
+        <Text style={s.btnText}>{open ? 'Send request' : 'Ask for a review'}</Text>
+      </TouchableOpacity>
     </View>
   );
 }

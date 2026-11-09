@@ -20,6 +20,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
   const [patients, setPatients] = useState([]);
   const [form, setForm] = useState({ patientId: '', specialty: '', reason: '' });
   const [packet, setPacket] = useState(null);
+  const [checked, setChecked] = useState(false);
   const [proposed, setProposed] = useState(null);
   const [auditId, setAuditId] = useState(null);
   const [busy, setBusy] = useState('');
@@ -85,9 +86,17 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
         method: 'POST',
         body: { patientId: form.patientId || null, specialty: form.specialty, reason: form.reason },
       });
-      if (!res?.ok) { Alert.alert('Not assembled', res?.message || 'The referral could not be assembled.'); return; }
+      if (!res?.ok) {
+        // A refused draft must not stop the referral: open the blank form to fill in.
+        Alert.alert('Fill it in below', res?.message || 'The referral could not be assembled.');
+        if (res?.reason === 'unavailable') {
+          setPacket((p) => p || { clinicalSummary: '', relevantHistory: '', currentMedications: '', relevantResults: '' });
+        }
+        return;
+      }
       setPacket(res.packet);
       setProposed(JSON.stringify(res.packet));
+      setChecked(false);
       setAuditId(res.aiAuditId || null);
     } catch (e) {
       Alert.alert('Not assembled', e?.message || 'The referral could not be assembled.');
@@ -108,6 +117,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
           submit,
           aiAssisted: Boolean(auditId),
           aiAuditId: auditId,
+          checkedAgainstRecord: checked,
           aiEdited: auditId ? JSON.stringify(packet) !== proposed : null,
           recipientId: sendMode === 'clinician' ? recipient?.id || null : null,
           recipientEmail: sendMode === 'email' ? recipientEmail.trim() || null : null,
@@ -259,6 +269,16 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
               {field('relevantHistory', 'Relevant history', 'time')}
               {field('currentMedications', 'Current medications', 'medical')}
               {field('relevantResults', 'Relevant results', 'flask')}
+
+              {auditId ? (
+                <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => setChecked(!checked)}
+                  style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginVertical: 10 }}>
+                  <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={20} color="#334155" />
+                  <Text style={{ flex: 1, color: '#334155', fontSize: 13, lineHeight: 19 }}>
+                    I have checked this AI draft against the patient's record, and I am responsible for what it says.
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
 
               <View style={styles.sendTo}>
                 <View style={styles.labelRow}>

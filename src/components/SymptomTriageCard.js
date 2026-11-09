@@ -46,8 +46,8 @@ export default function SymptomTriageCard({ onBook, accent = '#2a3ea8' }) {
         <View style={styles.headText}>
           <Text style={styles.title}>Not sure where to start?</Text>
           <Text style={styles.sub}>
-            Describe what is going on and we will suggest how soon to be seen and
-            by whom. This is not a diagnosis.
+            Describe what is going on and we will check it for emergency warning
+            signs. This is not a diagnosis.
           </Text>
         </View>
       </View>
@@ -68,7 +68,7 @@ export default function SymptomTriageCard({ onBook, accent = '#2a3ea8' }) {
         disabled={busy || !text.trim()}
       >
         {busy ? <ActivityIndicator size="small" color="#ffffff" /> : null}
-        <Text style={styles.goText}>{busy ? 'Checking…' : 'Check where to start'}</Text>
+        <Text style={styles.goText}>{busy ? 'Checking…' : 'Check for warning signs'}</Text>
       </TouchableOpacity>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}

@@ -119,7 +119,7 @@ export default function RecordExplorerScreen({ route, title = 'My records' }) {
                 ? `${result.matched} entr${result.matched === 1 ? 'y' : 'ies'} for “${result.query}”`
                 : `Nothing for “${result.query}”`}
             </Text>
-            {result.summary ? <Text style={styles.summary}>{result.summary}</Text> : null}
+            {result.summary ? <Text style={styles.summary}>{result.summary}{"\n"}AI summary of the entries below. Check it against them.</Text> : null}
             {(result.entries || []).map((e, i) => <Row key={i} entry={e} />)}
             {result.matched ? (
               <TouchableOpacity style={styles.clear} onPress={() => { setResult(null); setQuery(''); }}>

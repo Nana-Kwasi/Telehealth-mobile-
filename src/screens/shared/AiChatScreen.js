@@ -559,6 +559,16 @@ export default function AiChatScreen({ clinician = false }) {
     );
   }
 
+  if (status?.available && status.consentRequired) {
+    return (
+      <AiConsentPanel
+        text={status.consentText}
+        emergencyNumber={status.emergencyNumber}
+        onAgreed={() => setStatus((s) => ({ ...s, consentRequired: false }))}
+      />
+    );
+  }
+
   const empty = messages.length === 0;
 
   return (
@@ -997,3 +1007,37 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 6 : 8, backgroundColor: '#ffffff',
   },
 });
+
+/** Shown once, before a patient's or client's first use of the assistant. */
+function AiConsentPanel({ text, emergencyNumber, onAgreed }) {
+  const [busy, setBusy] = useState(false);
+
+  const agree = async () => {
+    setBusy(true);
+    try {
+      await api('/api/v1/ai/consent', { method: 'POST', body: { platform: Platform.OS } });
+      onAgreed();
+    } catch (e) {
+      Alert.alert('Not saved', e?.message || 'That could not be saved. Please try again.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 20 }}>
+      <Text style={{ fontSize: 18, fontWeight: '700', color: ZC.ink, marginBottom: 10 }}>Before you use the assistant</Text>
+      <Text style={{ fontSize: 15, lineHeight: 22, color: ZC.ink3, marginBottom: 12 }}>{text}</Text>
+      <Text style={{ fontSize: 14, lineHeight: 20, color: ZC.ink3, marginBottom: 18 }}>
+        In an emergency call <Text style={{ fontWeight: '700' }}>{emergencyNumber || '112'}</Text>.
+      </Text>
+      <TouchableOpacity
+        accessibilityRole="button"
+        onPress={agree}
+        disabled={busy}
+        style={{ backgroundColor: ZC.accent, borderRadius: 10, paddingVertical: 13, alignItems: 'center', opacity: busy ? 0.6 : 1 }}
+      >
+        <Text style={{ color: '#fff', fontWeight: '700' }}>{busy ? 'Saving…' : 'I agree'}</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}

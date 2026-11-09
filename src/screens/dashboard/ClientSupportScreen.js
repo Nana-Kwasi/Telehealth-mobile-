@@ -77,7 +77,7 @@ const ClientSupportScreen = ({ navigation }) => {
     },
     {
       question: 'What should I do in case of an emergency?',
-      answer: 'If you are experiencing a mental health emergency, please call 112 (national emergency) or the Mental Health Authority helpline on 0509 405 480 immediately. This platform is not for emergency situations.'
+      answer: 'If you are experiencing a mental health emergency, please call 112 (national emergency) or the Mental Health Authority helpline on 0800 678 678 immediately. This platform is not for emergency situations.'
     },
     {
       question: 'How do I change my password?',
@@ -334,10 +334,9 @@ const ClientSupportScreen = ({ navigation }) => {
           </View>
           {[
             { name: 'National Emergency — 112', desc: 'Police, ambulance & fire — 24/7', url: 'tel:112', color: '#8c322d' },
-            { name: 'Mental Health Authority Helpline', desc: '0509 405 480 — 24/7 counselling', url: 'tel:+233509405480', color: '#7c3aed' },
-            { name: 'Suicide Prevention (Ghana)', desc: '0244 846 701', url: 'tel:+233244846701', color: '#0ea5e9' },
+            { name: 'Mental Health Authority Helpline', desc: '0800 678 678 — toll-free, 24/7', url: 'tel:0800678678', color: '#7c3aed' },
             { name: 'National Ambulance — 193', desc: 'Ambulance dispatch', url: 'tel:193', color: '#ea580c' },
-            { name: 'NAMI Helpline', desc: '1-800-950-6264', url: 'tel:18009506264', color: '#2f7d5f' },
+            { name: 'Accra Psychiatric Hospital', desc: '0302 228 688 — emergency care', url: 'tel:+233302228688', color: '#2f7d5f' },
           ].map((h, i) => (
             <TouchableOpacity key={i} style={styles.crisisHotlineRow} onPress={() => Linking.openURL(h.url)}>
               <View style={[styles.crisisHotlineDot, { backgroundColor: h.color }]} />

@@ -32,6 +32,7 @@ export default function TransferPatientScreen({ route, navigation }) {
   const [suggestions, setSuggestions] = useState([]);
   const [loadingSug, setLoadingSug] = useState(false);
   const [ai, setAi] = useState({ busy: false, used: false, auditId: null, message: '' });
+  const [checked, setChecked] = useState(false);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [sending, setSending] = useState(false);
@@ -80,6 +81,7 @@ export default function TransferPatientScreen({ route, navigation }) {
         currentMedications: r.draft.currentMedications || f.currentMedications,
         activeIssues: r.draft.activeIssues || f.activeIssues,
       }));
+      setChecked(false);
       setAi({ busy: false, used: true, auditId: r.aiAuditId || null, message: 'Drafted from the record — check and edit it before sending.' });
     } catch (e) {
       setAi((a) => ({ ...a, busy: false, message: e?.message || 'Could not draft the summary.' }));
@@ -103,7 +105,7 @@ export default function TransferPatientScreen({ route, navigation }) {
         neededSpecialty: isDoctor ? form.neededSpecialty : null,
         neededFormat: isDoctor ? null : form.neededFormat,
         neededFocus: isDoctor ? [] : form.neededFocus,
-        aiAssisted: ai.used, aiAuditId: ai.auditId,
+        aiAssisted: ai.used, aiAuditId: ai.auditId, checkedAgainstRecord: checked,
       });
       navigation.goBack();
       // The Transfers screen lists it; the patient is emailed for consent.
@@ -188,6 +190,15 @@ export default function TransferPatientScreen({ route, navigation }) {
           <Text style={[s.btnText, { color: accent }]}>{ai.busy ? 'Drafting from the record…' : 'Draft summary with AI'}</Text>
         </TouchableOpacity>
         {ai.message ? <Text style={s.small}>{ai.message}</Text> : null}
+        {ai.used ? (
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => setChecked(!checked)}
+            style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginVertical: 10 }}>
+            <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={20} color="#334155" />
+            <Text style={{ flex: 1, color: '#334155', fontSize: 13, lineHeight: 19 }}>
+              I have checked this AI draft against the patient's record, and I am responsible for what it says.
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         {box('clinicalSummary', 'Clinical summary for the receiving clinician', { min: 120, required: true })}
         {box('currentMedications', 'Current medications')}
