@@ -124,7 +124,7 @@ export async function signInWithEmailOrUsername(identifier, password) {
     return {
       twoFactorRequired: true,
       challengeId: data.challengeId,
-      email: data.email || email,
+      email: data.codeDestination || data.email || email,
     };
   }
 

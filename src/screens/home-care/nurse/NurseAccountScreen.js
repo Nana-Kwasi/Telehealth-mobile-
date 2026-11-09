@@ -5,6 +5,7 @@ import NurseProfileManageScreen from './NurseProfileManageScreen';
 import NurseAvailabilityScreen from './NurseAvailabilityScreen';
 import NurseDocumentsScreen from './NurseDocumentsScreen';
 import NurseEarningsScreen from './NurseEarningsScreen';
+import SecuritySettingsSection from '../../../components/SecuritySettingsSection';
 import { hc } from '../../../components/home-care/homeCareStyles';
 import { HomeCareColors as C } from '../../../constants/homeCareColors';
 
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'availability', label: 'Availability' },
   { id: 'documents', label: 'Documents' },
   { id: 'earnings', label: 'Earnings' },
+  { id: 'security', label: 'Security' },
 ];
 
 export default function NurseAccountScreen({ route, profile }) {
@@ -35,6 +37,7 @@ export default function NurseAccountScreen({ route, profile }) {
       {tab === 'availability' ? <NurseAvailabilityScreen profile={profile} embedded /> : null}
       {tab === 'documents' ? <NurseDocumentsScreen profile={profile} embedded /> : null}
       {tab === 'earnings' ? <NurseEarningsScreen profile={profile} embedded /> : null}
+      {tab === 'security' ? <SecuritySettingsSection accent={C.primary} /> : null}
     </ScrollView>
   );
 }

@@ -38,6 +38,7 @@ export default function PhoneForSmsMobile({ onVerified, embedded = false }) {
     <View style={embedded ? null : s.box}>
       {status.verified && !editing ? (
         <Text style={s.text}>📱 Codes and updates are texted to {status.phone}.{' '}
+          {status.refillNumber ? `To ask for a refill, text REFILL: medicine name to ${status.refillNumber}. ` : ''}
           <Text style={s.link} onPress={() => setEditing(true)}>Change</Text>
         </Text>
       ) : sentTo ? (

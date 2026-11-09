@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/apiClient';
 import { performLogout, wipeLocalData } from '../../services/authService';
 import { ChangePasswordCard } from '../../components/AccountSecurityExtras';
+import SecuritySettingsSection from '../../components/SecuritySettingsSection';
 import { InsuranceNetworksMobile } from '../../components/InsuranceMobile';
 
 /**
@@ -222,6 +223,7 @@ export default function DiagnosticSettingsScreen({ profile, type = 'lab', isBran
 
         {section === 'security' && (
           <>
+            <SecuritySettingsSection accent={accent} />
             <ChangePasswordCard accent={accent} />
             <View style={s.card}>
               <Text style={s.cardTitle}>Forgot your password?</Text>

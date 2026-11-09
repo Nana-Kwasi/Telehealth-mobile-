@@ -440,7 +440,7 @@ const LoginScreen = ({ navigation, route }) => {
               <View style={styles.inputContainer}>
                 <Text style={styles.label}>Verification code</Text>
                 <Text style={styles.challengeText}>
-                  A 6-digit code was sent to {challengeEmail || 'your email address'}.
+                  A 6-digit code was sent to {challengeEmail || 'you'}.
                 </Text>
                 <TextInput
                   style={styles.input}

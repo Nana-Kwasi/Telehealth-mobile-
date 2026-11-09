@@ -3,6 +3,7 @@ import { View, Text, Switch, TouchableOpacity, StyleSheet, Alert, ActivityIndica
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/apiClient';
+import TwoFactorChannelPicker from './TwoFactorChannelPicker';
 import {
   biometricCapability,
   enableBiometricLogin,
@@ -54,7 +55,7 @@ export default function SecuritySettingsSection({ accent = '#1e6bb8', onChangePa
       await api('/api/v1/auth/2fa', { method: 'PUT', body: { enabled: next } });
       if (next) {
         Alert.alert('Two-factor authentication on',
-          'From now on, signing in will ask for a 6-digit code sent to your email address.');
+          'From now on, signing in will ask for a 6-digit code. Choose below how it reaches you.');
       }
     } catch {
       setTwoFactor(!next);
@@ -108,13 +109,14 @@ export default function SecuritySettingsSection({ accent = '#1e6bb8', onChangePa
         </View>
         <View style={styles.rowText}>
           <Text style={styles.rowLabel}>Two-factor authentication</Text>
-          <Text style={styles.rowDesc}>Require a code emailed to you when signing in</Text>
+          <Text style={styles.rowDesc}>Require a code when signing in</Text>
         </View>
         {busy === '2fa'
           ? <ActivityIndicator color={accent} />
           : <Switch value={twoFactor} onValueChange={toggleTwoFactor}
               trackColor={{ true: accent, false: '#d8dce6' }} />}
       </View>
+      {twoFactor ? <TwoFactorChannelPicker accent={accent} /> : null}
 
       <View style={styles.row}>
         <View style={[styles.icon, { backgroundColor: `${accent}1a` }]}>

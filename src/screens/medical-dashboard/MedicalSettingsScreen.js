@@ -1,3 +1,4 @@
+import TwoFactorChannelPicker from '../../components/TwoFactorChannelPicker';
 import PhoneForSmsMobile from '../../components/PhoneForSmsMobile';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -305,7 +306,7 @@ export default function MedicalSettingsScreen({ navigation, variant = 'medical' 
     }
     if (key === 'twoFAEnabled' && nextValue) {
       Alert.alert('Two-factor authentication on',
-        'From now on, signing in will ask for a 6-digit code sent to your email address.');
+        'From now on, signing in will ask for a 6-digit code. Choose below how it reaches you.');
     }
   };
 
@@ -592,7 +593,7 @@ export default function MedicalSettingsScreen({ navigation, variant = 'medical' 
             <View style={s.card}>
               <Text style={s.cardTitle}>Authentication</Text>
               {[
-                { key: 'twoFAEnabled', icon: 'mail-unread-outline', label: 'Two-factor authentication', desc: 'Require a code emailed to you when signing in', color: C.primary },
+                { key: 'twoFAEnabled', icon: 'mail-unread-outline', label: 'Two-factor authentication', desc: 'Require a code when signing in', color: C.primary },
                 { key: 'biometricEnabled', icon: 'finger-print-outline', label: 'Biometric Login', desc: 'Use Face ID or Fingerprint to sign in on this device', color: '#7c3aed' },
               ].map(({ key, icon, label, desc, color }) => (
                 <View key={key} style={s.toggleRow}>
@@ -604,6 +605,7 @@ export default function MedicalSettingsScreen({ navigation, variant = 'medical' 
                   <Switch value={security[key]} onValueChange={() => toggleSecurity(key)} trackColor={{ true: C.primary }} />
                 </View>
               ))}
+              {security.twoFAEnabled ? <TwoFactorChannelPicker accent={C.primary} /> : null}
 
               <TouchableOpacity style={s.rowLink} onPress={signOutAllDevices}>
                 <View style={[s.rowIcon, { backgroundColor: '#fff7ed' }]}><Ionicons name="log-out-outline" size={18} color="#d97706" /></View>
