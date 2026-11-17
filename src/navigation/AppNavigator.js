@@ -96,6 +96,7 @@ import CarePlanComposerScreen from '../screens/shared/CarePlanComposerScreen';
 import AdminDocComposerScreen from '../screens/shared/AdminDocComposerScreen';
 import ReferralComposerScreen from '../screens/shared/ReferralComposerScreen';
 import TransfersScreen from '../screens/shared/TransfersScreen';
+import PracticeScreen from '../screens/shared/PracticeScreen';
 import EarningsScreen from '../screens/shared/EarningsScreen';
 import TransferPatientScreen from '../screens/shared/TransferPatientScreen';
 import ProviderPricePromotionsScreen from '../screens/shared/ProviderPricePromotionsScreen';
@@ -687,6 +688,9 @@ const DoctorDrawerNavigator = ({ profile }) => {
       <DoctorDrawer.Screen name="DoctorTransfers" options={{ title: 'Transfers' }}>
         {(props) => <TransfersScreen {...props} role="DOCTOR" />}
       </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorPractice" options={{ title: 'Waitlist & Time Off' }}>
+        {(props) => <PracticeScreen {...props} role="DOCTOR" accent="#1e6bb8" />}
+      </DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorDiagnosticResults"  component={DoctorDiagnosticResultsScreen}  options={{ title: 'Lab & Scan Results' }} />
       <DoctorDrawer.Screen name="DoctorPreauth" options={{ title: 'Insurer approvals' }}>{() => <PreauthScreen accent={DoctorColors.primary} />}</DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorReviews"            component={DoctorReviewsScreen}            options={{ title: 'Reviews' }} />
@@ -769,6 +773,9 @@ const TherapistDrawerNavigator = ({ profile }) => {
       </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistTransfers" options={{ title: 'Transfers' }}>
         {(props) => <TransfersScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistPractice" options={{ title: 'Waitlist & Time Off' }}>
+        {(props) => <PracticeScreen {...props} role="THERAPIST" />}
       </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistMood"      component={TherapistMoodScreen}      options={{ title: 'Client Moods' }} />
       <TherapistDrawer.Screen name="TherapistReportIssue" options={{ title: 'Report Issue' }}>

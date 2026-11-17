@@ -23,6 +23,8 @@ import SymptomTriageCard from '../../components/SymptomTriageCard';
 
 import FaqSection from '../../components/FaqSection';
 import TransferConsentCard from '../../components/TransferConsentCard';
+import { MyQuestionnairesMobile } from '../../components/MeasuresMobile';
+import { MyIntakeFormsMobile } from '../../components/IntakeMobile';
 const EMPTY_VITALS = { bpSystolic: '', bpDiastolic: '', heartRate: '', respiratoryRate: '', spo2: '', temperature: '', tempUnit: 'C' };
 
 // How the daily check-in prompt paces itself. A logged check-in keeps it away
@@ -479,6 +481,8 @@ const MedicalHomeScreen = ({ navigation }) => {
     >
       {/* A transfer of this patient's care waiting for their consent. */}
       <TransferConsentCard kind="MEDICAL" />
+      <MyIntakeFormsMobile accent="#1e6bb8" />
+      <MyQuestionnairesMobile accent="#1e6bb8" />
       {/* Welcome Banner */}
       <View style={styles.welcomeCard}>
         {/* Behind the header content, faded left-to-right so the

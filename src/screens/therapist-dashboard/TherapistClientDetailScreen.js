@@ -20,6 +20,9 @@ import { toDateSafe } from '../../utils/dateDisplay';
 import WeeklyCheckInCard from '../../components/WeeklyCheckInCard';
 import RecordGapsCard from '../../components/RecordGapsCard';
 import CodingAssistCard from '../../components/CodingAssistCard';
+import { MeasuresPanelMobile } from '../../components/MeasuresMobile';
+import { RecordGapsMobile, TimelineMobile, MseMobile, DiagnosisPlanMobile, PrivateNotesMobile } from '../../components/PsychRecordMobile';
+import { ShareIntakeMobile } from '../../components/IntakeMobile';
 import { PatientTranscriptsMobile } from '../../components/SessionTranscriptsMobile';
 import {
   getClientDisplayName,
@@ -41,10 +44,10 @@ import { GlassScrim, GlassSheetSurface } from '../../components/GlassSheet';
 
 const MOOD_EMOJI = { 1: '😞', 2: '😟', 3: '😕', 4: '🙁', 5: '😐', 6: '🙂', 7: '😊', 8: '😄', 9: '😁', 10: '🤩' };
 const MOOD_LABEL = { 1: 'Very Low', 2: 'Low', 3: 'Below Avg', 4: 'Slightly Low', 5: 'Neutral', 6: 'Okay', 7: 'Good', 8: 'Great', 9: 'Excellent', 10: 'Outstanding' };
-const TABS = ['overview', 'sessions', 'notes', 'mood', 'goals'];
+const TABS = ['overview', 'timeline', 'sessions', 'notes', 'measures', 'mse', 'diagnosis', 'private', 'mood', 'goals'];
 // Psychiatry: the doctor screen's Prescriptions and E-Pharmacy tabs.
 const PSYCHIATRY_TABS = ['prescriptions', 'epharmacy'];
-const TAB_LABELS = { epharmacy: 'E-Pharmacy' };
+const TAB_LABELS = { epharmacy: 'E-Pharmacy', mse: 'Mental status', diagnosis: 'Diagnosis & plan', private: 'Private notes' };
 
 const PHARMACY_STATUS_META = {
   sent: { label: 'Sent to Pharmacy', color: '#1d4ed8', bg: '#eff6ff' },
@@ -178,6 +181,10 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [isAdmin, setIsAdmin] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareSent, setShareSent] = useState('');
+  const [recordVersion, setRecordVersion] = useState(0);
+  const recordChanged = () => setRecordVersion((v) => v + 1);
 
   // ── Prescribing ────────────────────────────────────────────────────────────
   // Only for clients on the PSYCHIATRY track: a psychiatrist prescribes, a
@@ -510,6 +517,9 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowStatusMenu(true)} disabled={statusUpdating}>
               <Text style={styles.outlineBtnText}>{statusUpdating ? '…' : 'Status'}</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.outlineBtn} onPress={() => setShareOpen(true)}>
+              <Text style={styles.outlineBtnText}>Share forms</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.outlineBtn} onPress={() => navigation.navigate('TransferPatient', { patientId: clientId, patientName: clientName, role: 'THERAPIST' })}>
               <Text style={styles.outlineBtnText}>Transfer</Text>
             </TouchableOpacity>
@@ -537,6 +547,12 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
         <WeeklyCheckInCard clientId={clientId} accent={TherapistColors.primary} />
         <PatientTranscriptsMobile patientId={clientId} accent={TherapistColors.primary} />
         <RecordGapsCard patientId={clientId} />
+        {shareOpen ? (
+          <ShareIntakeMobile clientId={clientId} clientName={clientName} accent={TherapistColors.primary}
+            onClose={() => setShareOpen(false)} onSent={() => { setShareSent(`Forms sent to ${clientName}.`); recordChanged(); }} />
+        ) : null}
+        {shareSent ? <Text style={{ color: '#15803d', marginBottom: 8 }}>{shareSent}</Text> : null}
+        <RecordGapsMobile clientId={clientId} onOpen={setActiveTab} refreshKey={recordVersion} accent={TherapistColors.primary} />
         <CodingAssistCard patientId={clientId} accent={TherapistColors.primary} />
 
         <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
@@ -552,6 +568,12 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {activeTab === 'measures' && <MeasuresPanelMobile clientId={clientId} accent={TherapistColors.primary} />}
+        {activeTab === 'timeline' && <TimelineMobile key={recordVersion} clientId={clientId} accent={TherapistColors.primary} onAddNote={() => setShowNoteModal(true)} />}
+        {activeTab === 'mse' && <MseMobile clientId={clientId} accent={TherapistColors.primary} onSaved={recordChanged} />}
+        {activeTab === 'diagnosis' && <DiagnosisPlanMobile clientId={clientId} accent={TherapistColors.primary} onSaved={recordChanged} />}
+        {activeTab === 'private' && <PrivateNotesMobile clientId={clientId} accent={TherapistColors.primary} />}
 
         {activeTab === 'prescriptions' && (
           dataSharing.prescriptions === false ? <RestrictedBanner section="prescriptions" /> : <>
