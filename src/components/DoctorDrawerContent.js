@@ -27,6 +27,7 @@ const drawerItems = [
   { screen: 'DoctorReferrals',          icon: 'share-social-outline',    label: 'Referrals' },
   { screen: 'DoctorTransfers',          icon: 'swap-horizontal-outline', label: 'Transfers' },
   { screen: 'DoctorPractice',           icon: 'time-outline',            label: 'My Practice' },
+  { screen: 'DoctorCommunityModeration', icon: 'shield-checkmark-outline', label: 'Community moderation' },
   { screen: 'DoctorEarnings',           icon: 'wallet-outline',          label: 'Earnings' },
   { stackScreen: 'DoctorDiagnosticOrder', icon: 'add-circle-outline',    label: 'Order Lab / Scan' },
   { screen: 'DoctorDiagnosticResults',  icon: 'flask-outline',           label: 'Lab & Scan Results' },

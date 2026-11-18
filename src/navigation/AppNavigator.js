@@ -90,6 +90,8 @@ import TherapistReportIssueScreen from '../screens/therapist-dashboard/Therapist
 import TherapistResourcesScreen from '../screens/therapist-dashboard/TherapistResourcesScreen';
 import ProviderWellnessScreen from '../screens/shared/ProviderWellnessScreen';
 import MyWellnessScreen from '../screens/shared/MyWellnessScreen';
+import JournalScreen from '../screens/shared/JournalScreen';
+import CommunityScreen, { CommunityModerationScreen } from '../screens/shared/CommunityScreen';
 import MyCarePlanScreen from '../screens/shared/MyCarePlanScreen';
 import RecordExplorerScreen from '../screens/shared/RecordExplorerScreen';
 import CarePlanComposerScreen from '../screens/shared/CarePlanComposerScreen';
@@ -691,6 +693,9 @@ const DoctorDrawerNavigator = ({ profile }) => {
       <DoctorDrawer.Screen name="DoctorPractice" options={{ title: 'My Practice' }}>
         {(props) => <PracticeScreen {...props} role="DOCTOR" accent="#1e6bb8" />}
       </DoctorDrawer.Screen>
+      <DoctorDrawer.Screen name="DoctorCommunityModeration" options={{ title: 'Community moderation' }}>
+        {(props) => <CommunityModerationScreen {...props} accent="#1e6bb8" />}
+      </DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorDiagnosticResults"  component={DoctorDiagnosticResultsScreen}  options={{ title: 'Lab & Scan Results' }} />
       <DoctorDrawer.Screen name="DoctorPreauth" options={{ title: 'Insurer approvals' }}>{() => <PreauthScreen accent={DoctorColors.primary} />}</DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorReviews"            component={DoctorReviewsScreen}            options={{ title: 'Reviews' }} />
@@ -776,6 +781,9 @@ const TherapistDrawerNavigator = ({ profile }) => {
       </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistPractice" options={{ title: 'My Practice' }}>
         {(props) => <PracticeScreen {...props} role="THERAPIST" />}
+      </TherapistDrawer.Screen>
+      <TherapistDrawer.Screen name="TherapistCommunityModeration" options={{ title: 'Community moderation' }}>
+        {(props) => <CommunityModerationScreen {...props} />}
       </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistMood"      component={TherapistMoodScreen}      options={{ title: 'Client Moods' }} />
       <TherapistDrawer.Screen name="TherapistReportIssue" options={{ title: 'Report Issue' }}>
@@ -922,6 +930,12 @@ const TherapyDrawerNavigator = ({ profile }) => {
       <TherapyDrawer.Screen name="TherapyWellness" options={{ title: 'Wellness' }}>
         {(props) => <MyWellnessScreen {...props} peopleNoun="therapist" />}
       </TherapyDrawer.Screen>
+      <TherapyDrawer.Screen name="TherapyJournal" options={{ title: 'My Journal' }}>
+        {(props) => <JournalScreen {...props} />}
+      </TherapyDrawer.Screen>
+      <TherapyDrawer.Screen name="TherapyCommunity" options={{ title: 'Community' }}>
+        {(props) => <CommunityScreen {...props} />}
+      </TherapyDrawer.Screen>
       <TherapyDrawer.Screen name="TherapyNotificationPrefs" component={NotificationPreferencesScreen} options={{ title: 'Notification settings' }} />
       <TherapyDrawer.Screen name="Settings" component={ClientSettingsScreen} />
       <TherapyDrawer.Screen name="Support" component={ClientSupportScreen} />
@@ -967,6 +981,12 @@ const MedicalDrawerNavigator = ({ profile }) => {
       </MedicalDrawer.Screen>
       <MedicalDrawer.Screen name="MedicalWellness" options={{ title: 'Wellness' }}>
         {(props) => <MyWellnessScreen {...props} peopleNoun="doctor" />}
+      </MedicalDrawer.Screen>
+      <MedicalDrawer.Screen name="MedicalJournal" options={{ title: 'My Journal' }}>
+        {(props) => <JournalScreen {...props} accent="#1e6bb8" />}
+      </MedicalDrawer.Screen>
+      <MedicalDrawer.Screen name="MedicalCommunity" options={{ title: 'Community' }}>
+        {(props) => <CommunityScreen {...props} accent="#1e6bb8" />}
       </MedicalDrawer.Screen>
       <MedicalDrawer.Screen name="MedicalNotificationPrefs" component={NotificationPreferencesScreen} options={{ title: 'Notification settings' }} />
       <MedicalDrawer.Screen name="MedicalSettings"      component={MedicalSettingsScreen}      options={{ title: 'My Profile' }} />

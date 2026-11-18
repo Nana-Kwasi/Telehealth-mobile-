@@ -157,6 +157,18 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
       screen: 'TherapyRecords',
     },
     {
+      name: 'Journal',
+      icon: 'create-outline',
+      label: 'My Journal',
+      screen: 'TherapyJournal',
+    },
+    {
+      name: 'Community',
+      icon: 'people-outline',
+      label: 'Community',
+      screen: 'TherapyCommunity',
+    },
+    {
       name: 'Wellness',
       icon: 'leaf-outline',
       label: 'Wellness',

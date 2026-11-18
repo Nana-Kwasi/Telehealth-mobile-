@@ -24,6 +24,7 @@ import { MeasuresPanelMobile } from '../../components/MeasuresMobile';
 import { RecordGapsMobile, TimelineMobile, MseMobile, DiagnosisPlanMobile, PrivateNotesMobile } from '../../components/PsychRecordMobile';
 import { ShareIntakeMobile, IntakeStatusMobile } from '../../components/IntakeMobile';
 import { TemplateNoteMobile } from '../../components/TemplatesMobile';
+import { SharedJournalMobile } from '../../screens/shared/JournalScreen';
 import { PatientTranscriptsMobile } from '../../components/SessionTranscriptsMobile';
 import {
   getClientDisplayName,
@@ -45,7 +46,7 @@ import { GlassScrim, GlassSheetSurface } from '../../components/GlassSheet';
 
 const MOOD_EMOJI = { 1: '😞', 2: '😟', 3: '😕', 4: '🙁', 5: '😐', 6: '🙂', 7: '😊', 8: '😄', 9: '😁', 10: '🤩' };
 const MOOD_LABEL = { 1: 'Very Low', 2: 'Low', 3: 'Below Avg', 4: 'Slightly Low', 5: 'Neutral', 6: 'Okay', 7: 'Good', 8: 'Great', 9: 'Excellent', 10: 'Outstanding' };
-const TABS = ['overview', 'timeline', 'sessions', 'notes', 'measures', 'mse', 'diagnosis', 'private', 'mood', 'goals'];
+const TABS = ['overview', 'timeline', 'sessions', 'notes', 'measures', 'mse', 'diagnosis', 'private', 'mood', 'journal', 'goals'];
 // Psychiatry: the doctor screen's Prescriptions and E-Pharmacy tabs.
 const PSYCHIATRY_TABS = ['prescriptions', 'epharmacy'];
 const TAB_LABELS = { epharmacy: 'E-Pharmacy', mse: 'Mental status', diagnosis: 'Diagnosis & plan', private: 'Private notes' };
@@ -584,6 +585,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
         {activeTab === 'mse' && <MseMobile clientId={clientId} accent={TherapistColors.primary} onSaved={recordChanged} />}
         {activeTab === 'diagnosis' && <DiagnosisPlanMobile clientId={clientId} accent={TherapistColors.primary} onSaved={recordChanged} />}
         {activeTab === 'private' && <PrivateNotesMobile clientId={clientId} accent={TherapistColors.primary} />}
+        {activeTab === 'journal' && <SharedJournalMobile clientId={clientId} />}
 
         {activeTab === 'prescriptions' && (
           dataSharing.prescriptions === false ? <RestrictedBanner section="prescriptions" /> : <>

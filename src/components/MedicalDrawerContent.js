@@ -62,6 +62,8 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
     { name: 'MedicalCare', icon: 'medkit-outline', label: 'My Care' },
     { name: 'MedicalCarePlan', icon: 'clipboard-outline', label: 'My Care Plan' },
     { name: 'MedicalRecords', icon: 'search-outline', label: 'My Records' },
+    { name: 'MedicalJournal', icon: 'create-outline', label: 'My Journal' },
+    { name: 'MedicalCommunity', icon: 'people-outline', label: 'Community' },
     { name: 'MedicalWellness', icon: 'leaf-outline', label: 'Wellness' },
     { name: 'MedicalAiAssistant', icon: 'sparkles-outline', label: 'NessaHub Assistant' },
     { name: 'MedicalSettings', icon: 'person-outline', label: 'My Profile' },

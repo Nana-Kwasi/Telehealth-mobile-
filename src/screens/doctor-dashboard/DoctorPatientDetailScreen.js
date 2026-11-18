@@ -21,11 +21,12 @@ import SmartDocumentCard from '../../components/SmartDocumentCard';
 import CodingAssistCard from '../../components/CodingAssistCard';
 import { PatientTranscriptsMobile } from '../../components/SessionTranscriptsMobile';
 import { DoctorColors } from '../../constants/colors';
+import { SharedJournalMobile } from '../shared/JournalScreen';
 import { patientPharmacyKey, removePatientPharmacyByKey } from '../../utils/patientPharmacyDedupe';
 import { formatDate, formatDateTime, toDateSafe } from '../../utils/dateDisplay';
 
 const TODAY = new Date().toISOString().split('T')[0];
-const TABS = ['Overview', 'Appointments', 'Notes', 'Prescriptions', 'E-Pharmacy', 'Patient Info', 'Daily Feeling'];
+const TABS = ['Overview', 'Appointments', 'Notes', 'Prescriptions', 'E-Pharmacy', 'Patient Info', 'Daily Feeling', 'Journal'];
 
 const NOTE_TYPES = [
   { value: 'consultation', label: 'Consultation', color: '#1e6bb8', bg: '#dbeafe' },
@@ -1057,6 +1058,8 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
           </>
         )}
         {/* ── DAILY FEELING ── */}
+        {activeTab === 'Journal' && <SharedJournalMobile clientId={patientId} />}
+
         {activeTab === 'Daily Feeling' && (
           dataSharing.labResults === false ? <RestrictedBanner section="daily health check-ins" /> : <>
             {dailyFeelings.length === 0 ? (
