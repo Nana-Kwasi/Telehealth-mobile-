@@ -1,3 +1,4 @@
+import EmptyStateMobile, { IconBubbleMobile } from './EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Linking } from 'react-native';
 import { api } from '../services/apiClient';
@@ -78,7 +79,7 @@ export function TimelineMobile({ clientId, onAddNote, accent = '#4f46e5' }) {
   return (
     <View style={s.card}>
       <Text style={s.title}>Timeline</Text>
-      {data.items.length === 0 ? <Text style={s.muted}>Nothing on the chart yet.</Text> : data.items.map((i) => (
+      {data.items.length === 0 ? <EmptyStateMobile compact icon="HealthDataSync" tone="sky" title="Nothing on the chart yet" /> : data.items.map((i) => (
         <View key={`${i.kind}-${i.id}`} style={[s.row, i.flag && { backgroundColor: '#fef2f2' }]}>
           <View style={{ flex: 1 }}>
             <Text style={s.kind}>{KIND[i.kind] || i.kind} · {fmtTime(i.at)}</Text>
@@ -104,7 +105,7 @@ export function MseMobile({ clientId, onSaved, accent = '#4f46e5' }) {
   return (
     <View style={s.card}>
       <View style={s.head}><Text style={s.title}>Mental status exams</Text><Btn label="New exam" accent={accent} onPress={() => setOpen(true)} /></View>
-      {list.length === 0 ? <Text style={s.muted}>No exam recorded yet.</Text> : list.map((m) => (
+      {list.length === 0 ? <EmptyStateMobile compact icon="MentalHealthTherapy" tone="violet" title="No exam recorded yet" /> : list.map((m) => (
         <TouchableOpacity key={m.id} style={s.row} onPress={() => setViewing(viewing === m.id ? null : m.id)}>
           <View style={{ flex: 1 }}>
             <Text style={s.strong}>{fmt(m.created_at)} · {m.risk_level} risk</Text>
@@ -182,7 +183,7 @@ export function DiagnosisPlanMobile({ clientId, onSaved, accent = '#4f46e5' }) {
     <View>
       <View style={s.card}>
         <Text style={s.title}>Diagnoses (ICD-10)</Text>
-        {dx.length === 0 ? <Text style={s.muted}>No diagnosis recorded.</Text> : dx.map((d) => (
+        {dx.length === 0 ? <EmptyStateMobile compact icon="Stethoscope" tone="blue" title="No diagnosis recorded" /> : dx.map((d) => (
           <View key={d.id} style={[s.row, d.status !== 'active' && { opacity: 0.6 }]}>
             <View style={{ flex: 1 }}>
               <Text style={s.strong}>{d.code} {d.description}{d.is_primary ? '  · Primary' : ''}{d.status !== 'active' ? `  · ${d.status.replace('_', ' ')}` : ''}</Text>
@@ -209,7 +210,7 @@ export function DiagnosisPlanMobile({ clientId, onSaved, accent = '#4f46e5' }) {
       {editing ? <PlanFormMobile clientId={clientId} current={cur} accent={accent} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); loadPlan(); onSaved && onSaved(); }} /> : (
         <View style={s.card}>
           <View style={s.head}><Text style={s.title}>Treatment plan{cur ? ` · v${cur.version}` : ''}</Text><Btn label={cur ? 'Update' : 'Write plan'} accent={accent} onPress={() => setEditing(true)} /></View>
-          {!cur ? <Text style={s.muted}>No treatment plan yet.</Text> : (
+          {!cur ? <EmptyStateMobile compact icon="PrescriptionDocument" tone="teal" title="No treatment plan yet" /> : (
             <>
               {cur.reviewDue ? <Text style={s.err}>The review date ({fmt(cur.review_date)}) has come. Review and update the plan.</Text> : null}
               <Text style={s.detail}><Text style={s.strong}>Presenting problem: </Text>{cur.presenting_problem}</Text>

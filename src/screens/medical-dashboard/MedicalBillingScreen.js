@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -92,7 +93,7 @@ const MedicalBillingScreen = () => {
         <Text style={styles.cardTitle}>Invoice History</Text>
         {completedAppts.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={50} color={MedicalColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Coins" tone="amber" size={40} /></View>
             <Text style={styles.emptyTitle}>No invoices yet</Text>
             <Text style={styles.emptySub}>Billing records appear after completed consultations.</Text>
           </View>

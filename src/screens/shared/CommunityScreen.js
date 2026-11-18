@@ -1,3 +1,4 @@
+import EmptyStateMobile, { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
@@ -8,6 +9,13 @@ import { s } from '../../components/PsychRecordMobile';
  * Community on mobile (patients and clients): same endpoints as web.
  * CommunityModerationScreen is for doctors and therapists who moderate groups.
  */
+
+const GROUP_ICON = {
+  diabetes: ['Diabetes', 'sky'], 'blood-pressure-heart': ['BloodPressure', 'rose'], 'sickle-cell': ['BloodCells', 'rose'],
+  'asthma-breathing': ['Lungs', 'teal'], 'pregnancy-new-parents': ['Pregnant', 'pink'], 'weight-fitness': ['Running', 'orange'],
+  'skin-beauty': ['SkinLayers', 'amber'], 'healthy-ageing': ['Elderly', 'emerald'], sleep: ['HappySleepy', 'indigo'],
+  'low-mood': ['MentalHealth', 'violet'], 'anxiety-stress': ['FaceNervous', 'blue'], 'grief-loss': ['People', 'slate'],
+};
 
 const REACTIONS = [['encourage', '💪', 'Encourage'], ['relate', '🤝', 'Me too'], ['thanks', '🙏', 'Thanks']];
 const REPORT_REASONS = [
@@ -75,7 +83,8 @@ export default function CommunityScreen({ accent = '#4f46e5' }) {
 
 function GroupRow({ g, accent, onOpen }) {
   return (
-    <TouchableOpacity style={s.row} onPress={onOpen} accessibilityRole="button">
+    <TouchableOpacity style={[s.row, { alignItems: 'center' }]} onPress={onOpen} accessibilityRole="button">
+      <IconBubbleMobile icon={(GROUP_ICON[g.slug] || ['Health'])[0]} tone={(GROUP_ICON[g.slug] || [null, 'indigo'])[1]} size={22} />
       <View style={{ flex: 1 }}>
         <Text style={s.strong}>{g.name}</Text>
         <Text style={s.muted}>{g.description}</Text>
@@ -90,7 +99,8 @@ function NicknameMobile({ accent, onDone }) {
   const [error, setError] = useState('');
   return (
     <View style={s.card}>
-      <Text style={s.title}>Join the NessaHub community</Text>
+      <View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="GroupDiscussionMeetingx3" tone="indigo" size={44} /></View>
+      <Text style={[s.title, { textAlign: 'center' }]}>Join the NessaHub community</Text>
       <Text style={s.detail}>Meet people with the same condition or goal, share how you are doing and cheer each other on.</Text>
       <Text style={[s.muted, { marginTop: 6 }]}>Choose a nickname. To keep your health private, do not use your real name.</Text>
       <TextInput style={s.input} value={n} onChangeText={setN} maxLength={30} placeholder="e.g. MorningWalker" autoCapitalize="none" />
@@ -169,7 +179,7 @@ function GroupMobile({ group, me, accent, draft, clearDraft, onBack }) {
               </TouchableOpacity>
             </View>
           ) : null}
-          {posts === null ? <Text style={s.muted}>Loading…</Text> : posts.length === 0 ? <View style={s.card}><Text style={s.muted}>No posts yet. Be the first to say hello.</Text></View>
+          {posts === null ? <Text style={s.muted}>Loading…</Text> : posts.length === 0 ? <View style={s.card}><EmptyStateMobile icon="GroupDiscussionMeetingx3" tone="indigo" title="No posts yet">Be the first to say hello and share how you are doing.</EmptyStateMobile></View>
             : posts.map((p) => <PostMobile key={p.id} post={p} accent={accent} canWrite={joined} moderator={moderator} onChanged={load} />)}
         </>
       )}
@@ -300,7 +310,7 @@ export function CommunityModerationScreen({ accent = '#4f46e5' }) {
         <>
           <View style={s.card}>
             <Text style={s.title}>Waiting for review ({q.held.length})</Text>
-            {q.held.length === 0 ? <Text style={s.muted}>Nothing waiting.</Text> : q.held.map((h) => (
+            {q.held.length === 0 ? <EmptyStateMobile compact icon="HealthDataSecurity" tone="emerald" title="Nothing waiting" /> : q.held.map((h) => (
               <View key={`${h.type}-${h.id}`} style={[s.row, { flexDirection: 'column' }, h.hold_reason === 'safety' && { backgroundColor: '#fef2f2', borderRadius: 8, padding: 8 }]}>
                 <Text style={s.muted}>{h.group_name} · {h.type} by {h.nickname} · {ago(h.created_at)} · {h.status === 'hidden' ? 'hidden after reports' : REASON[h.hold_reason] || 'held'}</Text>
                 <Text style={s.detail}>{h.body}</Text>
@@ -314,7 +324,7 @@ export function CommunityModerationScreen({ accent = '#4f46e5' }) {
           </View>
           <View style={s.card}>
             <Text style={s.title}>Reports ({q.reports.length})</Text>
-            {q.reports.length === 0 ? <Text style={s.muted}>No open reports.</Text> : q.reports.map((r) => (
+            {q.reports.length === 0 ? <EmptyStateMobile compact icon="CommunityMeeting" tone="teal" title="No open reports" /> : q.reports.map((r) => (
               <View key={r.id} style={[s.row, { flexDirection: 'column' }, r.reason === 'worrying' && { backgroundColor: '#fef2f2', borderRadius: 8, padding: 8 }]}>
                 <Text style={s.muted}>{r.group_name} · {r.target_type} · {r.reason.replace('_', ' ')} · {ago(r.created_at)}{r.target_status !== 'visible' ? ` · now ${r.target_status}` : ''}</Text>
                 <Text style={s.detail}>{r.body}</Text>

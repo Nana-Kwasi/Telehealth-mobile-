@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -236,7 +237,7 @@ const DoctorProfileScreen = ({ route, navigation }) => {
             <View>
               {availability.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="calendar-outline" size={48} color={MedicalColors.textLight} />
+                  <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={38} /></View>
                   <Text style={styles.emptyTitle}>No availability posted</Text>
                   <Text style={styles.emptySubtitle}>The doctor hasn't set up their schedule yet.</Text>
                 </View>
@@ -280,7 +281,7 @@ const DoctorProfileScreen = ({ route, navigation }) => {
             <View>
               {reviews.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="chatbubbles-outline" size={48} color={MedicalColors.textLight} />
+                  <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="sky" size={38} /></View>
                   <Text style={styles.emptyTitle}>No reviews yet</Text>
                   <Text style={styles.emptySubtitle}>Be the first to leave a review after your appointment.</Text>
                 </View>

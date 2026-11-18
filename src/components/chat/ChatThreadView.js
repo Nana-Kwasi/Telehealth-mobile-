@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../EmptyStateMobile';
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -435,7 +436,7 @@ export default function ChatThreadView({
       >
         {messages.length === 0 ? (
           <View style={styles.emptyChat}>
-            <Ionicons name="chatbubbles-outline" size={40} color="#cbd5e1" />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="sky" size={32} /></View>
             <Text style={styles.emptyChatText}>{emptyHint}</Text>
           </View>
         ) : (

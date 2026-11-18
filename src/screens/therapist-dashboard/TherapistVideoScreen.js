@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -274,7 +275,7 @@ export default function TherapistVideoScreen({ navigation, profile }) {
         <Text style={styles.sectionTitle}>Your clients</Text>
         {clients.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="people-outline" size={40} color="#cbd5e1" />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={32} /></View>
             <Text style={styles.emptyTitle}>No clients assigned</Text>
             <Text style={styles.emptySub}>Clients linked to you will appear here for video sessions.</Text>
           </View>
@@ -396,7 +397,7 @@ export default function TherapistVideoScreen({ navigation, profile }) {
 
         {agendaCalls.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="calendar-outline" size={40} color="#cbd5e1" />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={32} /></View>
             <Text style={styles.emptyTitle}>No upcoming calls</Text>
           </View>
         ) : (

@@ -1,3 +1,4 @@
+import EmptyStateMobile, { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, View, Text, TextInput, TouchableOpacity, Image, Alert, Dimensions } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -161,8 +162,13 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
       <View style={s.card}>
-        <Text style={s.title}>My Journal</Text>
-        <Text style={s.muted}>Private to you, unless you share an entry with your care team.</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <IconBubbleMobile icon="MentalHealth" tone="violet" size={24} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.title}>My Journal</Text>
+            <Text style={s.muted}>Private to you, unless you share an entry with your care team.</Text>
+          </View>
+        </View>
         <View style={s.chips}>
           {canWrite ? <TouchableOpacity style={[s.btn, { backgroundColor: accent }]} onPress={() => setEditing({ entry_date: todayStr(), area: 'health' })}><Text style={s.btnText}>New entry</Text></TouchableOpacity> : null}
           <TouchableOpacity onPress={exportPdf}><Text style={[s.link, { color: accent }]}>Save as PDF</Text></TouchableOpacity>
@@ -226,7 +232,7 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
 
       <View style={s.card}>
         <TextInput style={s.input} placeholder="Search your journal" value={q} onChangeText={setQ} onSubmitEditing={load} returnKeyType="search" />
-        {entries === null ? <Text style={s.muted}>Loading…</Text> : entries.length === 0 ? <Text style={[s.muted, { marginTop: 8 }]}>No entries yet. Start with how today went.</Text>
+        {entries === null ? <Text style={s.muted}>Loading…</Text> : entries.length === 0 ? <EmptyStateMobile icon="MentalHealth" tone="violet" title={q ? 'Nothing matches' : 'Your journal is empty'}>{q ? 'Try another word.' : 'Start with how today went: a few lines, a mood, a photo or your steps.'}</EmptyStateMobile>
           : entries.map((e) => {
             const mood = moodOf(e.mood);
             const m = e.measures || {};
@@ -399,7 +405,7 @@ export function SharedJournalMobile({ clientId }) {
       <Text style={s.title}>Journal entries shared with you</Text>
       <Text style={s.muted}>Their journal is private. You see only what they chose to share.</Text>
       {error ? <Text style={s.err}>{error}</Text> : null}
-      {list === null ? <Text style={s.muted}>Loading…</Text> : list.length === 0 ? <Text style={[s.muted, { marginTop: 6 }]}>Nothing shared yet.</Text> : list.map((e) => (
+      {list === null ? <Text style={s.muted}>Loading…</Text> : list.length === 0 ? <EmptyStateMobile compact icon="HealthDataSecurity" tone="teal" title="Nothing shared yet" /> : list.map((e) => (
         <View key={e.id} style={[s.row, e.safety_flag && { borderLeftWidth: 4, borderLeftColor: '#dc2626', paddingLeft: 8 }]}>
           <View style={{ flex: 1 }}>
             <Text style={s.muted}>{fmtDay(e.entry_date)} · {areaLabel(e.area)}{e.mood ? ` · mood ${e.mood}/5` : ''}{e.safety_flag ? ' · safety concern' : ''}</Text>

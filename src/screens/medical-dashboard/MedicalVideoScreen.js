@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -182,7 +183,7 @@ const MedicalVideoScreen = ({ navigation }) => {
       {/* Empty State */}
       {videoAppointments.length === 0 && (
         <View style={styles.emptyState}>
-          <Ionicons name="videocam-outline" size={64} color={MedicalColors.textLight} />
+          <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="blue" size={44} /></View>
           <Text style={styles.emptyTitle}>No video appointments</Text>
           <Text style={styles.emptySubtitle}>
             Book a video consultation with a doctor to get started.

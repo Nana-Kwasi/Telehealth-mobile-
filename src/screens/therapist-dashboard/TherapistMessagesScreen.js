@@ -1,3 +1,4 @@
+import { IconBubbleMobile, IonBubble } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -234,12 +235,12 @@ export default function TherapistMessagesScreen({ profile }) {
         </View>
       ) : listTab === 'archive' ? (
         <View style={styles.emptyState}>
-          <Ionicons name="archive-outline" size={44} color="#cbd5e1" />
+          <IonBubble name="archive-outline" tone="slate" size={35} />
           <Text style={styles.emptyTitle}>No archived chats</Text>
         </View>
       ) : filteredTherapists.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="people-outline" size={44} color="#cbd5e1" />
+          <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={35} /></View>
           <Text style={styles.emptyTitle}>No staff found</Text>
           <Text style={styles.emptySub}>Try a different search term</Text>
         </View>

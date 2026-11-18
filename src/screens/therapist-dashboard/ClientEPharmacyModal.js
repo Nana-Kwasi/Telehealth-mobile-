@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 // Add an e-pharmacy for several psychiatry clients at once — a copy of the
 // E-Pharmacy feature on doctor-dashboard/DoctorHomeScreen.js (state, directory
 // loading, save, modal and styles), for therapists. Differences are marked
@@ -385,7 +386,7 @@ export default function ClientEPharmacyModal({ visible, onClose, therapistId }) 
 
               {allPatients.length === 0 ? (
                 <View style={eph.emptyPatients}>
-                  <Ionicons name="people-outline" size={32} color="#cbd5e1" />
+                  <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={26} /></View>
                   <Text style={eph.emptyPatientsText}>No psychiatry clients found</Text>
                 </View>
               ) : (

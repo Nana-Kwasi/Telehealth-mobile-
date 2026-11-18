@@ -1,3 +1,4 @@
+import { IonBubble } from '../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -100,7 +101,7 @@ export default function NotificationsScreen({ navigation }) {
           }
           ListEmptyComponent={(
             <View style={styles.center}>
-              <Ionicons name="notifications-outline" size={40} color="#cbd5e1" />
+              <IonBubble name="notifications-outline" tone="amber" size={32} />
               <Text style={styles.emptyTitle}>You are all caught up</Text>
               <Text style={styles.emptySub}>New activity will appear here.</Text>
             </View>

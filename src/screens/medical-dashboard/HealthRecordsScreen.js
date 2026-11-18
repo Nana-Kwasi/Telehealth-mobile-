@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -294,7 +295,7 @@ const HealthRecordsScreen = () => {
 
         {records.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="folder-open-outline" size={54} color={MedicalColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="HealthDataSync" tone="teal" size={43} /></View>
             <Text style={styles.emptyTitle}>No health records yet</Text>
             <Text style={styles.emptySubtitle}>Add lab results, scans, or reports so your doctor has a full picture of your health.</Text>
           </View>

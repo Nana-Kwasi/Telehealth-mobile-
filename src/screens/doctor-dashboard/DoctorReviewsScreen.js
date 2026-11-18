@@ -1,3 +1,4 @@
+import { IonBubble } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -209,7 +210,7 @@ export default function DoctorReviewsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadReviews(); }} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="star-outline" size={48} color="#cbd5e1" />
+              <IonBubble name="star-outline" tone="amber" size={38} />
               <Text style={styles.emptyText}>No reviews yet</Text>
             </View>
           }

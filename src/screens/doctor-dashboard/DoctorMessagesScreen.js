@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -405,7 +406,7 @@ export default function DoctorMessagesScreen({ route }) {
         >
           {grouped.length === 0 && (
             <View style={styles.emptyChat}>
-              <Ionicons name="chatbubbles-outline" size={40} color="#cbd5e1" />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="sky" size={32} /></View>
               <Text style={styles.emptyChatText}>Say hello to {activePatient.name}!</Text>
             </View>
           )}
@@ -537,7 +538,7 @@ export default function DoctorMessagesScreen({ route }) {
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="chatbubbles-outline" size={48} color="#cbd5e1" />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="sky" size={38} /></View>
               <Text style={styles.emptyText}>{search ? 'No matching patients' : 'No patients yet'}</Text>
               <Text style={styles.emptySub}>Patients who book appointments will appear here</Text>
             </View>

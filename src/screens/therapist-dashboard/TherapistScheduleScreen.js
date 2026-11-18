@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -406,7 +407,7 @@ export default function TherapistScheduleScreen({ profile }) {
         <Text style={styles.dayCount}>{selectedDateCalls.length} appointment(s)</Text>
         {selectedDateCalls.length === 0 ? (
           <View style={styles.emptyDay}>
-            <Ionicons name="calendar-outline" size={32} color="#cbd5e1" />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={26} /></View>
             <Text style={styles.emptyDayText}>No appointments this day</Text>
           </View>
         ) : (

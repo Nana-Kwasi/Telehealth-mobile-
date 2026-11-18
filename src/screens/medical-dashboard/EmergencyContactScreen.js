@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -122,7 +123,7 @@ const EmergencyContactScreen = () => {
 
         {contacts.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={54} color={MedicalColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={43} /></View>
             <Text style={styles.emptyTitle}>No emergency contacts</Text>
             <Text style={styles.emptySubtitle}>Add at least one person your doctor can contact in an emergency.</Text>
           </View>

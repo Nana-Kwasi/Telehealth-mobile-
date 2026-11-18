@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import { fetchPersonProfile } from '../../utils/clientTherapyMetrics';
 import React, { useState, useEffect } from 'react';
 import {
@@ -133,7 +134,7 @@ const TherapistMoodScreen = ({ navigation }) => {
         </View>
         {clients.length === 0 ? (
           <View style={styles.center}>
-            <Ionicons name="happy-outline" size={48} color={TherapistColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="FaceHappy" tone="amber" size={38} /></View>
             <Text style={styles.emptyTitle}>No clients assigned</Text>
           </View>
         ) : (
@@ -222,7 +223,7 @@ const TherapistMoodScreen = ({ navigation }) => {
             <Text style={styles.cardTitle}>Recent Check-ins ({moodEntries.length})</Text>
             {moodEntries.length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="happy-outline" size={32} color={TherapistColors.textLight} />
+                <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="FaceHappy" tone="amber" size={26} /></View>
                 <Text style={styles.emptyTitle}>No mood check-ins yet</Text>
               </View>
             ) : moodEntries.map(entry => {

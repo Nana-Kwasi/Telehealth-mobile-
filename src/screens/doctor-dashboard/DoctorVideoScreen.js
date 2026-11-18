@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -300,7 +301,7 @@ export default function DoctorVideoScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadVideoAppts(); }} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="videocam-outline" size={48} color="#cbd5e1" />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="blue" size={38} /></View>
               <Text style={styles.emptyText}>No consultations {filter !== 'All' ? `for ${filter.toLowerCase()}` : ''}</Text>
             </View>
           }

@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -617,7 +618,7 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={48} color={TherapistColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="PrescriptionDocument" tone="violet" size={38} /></View>
             <Text style={styles.emptyTitle}>No notes yet</Text>
             <Text style={styles.emptySubtitle}>Tap + to create a SOAP note, progress note, or therapy book</Text>
           </View>

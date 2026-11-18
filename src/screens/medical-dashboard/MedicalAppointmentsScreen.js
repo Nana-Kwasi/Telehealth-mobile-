@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -635,7 +636,7 @@ const MedicalAppointmentsScreen = ({ navigation, route }) => {
           </View>
           {filteredAppointments.length === 0 ? (
             <View style={styles.centerContainer}>
-              <Ionicons name="calendar-outline" size={56} color={MedicalColors.textLight} />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={44} /></View>
               <Text style={styles.emptyTitle}>No {activeFilter} appointments</Text>
               {activeFilter === 'upcoming' && (
                 <TouchableOpacity

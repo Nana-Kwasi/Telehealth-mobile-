@@ -1,3 +1,4 @@
+import EmptyStateMobile, { IconBubbleMobile, IconHeadingMobile } from './EmptyStateMobile';
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { api } from '../services/apiClient';
@@ -44,7 +45,7 @@ export function TemplatesMobile({ accent = '#4f46e5' }) {
     return (
       <View style={{ marginTop: 8 }}>
         <Text style={s.kind}>{title}</Text>
-        {items.length === 0 ? <Text style={s.muted}>None yet.</Text> : items.map((t) => (
+        {items.length === 0 ? <EmptyStateMobile compact icon={kind === 'note' ? 'PrescriptionDocument' : 'HealthWorkerForm'} tone={kind === 'note' ? 'violet' : 'teal'} title="None yet" /> : items.map((t) => (
           <View key={t.id} style={s.row}>
             <Text style={[s.strong, { flex: 1 }]}>{t.name}</Text>
             <TouchableOpacity onPress={() => setEditing(t)}><Text style={[s.link, { color: accent }]}>Edit</Text></TouchableOpacity>
@@ -58,7 +59,7 @@ export function TemplatesMobile({ accent = '#4f46e5' }) {
   };
   return (
     <View style={s.card}>
-      <Text style={s.title}>Templates</Text>
+      <IconHeadingMobile icon="HealthWorkerForm" tone="violet">Templates</IconHeadingMobile>
       <Text style={s.muted}>Your own note layouts, and forms for clients to fill in. Send forms with “Share forms” on a client's page.</Text>
       {list === null ? <Text style={s.muted}>Loading…</Text> : <>{group('note', 'Note templates')}{group('form', 'Client forms')}</>}
       {error ? <Text style={s.err}>{error}</Text> : null}

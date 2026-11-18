@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -258,7 +259,7 @@ export default function DoctorNotesScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="document-text-outline" size={48} color="#cbd5e1" />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="PrescriptionDocument" tone="violet" size={38} /></View>
               <Text style={styles.emptyText}>{search ? 'No matching notes' : 'No notes yet'}</Text>
             </View>
           }

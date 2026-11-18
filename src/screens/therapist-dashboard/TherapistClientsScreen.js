@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -397,7 +398,7 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
       >
         {filtered.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={48} color={TherapistColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={38} /></View>
             <Text style={styles.emptyTitle}>
               {searchQuery ? 'No clients match your search' : 'No clients assigned yet'}
             </Text>

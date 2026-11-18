@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 // Psychiatry prescribing — a copy of doctor-dashboard/DoctorPrescriptionsScreen.js
 // for therapists. A psychiatrist (therapist account) prescribes for clients on the
 // PSYCHIATRY care track through exactly the doctor's flow: same form, pharmacy
@@ -850,7 +851,7 @@ export default function TherapistPrescriptionsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="medkit-outline" size={48} color="#cbd5e1" />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Medicines" tone="emerald" size={38} /></View>
               <Text style={styles.emptyText}>{search || statusFilter !== 'all' ? 'No prescriptions match' : 'No prescriptions yet'}</Text>
               {!search && statusFilter === 'all' ? <Text style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>Tap "New Rx" to create one.</Text> : null}
             </View>

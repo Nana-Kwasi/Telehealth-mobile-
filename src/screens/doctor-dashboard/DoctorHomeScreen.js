@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -641,7 +642,7 @@ export default function DoctorHomeScreen({ navigation }) {
         </View>
         {todaySchedule.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="calendar-outline" size={32} color="#cbd5e1" />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={26} /></View>
             <Text style={styles.emptyText}>No appointments today</Text>
           </View>
         ) : (
@@ -942,7 +943,7 @@ export default function DoctorHomeScreen({ navigation }) {
 
               {allPatients.length === 0 ? (
                 <View style={eph.emptyPatients}>
-                  <Ionicons name="people-outline" size={32} color="#cbd5e1" />
+                  <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={26} /></View>
                   <Text style={eph.emptyPatientsText}>No patients found</Text>
                 </View>
               ) : (

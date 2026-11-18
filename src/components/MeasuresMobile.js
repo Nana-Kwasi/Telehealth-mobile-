@@ -1,3 +1,4 @@
+import EmptyStateMobile, { IconBubbleMobile } from './EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -110,7 +111,7 @@ function History({ def, rows }) {
         <Text style={s.title}>{def.name} · {def.purpose}</Text>
         {last ? <Text style={[s.band, { backgroundColor: BAND_COLOURS[last.severity] || '#f1f5f9' }]}>{last.score}/{def.maxScore} · {last.severityLabel}</Text> : null}
       </View>
-      {rows.length === 0 ? <Text style={s.muted}>No results yet.</Text> : (
+      {rows.length === 0 ? <EmptyStateMobile compact icon="Psychology" tone="violet" title="No results yet" /> : (
         <>
           <Text style={s.muted}>Since first: <Text style={s.strong}>{changeText(last.changeFromBaseline, def.meaningfulChange)}</Text></Text>
           <Text style={s.muted}>Since last: <Text style={s.strong}>{changeText(last.changeFromLast, def.meaningfulChange)}</Text></Text>

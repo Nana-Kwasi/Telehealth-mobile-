@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../../utils/platformFeatures';
 import React, { useState, useEffect } from 'react';
 import {
@@ -912,7 +913,7 @@ const MedicalHomeScreen = ({ navigation }) => {
       <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Upcoming Appointments</Text>
       {upcomingAppointments.length === 0 ? (
         <View style={styles.emptyCard}>
-          <Ionicons name="calendar-outline" size={40} color={MedicalColors.textLight} />
+          <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={32} /></View>
           <Text style={styles.emptyText}>No upcoming appointments</Text>
           {primaryDoctor ? (
             <TouchableOpacity

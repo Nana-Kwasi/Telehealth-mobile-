@@ -1,3 +1,4 @@
+import { IonBubble } from '../EmptyStateMobile';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, ScrollView, Linking, Alert, Modal,
@@ -117,7 +118,7 @@ export function DiagWorklistMobile({ type = 'lab', profile, isBranch, colors: C 
         <FlatList showsVerticalScrollIndicator={false} data={shown} keyExtractor={o => o.id} renderItem={renderItem}
           contentContainerStyle={{ padding: 12, paddingTop: 4, gap: 10, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.primary} />}
-          ListEmptyComponent={<View style={{ alignItems: 'center', padding: 40 }}><Ionicons name="checkmark-done-circle-outline" size={44} color="#cbd5e1" /><Text style={st.empty}>{q ? 'No orders match that name.' : 'Nothing here right now.'}</Text></View>} />
+          ListEmptyComponent={<View style={{ alignItems: 'center', padding: 40 }}><IonBubble name="checkmark-done-circle-outline" tone="emerald" size={35} /><Text style={st.empty}>{q ? 'No orders match that name.' : 'Nothing here right now.'}</Text></View>} />
       )}
       {actions.element}
     </View>

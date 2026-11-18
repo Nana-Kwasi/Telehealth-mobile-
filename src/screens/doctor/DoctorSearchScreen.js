@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -461,7 +462,7 @@ const DoctorSearchScreen = ({ navigation, route }) => {
         </View>
       ) : filteredDoctors.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Ionicons name="medical-outline" size={64} color={MedicalColors.textLight} />
+          <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Stethoscope" tone="blue" size={44} /></View>
           <Text style={styles.emptyTitle}>No doctors found</Text>
           <Text style={styles.emptySubtitle}>
             {searchQuery || selectedSpecialty

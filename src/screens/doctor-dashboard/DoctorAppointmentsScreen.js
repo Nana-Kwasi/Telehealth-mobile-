@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -411,7 +412,7 @@ export default function DoctorAppointmentsScreen({ route, navigation }) {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} />}
             ListEmptyComponent={
               <View style={styles.empty}>
-                <Ionicons name="calendar-outline" size={44} color="#cbd5e1" />
+                <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={35} /></View>
                 <Text style={styles.emptyText}>No {listTab !== 'All' ? listTab.toLowerCase() : ''} appointments</Text>
               </View>
             }

@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import { LicenceCardMobile } from '../../components/ProviderInsuranceMobile';
 import {
@@ -545,7 +546,7 @@ export default function DoctorSettingsScreen() {
 
           {availSlots.length === 0 ? (
             <View style={styles.emptyAvail}>
-              <Ionicons name="calendar-outline" size={36} color="#cbd5e1" />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={29} /></View>
               <Text style={styles.emptyAvailText}>No availability slots added yet</Text>
             </View>
           ) : (

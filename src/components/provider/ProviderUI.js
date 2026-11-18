@@ -1,3 +1,4 @@
+import { HealthIcon } from '../EmptyStateMobile';
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -99,10 +100,13 @@ export function Pill({ label, color = '#475569', bg = '#f1f5f9' }) {
   return <View style={[s.pill, { backgroundColor: bg }]}><Text style={[s.pillText, { color }]}>{label}</Text></View>;
 }
 
-export function Empty({ icon = 'checkmark-circle-outline', text, actionLabel, onAction, accent = '#0c4a6e' }) {
+/** An empty state: a big icon in a soft circle of the screen's colour. Pass `health` for a Health Icon instead. */
+export function Empty({ icon = 'checkmark-circle-outline', health, text, actionLabel, onAction, accent = '#0c4a6e' }) {
   return (
     <View style={s.empty}>
-      <Ionicons name={icon} size={26} color="#94a3b8" />
+      <View style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: `${accent}1A`, marginBottom: 6 }}>
+        {health ? <HealthIcon name={health} size={38} color={accent} /> : <Ionicons name={icon} size={34} color={accent} />}
+      </View>
       <Text style={s.emptyText}>{text}</Text>
       {actionLabel ? (
         <TouchableOpacity onPress={onAction}><Text style={[s.sectionAction, { color: accent, marginTop: 6 }]}>{actionLabel}</Text></TouchableOpacity>

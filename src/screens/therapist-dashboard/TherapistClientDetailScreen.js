@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../../utils/platformFeatures';
 import React, { useState, useEffect } from 'react';
 import {
@@ -665,7 +666,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             <Text style={[docStyles.sectionTitle, { marginBottom: 12 }]}>Patient Pharmacies</Text>
             {pharmacies.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                <Ionicons name="storefront-outline" size={40} color="#cbd5e1" />
+                <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Pharmacy" tone="emerald" size={32} /></View>
                 <Text style={docStyles.emptyText}>Patient has no pharmacies added</Text>
               </View>
             ) : (

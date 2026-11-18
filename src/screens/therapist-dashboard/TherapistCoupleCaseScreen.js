@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, RefreshControl,
@@ -146,7 +147,7 @@ export default function TherapistCoupleCaseScreen({ route, navigation }) {
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {couples.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Ionicons name="people-outline" size={30} color={C.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={26} /></View>
             <Text style={styles.emptyText}>No couples matched to you yet.</Text>
             <Text style={styles.emptyHint}>A couple appears once both partners confirm you as their therapist.</Text>
           </View>

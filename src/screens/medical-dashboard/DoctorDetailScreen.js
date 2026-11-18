@@ -1,3 +1,4 @@
+import { IonBubble } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -81,7 +82,7 @@ const DoctorDetailScreen = ({ route, navigation }) => {
   if (!doctor) {
     return (
       <View style={styles.centered}>
-        <Ionicons name="alert-circle-outline" size={48} color={MedicalColors.textLight} />
+        <IonBubble name="alert-circle-outline" tone="amber" size={38} />
         <Text style={styles.notFoundText}>Doctor profile not available</Text>
       </View>
     );

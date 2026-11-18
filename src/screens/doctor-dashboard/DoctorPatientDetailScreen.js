@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -771,7 +772,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Patient Pharmacies</Text>
             {pharmacies.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                <Ionicons name="storefront-outline" size={40} color="#cbd5e1" />
+                <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Pharmacy" tone="emerald" size={32} /></View>
                 <Text style={styles.emptyText}>Patient has no pharmacies added</Text>
               </View>
             ) : (
@@ -955,7 +956,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               </View>
             ) : (
               <View style={[styles.infoCard, { alignItems: 'center', paddingVertical: 20 }]}>
-                <Ionicons name="pulse-outline" size={28} color="#cbd5e1" />
+                <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Heartbeat" tone="rose" size={26} /></View>
                 <Text style={{ fontSize: 13, color: '#94a3b8', marginTop: 6 }}>No vitals recorded yet</Text>
               </View>
             )}
@@ -1064,7 +1065,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
           dataSharing.labResults === false ? <RestrictedBanner section="daily health check-ins" /> : <>
             {dailyFeelings.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-                <Ionicons name="happy-outline" size={52} color="#cbd5e1" />
+                <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="FaceHappy" tone="amber" size={42} /></View>
                 <Text style={[styles.emptyText, { marginTop: 12 }]}>No daily check-ins yet</Text>
                 <Text style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', marginTop: 4 }}>
                   The patient has not submitted any daily feeling reports.

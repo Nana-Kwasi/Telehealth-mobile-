@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -93,7 +94,7 @@ const MedicalHistoryScreen = () => {
         {activeTab === 'consultations' && (
           pastAppointments.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="folder-open-outline" size={56} color={C.textLight} />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="HealthDataSync" tone="teal" size={44} /></View>
               <Text style={styles.emptyTitle}>No past consultations</Text>
               <Text style={styles.emptySubtitle}>Your completed appointments will appear here.</Text>
             </View>
@@ -141,7 +142,7 @@ const MedicalHistoryScreen = () => {
         {activeTab === 'prescriptions' && (
           prescriptions.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="medical-outline" size={56} color={C.textLight} />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Stethoscope" tone="blue" size={44} /></View>
               <Text style={styles.emptyTitle}>No prescriptions</Text>
               <Text style={styles.emptySubtitle}>Prescriptions from your doctors will appear here.</Text>
             </View>
@@ -195,7 +196,7 @@ const MedicalHistoryScreen = () => {
             {/* Health Records */}
             {healthRecords.length === 0 && !allergies ? (
               <View style={styles.emptyState}>
-                <Ionicons name="folder-open-outline" size={56} color={C.textLight} />
+                <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="HealthDataSync" tone="teal" size={44} /></View>
                 <Text style={styles.emptyTitle}>No health records</Text>
                 <Text style={styles.emptySubtitle}>Add your health records from the Health Records section in My Profile.</Text>
               </View>

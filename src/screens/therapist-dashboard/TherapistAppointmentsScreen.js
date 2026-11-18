@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 // ─── TherapistAppointmentsScreen ─────────────────────────────────────────────
 // The therapist's side of scheduled calls, mirroring the medical patient's
 // appointments screen: requests waiting for an answer, the confirmed agenda, and
@@ -253,7 +254,7 @@ export default function TherapistAppointmentsScreen({ navigation }) {
 
         {filtered.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="calendar-outline" size={40} color="#cbd5e1" />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={32} /></View>
             <Text style={styles.emptyTitle}>
               {activeFilter === 'requests' ? 'No session requests' : 'Nothing here yet'}
             </Text>

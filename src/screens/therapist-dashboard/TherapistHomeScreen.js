@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -904,7 +905,7 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
         </View>
         {clientProgress.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="trending-up-outline" size={32} color={TherapistColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="HeartCardiogram" tone="rose" size={26} /></View>
             <Text style={styles.emptyText}>No client data yet</Text>
             <Text style={styles.emptySubtext}>Progress appears once clients have therapy notes</Text>
           </View>
@@ -959,7 +960,7 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
         </View>
         {todayAppointments.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={32} color={TherapistColors.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={26} /></View>
             <Text style={styles.emptyText}>No sessions scheduled for today</Text>
           </View>
         ) : (

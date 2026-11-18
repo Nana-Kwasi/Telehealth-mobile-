@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
@@ -443,7 +444,7 @@ const MedicalMessagesScreen = () => {
   if (!activeDoctorId) {
     return (
       <View style={styles.center}>
-        <Ionicons name="chatbubbles-outline" size={56} color={C.textLight} />
+        <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="sky" size={44} /></View>
         <Text style={styles.emptyTitle}>No active conversations</Text>
         <Text style={styles.emptySub}>Book an appointment with a doctor to start messaging.</Text>
       </View>
@@ -487,7 +488,7 @@ const MedicalMessagesScreen = () => {
       >
         {grouped.length === 0 && (
           <View style={styles.emptyMessages}>
-            <Ionicons name="chatbubbles-outline" size={40} color="#cbd5e1" />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="sky" size={32} /></View>
             <Text style={styles.emptyMessagesText}>Start a conversation with Dr. {activeDoctorName}</Text>
           </View>
         )}

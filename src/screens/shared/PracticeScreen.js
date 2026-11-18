@@ -1,3 +1,5 @@
+import { CalendarDays, CalendarOff, Users, ShieldCheck, Megaphone, TrendingUp } from 'lucide-react-native';
+import EmptyStateMobile, { IconBubbleMobile, IconHeadingMobile } from '../../components/EmptyStateMobile';
 import { usePlatformFeatures, featureOn } from '../../utils/platformFeatures';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, View, Text, TextInput, TouchableOpacity, Share, Linking } from 'react-native';
@@ -62,7 +64,7 @@ function Policies({ accent, features = {} }) {
   if (!st) return <View style={s.card}><Text style={s.muted}>{msg || 'Loading…'}</Text></View>;
   return (
     <View style={s.card}>
-      <Text style={s.title}>Session policies</Text>
+      <IconHeadingMobile icon={ShieldCheck} tone="teal">Session policies</IconHeadingMobile>
       <Text style={s.detail}>Clients must cancel or move a session at least:</Text>
       <View style={s.chips}>
         {[[null, `Default${st.platformNoticeHours ? ` (${st.platformNoticeHours}h)` : ''}`], [24, '24 hours'], [48, '48 hours'], [72, '72 hours']].map(([v, l]) => (
@@ -129,7 +131,7 @@ function Goals({ accent }) {
   if (!g) return <View style={s.card}><Text style={s.muted}>{error || 'Loading…'}</Text></View>;
   return (
     <View style={s.card}>
-      <Text style={s.title}>This week and this month</Text>
+      <IconHeadingMobile icon={TrendingUp} tone="rose">This week and this month</IconHeadingMobile>
       <View style={s.domain}>
         <Text style={s.muted}>Sessions this week</Text>
         <Text style={[s.title, { fontSize: 20, marginBottom: 0 }]}>{g.sessionsThisWeek}{g.weeklySessionTarget ? ` of ${g.weeklySessionTarget}` : ''}</Text>
@@ -178,7 +180,7 @@ function CalendarSync({ accent }) {
   if (!st) return <View style={s.card}><Text style={s.muted}>{error || 'Loading…'}</Text></View>;
   return (
     <View style={s.card}>
-      <Text style={s.title}>Calendar sync</Text>
+      <IconHeadingMobile icon={CalendarDays} tone="blue">Calendar sync</IconHeadingMobile>
       <Text style={s.muted}>See your sessions in Google, Outlook or Apple Calendar. One way: make changes in NessaHub, and your calendar updates within a few hours.</Text>
       {!path ? (
         <TouchableOpacity style={[s.btn, { backgroundColor: accent }]}
@@ -245,7 +247,7 @@ function Announcements({ clientsPath, accent }) {
   const ready = !busy && title.trim() && body.trim() && (everyone || picked.length > 0);
   return (
     <View style={s.card}>
-      <Text style={s.title}>Announcements</Text>
+      <IconHeadingMobile icon={Megaphone} tone="pink">Announcements</IconHeadingMobile>
       <Text style={s.muted}>One message to many clients, for practice news such as a closure or new hours. Up to 5 a day.</Text>
       <TextInput style={s.input} placeholder="Title, e.g. Closed on Friday" value={title} onChangeText={setTitle} maxLength={120} />
       <TextInput style={[s.input, { minHeight: 80, textAlignVertical: 'top' }]} multiline placeholder="Message" value={body} onChangeText={setBody} maxLength={1000} />
@@ -310,7 +312,7 @@ function TimeOff({ accent }) {
 
   return (
     <View style={s.card}>
-      <Text style={s.title}>Time off</Text>
+      <IconHeadingMobile icon={CalendarOff} tone="amber">Time off</IconHeadingMobile>
       <Text style={s.muted}>No one can book you during time off.</Text>
       <TextInput style={s.input} placeholder="From: YYYY-MM-DD HH:MM" value={from} onChangeText={setFrom} />
       <TextInput style={s.input} placeholder="To: YYYY-MM-DD HH:MM" value={to} onChangeText={setTo} />
@@ -354,8 +356,8 @@ function Waitlist({ clientsPath, accent }) {
   const waiting = new Set(list.map((w) => String(w.client_id)));
   return (
     <View style={s.card}>
-      <Text style={s.title}>Waitlist</Text>
-      {list.length === 0 ? <Text style={s.muted}>No one is waiting.</Text> : list.map((w) => (
+      <IconHeadingMobile icon={Users} tone="sky">Waitlist</IconHeadingMobile>
+      {list.length === 0 ? <EmptyStateMobile compact icon="Calendar" tone="sky" title="No one is waiting" /> : list.map((w) => (
         <View key={w.id} style={s.row}>
           <View style={{ flex: 1 }}>
             <Text style={s.strong}>{w.client_name}</Text>

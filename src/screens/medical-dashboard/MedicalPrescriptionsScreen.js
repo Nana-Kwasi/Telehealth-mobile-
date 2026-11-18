@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -176,7 +177,7 @@ const MedicalPrescriptionsScreen = () => {
 
         {prescriptions.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="medkit-outline" size={64} color={C.textLight} />
+            <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="Medicines" tone="emerald" size={44} /></View>
             <Text style={styles.emptyTitle}>No prescriptions yet</Text>
             <Text style={styles.emptySub}>Prescriptions from your doctor will appear here after your consultation.</Text>
           </View>
