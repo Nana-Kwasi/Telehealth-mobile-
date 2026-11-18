@@ -13,6 +13,8 @@ export const NESSA_HUB_POLICY_LINKS = {
   terms: nessaHubPolicyUrl('terms-of-service'),
   privacy: nessaHubPolicyUrl('patient-privacy-data-protection'),
   cookies: nessaHubPolicyUrl('cookie-policy'),
+  communityGroups: nessaHubPolicyUrl('community-groups-policy'),
+  journal: nessaHubPolicyUrl('journal-policy'),
   policiesHome: getNessaHubPoliciesBase(),
   therapyOverview: nessaHubPolicyUrl('mental-health-therapy-policy'),
   individualInformedConsent: nessaHubPolicyUrl('individual-therapy-informed-consent'),

@@ -4,7 +4,9 @@ import { api } from './apiClient';
 
 export const PRIVACY_STORAGE_KEY = 'nessaHubPrivacyAccepted';
 export const POLICIES_URL = 'https://policy.nessahub.com/';
-export const POLICY_VERSION = '2025-05';
+/** Raise this when the policies change materially: signed-in people are asked to accept again. */
+export const POLICY_VERSION = '2026-11';
+export const POLICY_VERSION_KEY = 'nessaHubPolicyVersionAccepted';
 
 export const DEVICE_ID_KEY = 'nessaHubDeviceId';
 
@@ -39,6 +41,7 @@ export async function recordDevicePrivacyConsent() {
   }
   // Save locally first so the user is never blocked by a network failure
   await AsyncStorage.setItem(PRIVACY_STORAGE_KEY, 'true');
+  await AsyncStorage.setItem(POLICY_VERSION_KEY, POLICY_VERSION);
   // Best-effort server record — ignore errors (offline, backend down, etc.)
   api('/api/v1/consent/device', {
     method: 'POST',

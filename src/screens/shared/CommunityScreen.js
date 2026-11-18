@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { api } from '../../services/apiClient';
+import { Linking } from 'react-native';
+import { NESSA_HUB_POLICY_LINKS } from '../../constants/nessaHubPolicies';
 import { s } from '../../components/PsychRecordMobile';
 
 /*
@@ -155,6 +157,9 @@ function GroupMobile({ group, me, accent, draft, clearDraft, onBack }) {
         <View style={s.card}>
           <Text style={s.title}>Group rules</Text>
           {me.rules.map((r, i) => <Text key={r} style={s.detail}>{i + 1}. {r}</Text>)}
+          <Text style={[s.muted, { marginTop: 8 }]} onPress={() => Linking.openURL(NESSA_HUB_POLICY_LINKS.communityGroups).catch(() => {})}>
+            How posts are checked and what others see: <Text style={{ color: accent, fontWeight: '700' }}>Community Groups Policy</Text>
+          </Text>
           <TouchableOpacity onPress={() => setAccept(!accept)} style={[s.chips, { marginTop: 10 }]} accessibilityRole="checkbox" accessibilityState={{ checked: accept }}>
             <Text style={{ fontSize: 18 }}>{accept ? '☑' : '☐'}</Text>
             <Text style={[s.detail, { marginTop: 0, flex: 1 }]}>I have read the rules and I will follow them.</Text>

@@ -9,6 +9,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { LineChart } from 'react-native-chart-kit';
 import { api, uploadFile, API_BASE } from '../../services/apiClient';
+import { Linking } from 'react-native';
+import { NESSA_HUB_POLICY_LINKS } from '../../constants/nessaHubPolicies';
 import { s } from '../../components/PsychRecordMobile';
 import { usePlatformFeatures, featureOn } from '../../utils/platformFeatures';
 
@@ -167,6 +169,7 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
           <View style={{ flex: 1 }}>
             <Text style={s.title}>My Journal</Text>
             <Text style={s.muted}>Private to you, unless you share an entry with your care team.</Text>
+            <Text style={[s.muted, { color: accent, fontWeight: '700', marginTop: 2 }]} onPress={() => Linking.openURL(NESSA_HUB_POLICY_LINKS.journal).catch(() => {})}>How your journal is kept private</Text>
           </View>
         </View>
         <View style={s.chips}>

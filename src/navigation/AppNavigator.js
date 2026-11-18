@@ -16,6 +16,7 @@ import { screenForNotification, stackForIntent } from '../services/pushRouting';
 
 // Onboarding / Auth screens
 import IntroHomeScreen from '../screens/IntroHomeScreen';
+import PolicyUpdateGate from '../components/PolicyUpdateGate';
 import IntentScreen from '../screens/IntentScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
@@ -1236,6 +1237,7 @@ const AppNavigator = () => {
 
   return (
     <NavigationContainer ref={navigationRef} linking={linking}>
+      {isAuthenticated ? <PolicyUpdateGate userId={profile?.id} role={userRole} /> : null}
       {/* Rings over any screen when a clinician calls. Always mounted: an in-app
           login doesn't update isAuthenticated/userIntent here, so the component
           checks the stored session itself and only polls for clients/patients. */}
