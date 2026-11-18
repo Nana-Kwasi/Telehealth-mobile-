@@ -48,7 +48,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your camera</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>NessaHub uses Face ID so you can sign in without typing your password.</string>
+	<string>NessaHub uses Face ID so you can sign in without typing your password, and to lock your journal if you choose.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>NessaHub connects to the NessaHub server on your local network to load your care information.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
