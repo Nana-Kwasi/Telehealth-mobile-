@@ -33,7 +33,7 @@ const drawerItems = [
   { screen: 'TherapistDocuments', icon: 'document-attach-outline', label: 'Documents' },
   { screen: 'TherapistReferrals', icon: 'share-social-outline',    label: 'Referrals' },
   { screen: 'TherapistTransfers', icon: 'swap-horizontal-outline', label: 'Transfers' },
-  { screen: 'TherapistPractice',  icon: 'time-outline',            label: 'Waitlist & Time Off' },
+  { screen: 'TherapistPractice',  icon: 'time-outline',            label: 'My Practice' },
   { screen: 'TherapistEarnings',  icon: 'wallet-outline',          label: 'Earnings' },
   { screen: 'TherapistMood',      icon: 'happy-outline',           label: 'Client Moods' },
   { screen: 'TherapistResources', icon: 'book-outline',            label: 'Resources' },

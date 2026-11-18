@@ -3,11 +3,13 @@ import { View, Text, TextInput, TouchableOpacity, Platform } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../services/apiClient';
 import { s } from './PsychRecordMobile';
+import { TemplateFieldsMobile, AnswersMobile, missingRequired } from './TemplatesMobile';
 
 /*
  * Intake packets on mobile.
  *  - ShareIntakeMobile: the clinician picks forms and questionnaires for a client.
- *  - MyIntakeFormsMobile: the client reads and signs each form (Home screen).
+ *  - MyIntakeFormsMobile: the client reads and signs each form, and fills in custom forms (Home screen).
+ *  - IntakeStatusMobile: what is still waiting, and the answers to custom forms (client page).
  */
 
 function Check({ on, label, onPress, accent }) {
@@ -26,6 +28,7 @@ export function ShareIntakeMobile({ clientId, clientName, onClose, onSent, accen
   const [catalog, setCatalog] = useState(null);
   const [docs, setDocs] = useState([]);
   const [measures, setMeasures] = useState([]);
+  const [forms, setForms] = useState([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -37,7 +40,7 @@ export function ShareIntakeMobile({ clientId, clientName, onClose, onSent, accen
   const send = async () => {
     setBusy(true); setError('');
     try {
-      const r = await api('/api/v1/intake/packets', { method: 'POST', body: { clientId, documents: docs, measures, message } });
+      const r = await api('/api/v1/intake/packets', { method: 'POST', body: { clientId, documents: docs, measures, forms, message } });
       onSent && onSent(r); onClose();
     } catch (e) { setError(e?.message || 'Could not send.'); setBusy(false); }
   };
@@ -48,14 +51,20 @@ export function ShareIntakeMobile({ clientId, clientName, onClose, onSent, accen
         <>
           <Text style={s.muted}>Forms to read and sign</Text>
           {catalog.documents.map((d) => <Check key={d.key} accent={accent} label={d.title} on={docs.includes(d.key)} onPress={() => toggle(docs, setDocs, d.key)} />)}
+          {(catalog.forms || []).length > 0 ? (
+            <>
+              <Text style={[s.muted, { marginTop: 8 }]}>My forms</Text>
+              {catalog.forms.map((f) => <Check key={f.id} accent={accent} label={f.name} on={forms.includes(f.id)} onPress={() => toggle(forms, setForms, f.id)} />)}
+            </>
+          ) : null}
           <Text style={[s.muted, { marginTop: 8 }]}>Questionnaires</Text>
           {catalog.measures.map((m) => <Check key={m.code} accent={accent} label={`${m.name} (${m.purpose})`} on={measures.includes(m.code)} onPress={() => toggle(measures, setMeasures, m.code)} />)}
           <TextInput style={s.input} placeholder="Message (optional)" value={message} onChangeText={setMessage} multiline />
           {error ? <Text style={s.err}>{error}</Text> : null}
           <View style={s.actions}>
             <TouchableOpacity onPress={onClose}><Text style={[s.link, { color: accent }]}>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={[s.btn, { backgroundColor: accent }, (busy || (!docs.length && !measures.length)) && { opacity: 0.5 }]}
-              disabled={busy || (!docs.length && !measures.length)} onPress={send}>
+            <TouchableOpacity style={[s.btn, { backgroundColor: accent }, (busy || (!docs.length && !measures.length && !forms.length)) && { opacity: 0.5 }]}
+              disabled={busy || (!docs.length && !measures.length && !forms.length)} onPress={send}>
               <Text style={s.btnText}>{busy ? 'Sending…' : 'Send'}</Text>
             </TouchableOpacity>
           </View>
@@ -73,11 +82,12 @@ export function MyIntakeFormsMobile({ accent = '#4f46e5' }) {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  if (reading && reading.form) return <FillMobile packet={reading.packet} form={reading.form} accent={accent} onClose={() => setReading(null)} onSent={() => { setReading(null); load(); }} />;
   if (reading) return <SignMobile packet={reading.packet} doc={reading.doc} accent={accent} onClose={() => setReading(null)} onSigned={() => { setReading(null); load(); }} />;
   if (!packets.length) return null;
   return (
     <View style={s.card}>
-      <Text style={s.title}>Forms to read and sign</Text>
+      <Text style={s.title}>Forms from your clinician</Text>
       {packets.map((p) => (
         <View key={p.id}>
           <Text style={s.muted}>From {p.clinician_name || 'your clinician'}{p.message ? `: “${p.message}”` : ''}</Text>
@@ -91,6 +101,80 @@ export function MyIntakeFormsMobile({ accent = '#4f46e5' }) {
               )}
             </View>
           ))}
+          {(p.forms || []).map((f) => (
+            <View key={f.id} style={[s.row, { alignItems: 'center' }]}>
+              <Text style={[s.detail, { flex: 1, marginTop: 0 }]}>{f.name}</Text>
+              {f.submittedAt ? <Text style={s.ok}>Sent</Text> : (
+                <TouchableOpacity style={[s.btn, { backgroundColor: accent, marginTop: 0 }]} onPress={() => setReading({ packet: p, form: f })}>
+                  <Text style={s.btnText}>Fill in</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function FillMobile({ packet, form, accent, onClose, onSent }) {
+  const [answers, setAnswers] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const send = async () => {
+    const missing = missingRequired(form.fields || [], answers);
+    if (missing.length) { setError(`Please answer “${missing[0].label}”.`); return; }
+    setBusy(true); setError('');
+    try {
+      await api(`/api/v1/intake/packets/${packet.id}/forms/${form.id}`, { method: 'POST', body: { answers } });
+      onSent();
+    } catch (e) { setError(e?.message || 'Could not send.'); setBusy(false); }
+  };
+  return (
+    <View style={s.card}>
+      <Text style={s.title}>{form.name}</Text>
+      {form.description ? <Text style={s.muted}>{form.description}</Text> : null}
+      <Text style={[s.muted, { marginTop: 4 }]}>Only your clinician sees your answers. Questions marked * need an answer.</Text>
+      <TemplateFieldsMobile fields={form.fields || []} answers={answers} onChange={setAnswers} accent={accent} />
+      {error ? <Text style={s.err}>{error}</Text> : null}
+      <View style={s.actions}>
+        <TouchableOpacity onPress={onClose} disabled={busy}><Text style={[s.link, { color: accent }]}>Later</Text></TouchableOpacity>
+        <TouchableOpacity style={[s.btn, { backgroundColor: accent }, busy && { opacity: 0.5 }]} disabled={busy} onPress={send}>
+          <Text style={s.btnText}>{busy ? 'Sending…' : 'Send to my clinician'}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+export function IntakeStatusMobile({ clientId, refreshKey, accent = '#4f46e5' }) {
+  const [packets, setPackets] = useState([]);
+  const [viewing, setViewing] = useState(null);
+  useEffect(() => {
+    api(`/api/v1/intake/clients/${clientId}`).then((p) => setPackets(Array.isArray(p) ? p : [])).catch(() => setPackets([]));
+  }, [clientId, refreshKey]);
+  const open = packets.filter((p) => p.status === 'sent');
+  const answered = packets.flatMap((p) => (p.forms || []).filter((f) => f.submittedAt).map((f) => ({ ...f, key: `${p.id}-${f.id}` })));
+  if (!open.length && !answered.length) return null;
+  return (
+    <View style={s.card}>
+      {open.length ? <Text style={s.title}>Forms waiting for the client</Text> : null}
+      {open.map((p) => (
+        <Text key={p.id} style={s.detail}>
+          {[...p.documents.map((d) => `${d.title} ${d.signedAt ? '✓' : '(not signed)'}`),
+            ...(p.forms || []).map((f) => `${f.name} ${f.submittedAt ? '✓' : '(not filled in)'}`)].join(' · ')}
+        </Text>
+      ))}
+      {answered.length ? <Text style={[s.title, { marginTop: open.length ? 10 : 0 }]}>Forms the client filled in</Text> : null}
+      {answered.map((f) => (
+        <View key={f.key}>
+          <View style={s.row}>
+            <Text style={[s.detail, { flex: 1, marginTop: 0 }]}>{f.name}</Text>
+            <TouchableOpacity onPress={() => setViewing(viewing === f.key ? null : f.key)}>
+              <Text style={[s.link, { color: accent }]}>{viewing === f.key ? 'Hide' : 'View answers'}</Text>
+            </TouchableOpacity>
+          </View>
+          {viewing === f.key ? <AnswersMobile fields={f.fields} answers={f.answers} /> : null}
         </View>
       ))}
     </View>

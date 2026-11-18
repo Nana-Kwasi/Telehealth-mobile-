@@ -22,7 +22,8 @@ import RecordGapsCard from '../../components/RecordGapsCard';
 import CodingAssistCard from '../../components/CodingAssistCard';
 import { MeasuresPanelMobile } from '../../components/MeasuresMobile';
 import { RecordGapsMobile, TimelineMobile, MseMobile, DiagnosisPlanMobile, PrivateNotesMobile } from '../../components/PsychRecordMobile';
-import { ShareIntakeMobile } from '../../components/IntakeMobile';
+import { ShareIntakeMobile, IntakeStatusMobile } from '../../components/IntakeMobile';
+import { TemplateNoteMobile } from '../../components/TemplatesMobile';
 import { PatientTranscriptsMobile } from '../../components/SessionTranscriptsMobile';
 import {
   getClientDisplayName,
@@ -182,6 +183,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [templateNote, setTemplateNote] = useState(false);
   const [shareSent, setShareSent] = useState('');
   const [recordVersion, setRecordVersion] = useState(0);
   const recordChanged = () => setRecordVersion((v) => v + 1);
@@ -517,6 +519,9 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowStatusMenu(true)} disabled={statusUpdating}>
               <Text style={styles.outlineBtnText}>{statusUpdating ? '…' : 'Status'}</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.outlineBtn} onPress={() => setTemplateNote(true)}>
+              <Text style={styles.outlineBtnText}>Use my template</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.outlineBtn} onPress={() => setShareOpen(true)}>
               <Text style={styles.outlineBtnText}>Share forms</Text>
             </TouchableOpacity>
@@ -552,6 +557,11 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             onClose={() => setShareOpen(false)} onSent={() => { setShareSent(`Forms sent to ${clientName}.`); recordChanged(); }} />
         ) : null}
         {shareSent ? <Text style={{ color: '#15803d', marginBottom: 8 }}>{shareSent}</Text> : null}
+        {templateNote ? (
+          <TemplateNoteMobile clientId={clientId} accent={TherapistColors.primary}
+            onClose={() => setTemplateNote(false)} onSaved={() => { reloadNotes(); recordChanged(); }} />
+        ) : null}
+        <IntakeStatusMobile clientId={clientId} refreshKey={recordVersion} accent={TherapistColors.primary} />
         <RecordGapsMobile clientId={clientId} onOpen={setActiveTab} refreshKey={recordVersion} accent={TherapistColors.primary} />
         <CodingAssistCard patientId={clientId} accent={TherapistColors.primary} />
 

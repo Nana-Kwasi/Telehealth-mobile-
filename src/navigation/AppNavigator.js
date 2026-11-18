@@ -688,7 +688,7 @@ const DoctorDrawerNavigator = ({ profile }) => {
       <DoctorDrawer.Screen name="DoctorTransfers" options={{ title: 'Transfers' }}>
         {(props) => <TransfersScreen {...props} role="DOCTOR" />}
       </DoctorDrawer.Screen>
-      <DoctorDrawer.Screen name="DoctorPractice" options={{ title: 'Waitlist & Time Off' }}>
+      <DoctorDrawer.Screen name="DoctorPractice" options={{ title: 'My Practice' }}>
         {(props) => <PracticeScreen {...props} role="DOCTOR" accent="#1e6bb8" />}
       </DoctorDrawer.Screen>
       <DoctorDrawer.Screen name="DoctorDiagnosticResults"  component={DoctorDiagnosticResultsScreen}  options={{ title: 'Lab & Scan Results' }} />
@@ -774,7 +774,7 @@ const TherapistDrawerNavigator = ({ profile }) => {
       <TherapistDrawer.Screen name="TherapistTransfers" options={{ title: 'Transfers' }}>
         {(props) => <TransfersScreen {...props} role="THERAPIST" />}
       </TherapistDrawer.Screen>
-      <TherapistDrawer.Screen name="TherapistPractice" options={{ title: 'Waitlist & Time Off' }}>
+      <TherapistDrawer.Screen name="TherapistPractice" options={{ title: 'My Practice' }}>
         {(props) => <PracticeScreen {...props} role="THERAPIST" />}
       </TherapistDrawer.Screen>
       <TherapistDrawer.Screen name="TherapistMood"      component={TherapistMoodScreen}      options={{ title: 'Client Moods' }} />
