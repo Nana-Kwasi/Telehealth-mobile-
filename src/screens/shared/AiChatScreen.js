@@ -15,6 +15,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import VoiceDock, { useVoiceReveal } from '../../components/voice/VoiceDock';
 import { voiceAvailable } from '../../components/voice/speechApi';
+import { useNavigation } from '@react-navigation/native';
+import AddServiceModalMobile from '../../components/AddServiceModalMobile';
+import { getStoredUserId } from '../../services/apiClient';
+import { chooseService, rootRouteForService } from '../../utils/careServices';
+
+// A short yes or no to the assistant's offer, typed instead of tapped.
+const YES = /^(yes|yeah|yep|yes please|ok|okay|sure|please|go ahead|proceed|let'?s (do it|go)|i would|i'?d like (that|to))\b[.!]*$/i;
+const NO = /^(no|nope|not now|no thanks|no thank you|maybe later|later)\b[.!]*$/i;
 
 /**
  * Conversational AI assistant.
@@ -54,7 +62,13 @@ const CLINICIAN_SUGGESTIONS = [
   'Help me structure a consultation note',
 ];
 
-export default function AiChatScreen({ clinician = false }) {
+export default function AiChatScreen({ clinician = false, careService = null, route, onLeave }) {
+  // Which side this chat is on: passed in by the floating button, or the drawer screen's name.
+  const side = careService || (route?.name === 'TherapyAiAssistant' ? 'therapy' : route?.name === 'MedicalAiAssistant' ? 'medical' : null);
+  const navigation = useNavigation();
+  const [joinService, setJoinService] = useState(null);
+  const pendingOffer = useRef(null);
+  const offered = useRef(new Set());
   const [messages, setMessages] = useState([]);
   const [input, setInput]       = useState('');
   const [busy, setBusy]         = useState(false);
@@ -275,9 +289,60 @@ export default function AiChatScreen({ clinician = false }) {
     await sendDocument(asset.base64, asset.mimeType || 'image/jpeg', 'Read this document.');
   };
 
+  /** Act on the offer: start the other service's short sign-up, or open that dashboard. */
+  const takeOffer = async (offer) => {
+    pendingOffer.current = null;
+    if (!offer) return;
+    if (offer.kind === 'switch') {
+      const uid = await getStoredUserId();
+      await chooseService(uid, offer.service);
+      onLeave?.();
+      const root = navigation.getParent?.()?.getParent?.() || navigation.getParent?.() || navigation;
+      root.reset({ index: 0, routes: [{ name: rootRouteForService(offer.service) }] });
+      return;
+    }
+    setJoinService(offer.service);
+  };
+
+  const startJoin = () => {
+    const service = joinService;
+    setJoinService(null);
+    onLeave?.();
+    navigation.navigate(service === 'therapy' ? 'Questionnaire' : 'MedicalIntake', { addingService: service });
+  };
+
+  const resolveOffer = (index, accepted) => {
+    const offer = messages[index]?.offer;
+    setMessages((m) => {
+      const next = [...m];
+      if (next[index]) next[index] = { ...next[index], offerResolved: accepted ? 'yes' : 'no' };
+      return next;
+    });
+    if (accepted) takeOffer(offer); else pendingOffer.current = null;
+  };
+
   const send = async (text) => {
     const message = (text ?? input).trim();
     if (!message || busy) return;
+
+    // A typed answer to the offer the assistant just made.
+    if (pendingOffer.current && (YES.test(message) || NO.test(message))) {
+      const offer = pendingOffer.current;
+      const accepted = YES.test(message);
+      setInput('');
+      setMessages((m) => {
+        const next = m.map((x) => (x.offer === offer ? { ...x, offerResolved: accepted ? 'yes' : 'no' } : x));
+        return [...next, { role: 'user', content: message }, { role: 'assistant', content: accepted
+          ? (offer.kind === 'switch' ? 'Taking you there now.' : 'Great, here is what is left to do. It only takes a few minutes.')
+          : 'No problem. You can ask me about it any time.' }];
+      });
+      if (accepted) takeOffer(offer); else pendingOffer.current = null;
+      return;
+    }
+    pendingOffer.current = null;
+    const offerAsk = !clinician && side
+      ? api('/api/v1/ai/cross-service-offer', { method: 'POST', body: { message, current: side } }).catch(() => null)
+      : Promise.resolve(null);
 
     const mine = { role: 'user', content: message };
     const history = [...messages, mine]
@@ -353,6 +418,14 @@ export default function AiChatScreen({ clinician = false }) {
         });
         setBusy(false);
         scrollToEnd();
+        offerAsk.then((r) => {
+          const offer = r?.offer;
+          if (!offer || offered.current.has(offer.service)) return;
+          offered.current.add(offer.service);
+          pendingOffer.current = offer;
+          setMessages((m) => [...m, { role: 'assistant', content: offer.message, offer }]);
+          scrollToEnd();
+        });
       },
       onError: (e) => {
         voice?.onError(e?.message);
@@ -704,6 +777,23 @@ export default function AiChatScreen({ clinician = false }) {
                 </View>
               ) : null}
 
+              {m.offer && !m.offerResolved ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity onPress={() => resolveOffer(i, true)} accessibilityRole="button"
+                    style={{ backgroundColor: m.offer.service === 'therapy' ? '#7c3aed' : '#1e6bb8', borderRadius: 999, paddingVertical: 10, paddingHorizontal: 16 }}>
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>
+                      {m.offer.kind === 'switch'
+                        ? `Go to my ${m.offer.service === 'therapy' ? 'therapy' : 'medical'} dashboard`
+                        : m.offer.service === 'therapy' ? 'Yes, find me a therapist' : 'Yes, find me a doctor'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => resolveOffer(i, false)} accessibilityRole="button"
+                    style={{ borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 999, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#fff' }}>
+                    <Text style={{ color: '#334155', fontWeight: '600' }}>Not now</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
               {m.booking === 'sending' ? (
                 <Text style={styles.bookingStatus}>Sending your request…</Text>
               ) : m.booking === 'done' ? (
@@ -798,6 +888,7 @@ export default function AiChatScreen({ clinician = false }) {
       {status?.remainingRequests !== undefined ? (
         <Text style={styles.quota}>{status.remainingRequests} requests left this hour</Text>
       ) : null}
+      {joinService ? <AddServiceModalMobile service={joinService} onClose={() => setJoinService(null)} onStart={startJoin} /> : null}
     </KeyboardAvoidingView>
   );
 }

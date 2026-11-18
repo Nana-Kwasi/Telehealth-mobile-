@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { api, getStoredUserId } from '../services/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
@@ -49,3 +51,40 @@ export async function activeService(profile, role) {
 }
 
 export const rootRouteForService = (service) => (service === 'medical' ? 'MedicalMain' : 'Main');
+
+// ── The account's services, even when the navigator's profile is stale ─────
+// After a fresh sign-in the navigator can still hold the profile from app start
+// (none), so the drawer would think this account has one service. Ask the
+// server once per sign-in instead.
+
+let servicesCache = null; // { uid, services, intent, name }
+
+export function resetAccountServicesCache() { servicesCache = null; chooserShownFor = null; }
+
+export function useAccountServices(profile, role) {
+  const fromProfile = Array.isArray(profile?.services) && profile.services.length ? profile.services : null;
+  const [info, setInfo] = useState(() => (fromProfile ? { services: fromProfile, name: profile?.fullName || profile?.name } : servicesCache));
+  useEffect(() => {
+    if (fromProfile) return undefined;
+    let alive = true;
+    (async () => {
+      const uid = await getStoredUserId();
+      if (!uid) return;
+      if (servicesCache && servicesCache.uid === uid) { if (alive) setInfo(servicesCache); return; }
+      try {
+        const r = await api(`/api/v1/auth/mobile/resolve-role/${uid}`);
+        const p = r?.profile || {};
+        servicesCache = { uid, services: accountServices(p, String(r?.role || role || '').toLowerCase()), name: p.fullName || p.name };
+        if (alive) setInfo(servicesCache);
+      } catch { /* keep what we have */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromProfile ? fromProfile.join(',') : '']);
+  return { services: info?.services || accountServices(profile, role), name: info?.name || profile?.fullName || profile?.name };
+}
+
+// The sign-in chooser is asked once per sign-in (app launch or new sign-in).
+let chooserShownFor = null;
+export function chooserNeeded(uid) { return !!uid && chooserShownFor !== uid; }
+export function markChooserShown(uid) { chooserShownFor = uid; }

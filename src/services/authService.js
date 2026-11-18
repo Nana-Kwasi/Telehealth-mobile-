@@ -219,6 +219,8 @@ export async function logUserLogout(userId, userRole, profile) {
 }
 
 export async function performLogout({ userId, role, profile, clearCoupleKeys = false } = {}) {
+  // The next person to sign in on this phone is asked which dashboard to open.
+  try { (await import('../utils/careServices')).resetAccountServicesCache(); } catch { /* ignore */ }
   // Withdraw this device's push token BEFORE the session is cleared — the call
   // needs the access token to authenticate. Leaving it registered would keep
   // this handset receiving the departing user's notifications, previews and all.

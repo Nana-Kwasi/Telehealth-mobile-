@@ -1,7 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { accountServices, chooseService, rootRouteForService } from '../utils/careServices';
+import { chooseService, rootRouteForService, useAccountServices } from '../utils/careServices';
 
 /**
  * "Switch to Therapy / Medical" for an account that uses both services. Shown
@@ -9,7 +9,7 @@ import { accountServices, chooseService, rootRouteForService } from '../utils/ca
  * The choice is remembered on this phone and reopens next time.
  */
 export default function ServiceSwitchRow({ navigation, profile, current, color = '#5046bd' }) {
-  const services = accountServices(profile, profile?.role);
+  const { services } = useAccountServices(profile, profile?.role);
   if (services.length < 2) return null;
   const to = current === 'medical' ? 'therapy' : 'medical';
 

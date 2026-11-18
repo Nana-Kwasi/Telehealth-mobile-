@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TherapyColors as Colors } from '../constants/colors';
 import ServiceSwitchRow from './ServiceSwitchRow';
+import ServiceChooserMobile from './ServiceChooserMobile';
 import { performLogout } from '../services/authService';
 import { api } from '../services/apiClient';
 import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
@@ -241,6 +242,7 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
         <ServiceSwitchRow navigation={navigation} profile={profile} current="therapy" color="#5046bd" />
+        <ServiceChooserMobile navigation={navigation} profile={profile} current="therapy" />
         {visibleItems.filter((i) => featureOn(features, SCREEN_FEATURE[i.screen])).map((item) => (
           <TouchableOpacity
             key={item.name}

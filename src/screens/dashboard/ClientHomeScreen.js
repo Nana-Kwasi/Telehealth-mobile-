@@ -1071,7 +1071,7 @@ const ClientHomeScreen = ({ navigation }) => {
       {/* Shared FAQ (backend /api/v1/faq) — same answers as the website. */}
       <FaqSection compact audience="client" />
     </ScrollView>
-      <AiAssistantFab />
+      <AiAssistantFab careService="therapy" />
     </ZCGround>
   );
 };

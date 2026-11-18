@@ -17,7 +17,7 @@ import AiChatScreen from '../screens/shared/AiChatScreen';
  * The label is always visible on first render rather than an unexplained
  * sparkle: a patient should know what they are tapping before they tap it.
  */
-export default function AiAssistantFab({ clinician = false, bottom = 24 }) {
+export default function AiAssistantFab({ clinician = false, bottom = 24, careService = null }) {
   const [open, setOpen] = useState(false);
   const [available, setAvailable] = useState(false);
 
@@ -64,7 +64,7 @@ export default function AiAssistantFab({ clinician = false, bottom = 24 }) {
           </TouchableOpacity>
         </View>
         <View style={styles.sheetBody}>
-          <AiChatScreen clinician={clinician} />
+          <AiChatScreen clinician={clinician} careService={careService} onLeave={() => setOpen(false)} />
         </View>
       </Modal>
     </>

@@ -1,3 +1,4 @@
+import StatCardMobile from '../../components/StatCardMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
@@ -21,27 +22,9 @@ function getLast12Months() {
   return result;
 }
 
-function StatCard({ icon, value, label, color, bg }) {
-  return (
-    <View style={[cardStyles.card, { backgroundColor: bg }]}>
-      <View style={[cardStyles.icon, { backgroundColor: color + '22' }]}>
-        <Ionicons name={icon} size={22} color={color} />
-      </View>
-      <Text style={[cardStyles.value, { color }]}>{value}</Text>
-      <Text style={cardStyles.label}>{label}</Text>
-    </View>
-  );
-}
-const cardStyles = StyleSheet.create({
-  card: {
-    flex: 1, minWidth: '44%', borderRadius: 14, padding: 14, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-  },
-  icon: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  value: { fontSize: 22, fontWeight: '800', marginBottom: 2 },
-  label: { fontSize: 11, color: '#64748b', textAlign: 'center' },
-});
+// Shared with the Earnings screen, so both look the same.
+const StatCard = StatCardMobile;
+
 
 function SimpleBarChart({ data, labels, color, height = 120 }) {
   const max = Math.max(...data, 1);
@@ -111,24 +94,19 @@ export default function DoctorAnalyticsScreen() {
       const uid = await getStoredUserId();
       if (!uid) return;
 
-      // Compute from real data. (The /analytics endpoint only returns bare counts,
-      // not the per-month / distribution shape these charts need.) Earnings = the
-      // doctor's consultation fee × completed appointments, since appointment rows
-      // don't carry a fee.
+      // Counts come from the appointments themselves. Earnings come from the same
+      // summary as the Earnings screen (price minus commission minus refunds), so
+      // the two screens always show the same total.
       const months = getLast12Months();
-      const [apptsRaw, reviewsRaw, docProfile] = await Promise.all([
+      const [apptsRaw, reviewsRaw, summary] = await Promise.all([
         api(`/api/v1/medical/appointments/doctor/${uid}`).catch(() => []),
         api(`/api/v1/doctors/reviews?targetUserId=${uid}`).catch(() => []),
-        api(`/api/v1/doctors/${uid}`).catch(() => null),
+        api('/api/v1/finance/earnings/summary').catch(() => null),
       ]);
       const appts = Array.isArray(apptsRaw) ? apptsRaw : [];
-      let fee = Number(docProfile?.consultationFee);
-      if (!Number.isFinite(fee)) {
-        try { fee = Number(JSON.parse(docProfile?.metadataJson || '{}').consultationFee) || 0; } catch { fee = 0; }
-      }
       const apptM = Array(12).fill(0);
-      const earnM = Array(12).fill(0);
-      let totalEarnings = 0;
+      const earnM = months.map((m) => Number((summary?.earnedByMonth || []).find((e) => e.month === m)?.amount || 0));
+      const totalEarnings = Number(summary?.lifetimeNet || 0);
       const status = { completed: 0, cancelled: 0, pending: 0 };
       const type = { video: 0, chat: 0, inPerson: 0 };
       const patientIds = new Set();
@@ -137,8 +115,8 @@ export default function DoctorAnalyticsScreen() {
         const monthKey = (a.date || '').slice(0, 7);
         const idx = months.indexOf(monthKey);
         const completed = a.status === 'completed';
-        if (idx >= 0) { apptM[idx] += 1; if (completed) earnM[idx] += fee; }
-        if (completed) { status.completed += 1; totalEarnings += fee; }
+        if (idx >= 0) apptM[idx] += 1;
+        if (completed) status.completed += 1;
         else if (a.status === 'cancelled') status.cancelled += 1;
         else status.pending += 1;
         const t = (a.consultationType || a.type || '').toLowerCase();
@@ -178,7 +156,7 @@ export default function DoctorAnalyticsScreen() {
 
       {/* KPI Cards */}
       <View style={styles.kpiGrid}>
-        <StatCard icon="cash-outline" value={`GHS ${stats.earnings.toLocaleString()}`} label="Total Earnings" color="#10b981" bg="#f0fdf4" />
+        <StatCard icon="cash-outline" value={`GHS ${stats.earnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} label="Total Earnings" sub="After commission and refunds" color="#10b981" bg="#f0fdf4" />
         <StatCard icon="calendar-outline" value={stats.appointments} label="Total Appointments" color="#6366f1" bg="#f0f0ff" />
         <StatCard icon="people-outline" value={stats.patients} label="Total Patients" color={DoctorColors.primary} bg={DoctorColors.primaryLight} />
         <StatCard icon="star-outline" value={stats.avgRating || '—'} label="Avg Rating" color="#f59e0b" bg="#fffbeb" />

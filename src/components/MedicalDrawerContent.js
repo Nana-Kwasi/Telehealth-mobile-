@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/apiClient';
 import { MedicalColors } from '../constants/colors';
 import ServiceSwitchRow from './ServiceSwitchRow';
+import ServiceChooserMobile from './ServiceChooserMobile';
 import { signOut } from '../services/authService';
 import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
 import { performLogout } from '../services/authService';
@@ -101,6 +102,7 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
         <ServiceSwitchRow navigation={navigation} profile={profile} current="medical" color={MedicalColors.primary} />
+        <ServiceChooserMobile navigation={navigation} profile={profile} current="medical" />
         {drawerItems.filter((i) => featureOn(features, SCREEN_FEATURE[i.name])).map((item) => (
           <TouchableOpacity
             key={item.name}

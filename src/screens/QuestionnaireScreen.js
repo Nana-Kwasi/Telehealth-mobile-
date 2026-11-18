@@ -25,7 +25,7 @@ import {
   validateQuestionnaireAge,
 } from '../constants/therapyAgeValidation';
 import { updateFlow as updateMedPsychFlow } from '../services/medpsychFlow';
-import { getStoredToken, getStoredUserId, getStoredRole } from '../services/apiClient';
+import { api, getStoredToken, getStoredUserId, getStoredRole } from '../services/apiClient';
 import { saveTherapyIntake } from '../services/therapyIntake';
 import { chooseService } from '../utils/careServices';
 
@@ -59,6 +59,41 @@ const QuestionnaireScreen = ({ route, navigation }) => {
   useEffect(() => {
     loadSavedData();
     autoDetectCountry();
+  }, []);
+
+  // Already signed in (a medical patient adding therapy): fill in what the
+  // account already knows (country, gender, age), only where still blank.
+  // Everything clinical is still asked.
+  useEffect(() => {
+    (async () => {
+      const [token, uid, role] = await Promise.all([getStoredToken(), getStoredUserId(), getStoredRole()]);
+      if (!token || !uid || !(role === 'client' || role === 'patient') || medpsychMode) return;
+      try {
+        const p = await api(`/api/v1/patients/${uid}`);
+        if (!p) return;
+        const fill = {};
+        const country = p.country || p.nationality || p.countryOfResidence;
+        if (country) fill.country = country;
+        const g0 = String(p.gender || p.sex || '').toLowerCase();
+        const g = g0 === 'female' ? 'woman' : g0 === 'male' ? 'man' : g0;
+        const genderField = steps.find((st) => st.key === 'identity')?.fields.find((f) => f.name === 'gender');
+        if (g && genderField?.options.includes(g)) fill.gender = g;
+        const dob = p.dateOfBirth || p.dob || p.birthDate;
+        if (dob) {
+          const d = new Date(dob);
+          if (!Number.isNaN(d.getTime())) {
+            const now = new Date();
+            let age = now.getFullYear() - d.getFullYear();
+            if (now < new Date(now.getFullYear(), d.getMonth(), d.getDate())) age -= 1;
+            if (age >= 18 && age <= 100) fill.age = String(age);
+          }
+        }
+        if (Object.keys(fill).length) {
+          setData((prev) => ({ ...fill, ...Object.fromEntries(Object.entries(prev).filter(([, v]) => v !== '' && v != null)) }));
+        }
+      } catch { /* the questions still work without it */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadSavedData = async () => {

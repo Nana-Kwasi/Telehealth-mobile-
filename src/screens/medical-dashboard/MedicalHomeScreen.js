@@ -1207,7 +1207,7 @@ const MedicalHomeScreen = ({ navigation }) => {
         </View>
       </KeyboardAvoidingView>
     </Modal>
-      <AiAssistantFab />
+      <AiAssistantFab careService="medical" />
     </>
   );
 };

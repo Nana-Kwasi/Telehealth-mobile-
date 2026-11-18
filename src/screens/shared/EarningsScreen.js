@@ -1,3 +1,4 @@
+import StatCardMobile, { StatGridMobile } from '../../components/StatCardMobile';
 import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -50,13 +51,15 @@ export default function EarningsScreen({ serviceKey = 'consultation', accent = '
       {error ? <Text style={st.err}>{error}</Text> : null}
       {!s ? <ActivityIndicator style={{ marginTop: 24 }} /> : (
         <>
-          <View style={st.tiles}>
-            <Tile label="Next payout" value={GHS(s.balance)} sub={`Around ${fmt(s.nextPayoutDate)}`} color="#16a34a" />
-            <Tile label="Pending" value={GHS(s.pending)} sub={`Available ${s.clearingDays} day(s) after each session`} color="#d97706" />
-            {Number(s.adjustments) !== 0 ? <Tile label="Refund adjustments" value={GHS(s.adjustments)} sub="On bookings already paid out" color="#d97706" /> : null}
-            <Tile label="Paid to you" value={GHS(s.paidOut)} />
-            <Tile label="Bookings" value={String(s.bookings)} sub={`${GHS(s.lifetimeGross)} booked`} />
-          </View>
+          {/* Same cards as Analytics, and the same Total Earnings figure. */}
+          <StatGridMobile>
+            <StatCardMobile icon="cash-outline" value={GHS(s.lifetimeNet)} label="Total Earnings" sub="After commission and refunds" color="#10b981" bg="#f0fdf4" />
+            <StatCardMobile icon="wallet-outline" value={GHS(s.balance)} label="Next payout" sub={`Around ${fmt(s.nextPayoutDate)}`} color="#0d9488" bg="#f0fdfa" />
+            <StatCardMobile icon="time-outline" value={GHS(s.pending)} label="Pending" sub={`Available ${s.clearingDays} day(s) after each session`} color="#d97706" bg="#fffbeb" />
+            {Number(s.adjustments) !== 0 ? <StatCardMobile icon="refresh-outline" value={GHS(s.adjustments)} label="Refund adjustments" sub="On bookings already paid out" color="#e11d48" bg="#fff1f2" /> : null}
+            <StatCardMobile icon="checkmark-done-outline" value={GHS(s.paidOut)} label="Paid to you" color="#16a34a" bg="#f0fdf4" />
+            <StatCardMobile icon="calendar-outline" value={String(s.bookings)} label="Bookings" sub={`${GHS(s.lifetimeGross)} booked`} color="#6366f1" bg="#f0f0ff" />
+          </StatGridMobile>
           <PayoutDetails method={s.payoutMethod} onSaved={load} accent={accent} />
           <Text style={st.h2}>Bookings</Text>
           {ledger.length === 0 ? <EmptyLineMobile icon="Calendar" tone="sky" style={st.muted}>No bookings yet.</EmptyLineMobile> : ledger.map((e) => {
