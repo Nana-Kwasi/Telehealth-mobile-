@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../../utils/platformFeatures';
 import React, { useState, useEffect } from 'react';
 import {
@@ -136,7 +136,7 @@ function QuestionnairePanel({ client }) {
     return (
       <View style={styles.card}>
         <Text style={styles.cardSectionTitle}>Full questionnaire responses</Text>
-        <Text style={styles.emptyHint}>No questionnaire responses on file.</Text>
+        <EmptyLineMobile icon="PrescriptionDocument" tone="violet" style={styles.emptyHint}>No questionnaire responses on file.</EmptyLineMobile>
       </View>
     );
   }
@@ -603,7 +603,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
               <Text style={docStyles.addRowBtnText}>New prescription (full form)</Text>
             </TouchableOpacity>
 
-            {prescriptions.length === 0 && <Text style={docStyles.emptyText}>No prescriptions issued yet</Text>}
+            {prescriptions.length === 0 && <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Medicines" tone="emerald" size={30} /></View><Text style={docStyles.emptyText}>No prescriptions issued yet</Text></>}
             {prescriptions.map(rx => {
               const isDone = rx.status === 'completed';
               const medName = rx.medication || rx.medications?.[0]?.name || 'Medication';
@@ -873,7 +873,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
           <View style={styles.card}>
             <Text style={styles.cardSectionTitle}>Scheduled sessions ({sessions.length})</Text>
             {sessions.length === 0 ? (
-              <Text style={styles.emptyHint}>No sessions found.</Text>
+              <EmptyLineMobile icon="Calendar" tone="sky" style={styles.emptyHint}>No sessions found.</EmptyLineMobile>
             ) : (
               sessions.map((sess) => {
                 const ssc = sessionStatusColor(sess.status);
@@ -911,7 +911,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
                 </TouchableOpacity>
               </View>
               {therapyNotes.length === 0 ? (
-                <Text style={styles.emptyHint}>No therapy notes yet.</Text>
+                <EmptyLineMobile icon="PrescriptionDocument" tone="violet" style={styles.emptyHint}>No therapy notes yet.</EmptyLineMobile>
               ) : (
                 therapyNotes.map((n) => <NoteListCard key={n.id} note={n} kind="therapy" onOpen={(note, kind) => setViewingNote({ note, kind })} />)
               )}
@@ -919,7 +919,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             <View style={styles.card}>
               <Text style={styles.cardSectionTitle}>Clinical notes ({clinicalNotes.length})</Text>
               {clinicalNotes.length === 0 ? (
-                <Text style={styles.emptyHint}>No clinical notes found.</Text>
+                <EmptyLineMobile icon="PrescriptionDocument" tone="violet" style={styles.emptyHint}>No clinical notes found.</EmptyLineMobile>
               ) : (
                 clinicalNotes.map((n) => <NoteListCard key={n.id} note={n} kind="clinical" onOpen={(note, kind) => setViewingNote({ note, kind })} />)
               )}
@@ -931,7 +931,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
           <View style={styles.card}>
             <Text style={styles.cardSectionTitle}>Mood tracking ({moodEntries.length})</Text>
             {moodEntries.length === 0 ? (
-              <Text style={styles.emptyHint}>No mood entries found.</Text>
+              <EmptyLineMobile icon="FaceHappy" tone="amber" style={styles.emptyHint}>No mood entries found.</EmptyLineMobile>
             ) : (
               moodEntries.map((entry) => {
                 // `mood` holds the LABEL ("Sad", "😔"), not a number — and it is
@@ -1019,7 +1019,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
               </View>
             )}
             {goals.length === 0 ? (
-              <Text style={styles.emptyHint}>No treatment goals yet.</Text>
+              <EmptyLineMobile icon="HeartCardiogram" tone="rose" style={styles.emptyHint}>No treatment goals yet.</EmptyLineMobile>
             ) : (
               goals.map((goal) => {
                 const isDone = goal.status === 'completed';

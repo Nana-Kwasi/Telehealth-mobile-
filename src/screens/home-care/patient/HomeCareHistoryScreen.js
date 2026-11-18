@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
@@ -32,7 +33,7 @@ export default function HomeCareHistoryScreen({ navigation }) {
     <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <Text style={hc.title}>Visit history</Text>
       {loading ? <ActivityIndicator color={C.primary} /> : null}
-      {!loading && list.length === 0 ? <Text style={hc.sub}>No bookings yet.</Text> : null}
+      {!loading && list.length === 0 ? <EmptyLineMobile icon="Calendar" tone="sky" style={hc.sub}>No bookings yet.</EmptyLineMobile> : null}
       {list.map((b) => (
         <TouchableOpacity
           key={b.id}

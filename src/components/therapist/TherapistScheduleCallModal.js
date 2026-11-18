@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -160,7 +161,7 @@ export default function TherapistScheduleCallModal({
             {loadingClients ? (
               <ActivityIndicator color={TherapistColors.primary} style={{ marginVertical: 16 }} />
             ) : clients.length === 0 ? (
-              <Text style={styles.emptyClients}>No clients assigned. Add a client first.</Text>
+              <EmptyLineMobile icon="People" tone="teal" style={styles.emptyClients}>No clients assigned. Add a client first.</EmptyLineMobile>
             ) : (
               <>
                 <Text style={styles.fieldLabel}>Client</Text>

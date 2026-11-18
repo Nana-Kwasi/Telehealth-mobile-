@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl, TouchableOpacity,
@@ -115,7 +116,7 @@ export default function DoctorPatientTimelineScreen({ route }) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="time-outline" size={48} color="#e2e8f0" />
-              <Text style={styles.emptyText}>No timeline events yet</Text>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Heartbeat" tone="rose" size={30} /></View><Text style={styles.emptyText}>No timeline events yet</Text></>
             </View>
           }
           contentContainerStyle={{ paddingBottom: 32, flexGrow: 1 }}

@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -434,7 +434,7 @@ export default function TherapistScheduleScreen({ profile }) {
       <View style={styles.notesSection}>
         <Text style={styles.notesSectionTitle}>Therapy notes & progress</Text>
         {therapyNotes.length === 0 ? (
-          <Text style={styles.notesEmpty}>No therapy notes yet. Add notes from client sessions.</Text>
+          <EmptyLineMobile icon="PrescriptionDocument" tone="violet" style={styles.notesEmpty}>No therapy notes yet. Add notes from client sessions.</EmptyLineMobile>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesScroll}>
             {therapyNotes.slice(0, 6).map((note) => (

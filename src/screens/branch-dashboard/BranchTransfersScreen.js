@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity,
@@ -100,11 +101,11 @@ export default function BranchTransfersScreen({ profile }) {
         </View>
       }
       ListEmptyComponent={
-        <Text style={styles.muted}>
+        <EmptyLineMobile icon="Medicines" tone="emerald" style={styles.muted}>
           {filter === 'all'
             ? 'No drug transfers involve this branch yet.'
             : 'Nothing matches this filter.'}
-        </Text>
+        </EmptyLineMobile>
       }
       renderItem={({ item }) => {
         const tone = TONE[item.stage.tone] || TONE.info;

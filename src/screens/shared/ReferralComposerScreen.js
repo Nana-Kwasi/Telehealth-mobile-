@@ -1,3 +1,4 @@
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
@@ -208,7 +209,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
                   </TouchableOpacity>
                 );
               })}
-              {patients.length === 0 ? <Text style={styles.hint}>No patients found.</Text> : null}
+              {patients.length === 0 ? <EmptyLineMobile icon="People" tone="teal" style={styles.hint}>No patients found.</EmptyLineMobile> : null}
             </ScrollView>
 
             <View style={[styles.labelRow, { marginTop: 14 }]}>
@@ -319,7 +320,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
                           </View>
                         </TouchableOpacity>
                       ))}
-                      {matches.length === 0 ? <Text style={styles.hint}>No clinicians match that search.</Text> : null}
+                      {matches.length === 0 ? <EmptyLineMobile icon="Doctor" tone="blue" style={styles.hint}>No clinicians match that search.</EmptyLineMobile> : null}
                     </>
                   )
                 ) : (
@@ -367,7 +368,7 @@ export default function ReferralComposerScreen({ role = 'DOCTOR' }) {
             {(listTab === 'sent' ? history : received)?.length === 0 ? (
               <View style={styles.empty}>
                 <View style={[styles.emptyIcon, { backgroundColor: P.soft }]}><Ionicons name="share-social-outline" size={24} color={P.accent} /></View>
-                <Text style={styles.emptyTitle}>{listTab === 'sent' ? 'No referrals yet' : 'Nothing referred to you yet'}</Text>
+                <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Hospital" tone="blue" size={30} /></View><Text style={styles.emptyTitle}>{listTab === 'sent' ? 'No referrals yet' : 'Nothing referred to you yet'}</Text></>
                 <Text style={styles.hint}>{listTab === 'sent' ? 'Referrals you save or submit appear here.' : 'When a colleague refers a patient to you, it appears here.'}</Text>
               </View>
             ) : null}

@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, RefreshControl,
@@ -236,7 +236,7 @@ export default function TherapistCoupleCaseScreen({ route, navigation }) {
             {PARTNER_LABEL[key]} — {partnerName(couple, key)}
           </Text>
           {intakesByPartner[key].length === 0 ? (
-            <Text style={styles.emptyHint}>No intake sections submitted yet.</Text>
+            <EmptyLineMobile icon="Health" tone="indigo" style={styles.emptyHint}>No intake sections submitted yet.</EmptyLineMobile>
           ) : (
             intakesByPartner[key].map((row) => {
               const entries = Object.entries(parseSectionData(row.sectionData));
@@ -247,7 +247,7 @@ export default function TherapistCoupleCaseScreen({ route, navigation }) {
                     <Text style={styles.when}>{fmtDate(row.submittedAt || row.createdAt)}</Text>
                   </View>
                   {entries.length === 0 ? (
-                    <Text style={styles.emptyHint}>No answers recorded.</Text>
+                    <EmptyLineMobile icon="PrescriptionDocument" tone="violet" style={styles.emptyHint}>No answers recorded.</EmptyLineMobile>
                   ) : (
                     entries.map(([k, v]) => (
                       <View key={k} style={styles.kvRow}>

@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../../components/EmptyStateMobile';
 import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -23,7 +24,7 @@ export default function NurseNotificationsScreen({ profile }) {
     <ScrollView showsVerticalScrollIndicator={false} style={hc.screen} contentContainerStyle={hc.content}>
       <NursePageHeader title="Notifications" subtitle="Bookings, emergencies & updates" />
       {loading ? <ActivityIndicator color={C.primary} /> : null}
-      {list.length === 0 && !loading ? <Text style={hc.sub}>No notifications yet.</Text> : null}
+      {list.length === 0 && !loading ? <EmptyLineMobile icon="Phone" tone="amber" style={hc.sub}>No notifications yet.</EmptyLineMobile> : null}
       {list.map((n) => (
         <TouchableOpacity
           key={n.id}

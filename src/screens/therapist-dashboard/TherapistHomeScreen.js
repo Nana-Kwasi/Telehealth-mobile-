@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -1086,7 +1086,7 @@ const TherapistHomeScreen = ({ navigation, profile }) => {
           )}
         </View>
         {recentActivities.length === 0 ? (
-          <Text style={styles.emptySubtext}>No recent activity yet</Text>
+          <EmptyLineMobile icon="Heartbeat" tone="rose" style={styles.emptySubtext}>No recent activity yet</EmptyLineMobile>
         ) : (
           visibleActivities.map((a, i) => (
             <View

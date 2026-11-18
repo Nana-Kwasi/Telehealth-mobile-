@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity,
@@ -54,7 +55,7 @@ export default function DiagnosticBranchesScreen({ profile, type = 'lab', detail
           </Text>
         </View>
       }
-      ListEmptyComponent={<Text style={styles.muted}>No branches linked to this account yet.</Text>}
+      ListEmptyComponent={<EmptyLineMobile icon="Pharmacy" tone="emerald" style={styles.muted}>No branches linked to this account yet.</EmptyLineMobile>}
       renderItem={({ item }) => (
         <TouchableOpacity
           style={styles.card}

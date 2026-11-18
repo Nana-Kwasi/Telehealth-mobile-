@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../../components/EmptyStateMobile';
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
 import {
@@ -86,9 +87,9 @@ export default function NurseProfileManageScreen({ profile, embedded = false }) 
             Service location saved. Refreshes when you open Dashboard or tap below.
           </Text>
         ) : (
-          <Text style={[hc.sub, { marginTop: 8, color: '#b45309' }]}>
+          <EmptyLineMobile icon="Health" tone="indigo" style={[hc.sub, { marginTop: 8, color: '#b45309' }]}>
             No service location yet. Open Dashboard once (GPS) or tap below.
-          </Text>
+          </EmptyLineMobile>
         )}
         <TouchableOpacity
           style={[hc.btnOutline, { marginTop: 10, alignSelf: 'stretch' }]}

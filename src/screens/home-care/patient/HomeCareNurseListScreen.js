@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../../components/EmptyStateMobile';
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import { fetchApprovedNurses, getCurrentLocationMobile } from '../../../services/homeCareService';
@@ -55,10 +56,10 @@ export default function HomeCareNurseListScreen({ navigation, route }) {
       ) : null}
 
       {!loading && list.length === 0 ? (
-        <Text style={hc.sub}>
+        <EmptyLineMobile icon="Calendar" tone="sky" style={hc.sub}>
           No nurses are available right now. A nurse must be approved and online to
           appear here.
-        </Text>
+        </EmptyLineMobile>
       ) : null}
 
       {list.map((n) => (

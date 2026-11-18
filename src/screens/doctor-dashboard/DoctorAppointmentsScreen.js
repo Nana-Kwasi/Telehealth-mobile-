@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -527,7 +527,7 @@ export default function DoctorAppointmentsScreen({ route, navigation }) {
               {/* Patient selector */}
               <Text style={styles.fieldLabel}>Patient *</Text>
               {patients.length === 0 ? (
-                <Text style={styles.noPatients}>No patients yet. Patients appear after they book with you.</Text>
+                <EmptyLineMobile icon="People" tone="teal" style={styles.noPatients}>No patients yet. Patients appear after they book with you.</EmptyLineMobile>
               ) : (
                 <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
                   {patients.map(p => (

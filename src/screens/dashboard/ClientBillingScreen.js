@@ -1,3 +1,4 @@
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -443,13 +444,13 @@ const ClientBillingScreen = ({ navigation }) => {
           {filteredHistory.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={64} color={Colors.textSecondary} />
-              <Text style={styles.emptyText}>No billing history found</Text>
-              <Text style={styles.emptySubtext}>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="MoneyBag" tone="amber" size={30} /></View><Text style={styles.emptyText}>No billing history found</Text></>
+              <EmptyLineMobile icon="MoneyBag" tone="amber" style={styles.emptySubtext}>
                 {searchTerm || statusFilter !== 'all' || dateFilter !== 'all'
                   ? 'Try adjusting your filters'
                   : 'No invoices or payments yet'
                 }
-              </Text>
+              </EmptyLineMobile>
             </View>
           ) : (
             filteredHistory.map((item) => (

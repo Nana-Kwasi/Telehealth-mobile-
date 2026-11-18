@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -262,7 +263,7 @@ const ClientVideoScreen = ({ navigation }) => {
         ) : (
           <View style={styles.noTherapistCard}>
             <Ionicons name="person-remove-outline" size={48} color={Colors.error} />
-            <Text style={styles.noTherapistText}>No therapist assigned</Text>
+            <EmptyLineMobile icon="Doctor" tone="blue" style={styles.noTherapistText}>No therapist assigned</EmptyLineMobile>
             <Text style={styles.noTherapistSubtext}>
               Please contact support to get assigned to a therapist first.
             </Text>
@@ -529,7 +530,7 @@ const ClientVideoScreen = ({ navigation }) => {
             ) : (
               <View style={styles.noTherapistContainer}>
                 <Ionicons name="person-remove-outline" size={48} color={Colors.error} />
-                <Text style={styles.noTherapistText}>No therapist assigned</Text>
+                <EmptyLineMobile icon="Doctor" tone="blue" style={styles.noTherapistText}>No therapist assigned</EmptyLineMobile>
                 <Text style={styles.noTherapistSubtext}>
                   Please contact support to get assigned to a therapist first.
                 </Text>

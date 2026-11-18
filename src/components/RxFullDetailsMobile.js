@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from './EmptyStateMobile';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { patientVisibleNotes } from '../utils/pharmacyRxNotes';
@@ -114,7 +115,7 @@ export default function RxFullDetailsMobile({ rx }) {
                 </Text>
                 {rows.length > 0
                   ? <FieldRows rows={rows} />
-                  : <Text style={styles.emptyDetail}>No further prescribing detail recorded.</Text>}
+                  : <EmptyLineMobile icon="Medicines" tone="emerald" style={styles.emptyDetail}>No further prescribing detail recorded.</EmptyLineMobile>}
                 {m.alternativeSuggested ? (
                   <Text style={[styles.alt, { color: m.drugStatus === 'approved_replacement' ? '#16a34a' : '#7c3aed' }]}>
                     🔁 {m.alternativeSuggested} · {m.drugStatus === 'approved_replacement' ? 'Approved by doctor' : 'Awaiting doctor approval'}

@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
@@ -257,7 +258,7 @@ export default function DoctorPatientOverviewScreen({ route, navigation }) {
               ) : null}
             </View>
           ) : (
-            <Text style={styles.empty}>No vitals logged yet. Patient can record vitals from their home screen.</Text>
+            <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Heartbeat" tone="rose" size={30} /></View><Text style={styles.empty}>No vitals logged yet. Patient can record vitals from their home screen.</Text></>
           )}
         </Section>
 

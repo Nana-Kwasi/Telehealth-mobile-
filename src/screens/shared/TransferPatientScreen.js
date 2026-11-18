@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
@@ -218,7 +219,7 @@ export default function TransferPatientScreen({ route, navigation }) {
               <Text style={[s.score, { color: accent }]}>{o.score}%</Text>
             </TouchableOpacity>
           ))}
-          {!loadingSug && !shown.length && (!isDoctor || form.neededSpecialty) ? <Text style={s.small}>No available clinician matches yet.</Text> : null}
+          {!loadingSug && !shown.length && (!isDoctor || form.neededSpecialty) ? <EmptyLineMobile icon="Calendar" tone="sky" style={s.small}>No available clinician matches yet.</EmptyLineMobile> : null}
           <Err k="toId" />
         </View>
 

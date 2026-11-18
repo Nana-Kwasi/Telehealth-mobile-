@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -795,7 +795,7 @@ const MedicalAppointmentsScreen = ({ navigation, route }) => {
               {myDoctors.length === 0 ? (
                 <View style={styles.noDoctorBox}>
                   <Ionicons name="person-outline" size={20} color={MedicalColors.textSecondary} />
-                  <Text style={styles.noDoctorText}>No doctors yet.</Text>
+                  <EmptyLineMobile icon="Doctor" tone="blue" style={styles.noDoctorText}>No doctors yet.</EmptyLineMobile>
                   <TouchableOpacity
                     style={styles.findDocSmallBtn}
                     onPress={() => { setScheduleDay(null); navigation.getParent()?.navigate('DoctorSearch'); }}

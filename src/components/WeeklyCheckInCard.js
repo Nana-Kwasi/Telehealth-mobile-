@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from './EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -87,9 +88,9 @@ export default function WeeklyCheckInCard({ clientId, accent = '#5b21b6' }) {
           ) : null}
         </>
       ) : (
-        <Text style={[styles.sub, { marginTop: 6 }]}>
+        <EmptyLineMobile icon="Health" tone="indigo" style={[styles.sub, { marginTop: 6 }]}>
           {enabled ? 'No answer yet this week.' : 'Turn this on to send a short check-in each week.'}
-        </Text>
+        </EmptyLineMobile>
       )}
     </View>
   );

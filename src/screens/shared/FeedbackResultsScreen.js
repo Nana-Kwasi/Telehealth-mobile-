@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl,
@@ -60,7 +61,7 @@ export default function FeedbackResultsScreen() {
 
       {rows.length === 0 ? (
         <View style={styles.card}>
-          <Text style={styles.empty}>No feedback surveys have been run yet.</Text>
+          <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="MoneyBag" tone="amber" size={30} /></View><Text style={styles.empty}>No feedback surveys have been run yet.</Text></>
         </View>
       ) : rows.map((r) => {
         const total = Number(r.responses || 0);

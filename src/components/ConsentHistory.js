@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from './EmptyStateMobile';
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -66,7 +67,7 @@ export default function ConsentHistory() {
       </View>
       {rows === null ? <ActivityIndicator style={{ marginVertical: 16 }} color="#2563eb" /> : null}
       {failed ? <Text style={st.muted}>Your consent record could not be loaded right now.</Text> : null}
-      {rows && !failed && rows.length === 0 ? <Text style={st.muted}>No agreements are recorded for this account yet.</Text> : null}
+      {rows && !failed && rows.length === 0 ? <EmptyLineMobile icon="PrescriptionDocument" tone="violet" style={st.muted}>No agreements are recorded for this account yet.</EmptyLineMobile> : null}
       {[...groups.entries()].map(([ctx, list]) => (
         <View key={ctx} style={st.card}>
           <Text style={st.h3}>{CONTEXT_LABELS[ctx] || ctx}</Text>

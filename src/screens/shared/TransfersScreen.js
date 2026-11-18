@@ -1,3 +1,4 @@
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, RefreshControl,
@@ -77,9 +78,9 @@ export default function TransfersScreen({ role = 'DOCTOR', navigation }) {
         ))}
       </View>
       {rows === null ? <ActivityIndicator style={{ marginTop: 24 }} /> : groups[tab].length === 0 ? (
-        <Text style={s.empty}>
+        <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="HeartCardiogram" tone="rose" size={30} /></View><Text style={s.empty}>
           {tab === 'incoming' ? 'No transfer requests are waiting for you.' : tab === 'sent' ? 'You have no transfers in progress.' : 'No finished transfers yet.'}
-        </Text>
+        </Text></>
       ) : groups[tab].map((t) => {
         const st = TRANSFER_STATUS[t.status] || { label: t.status, bg: '#f1f5f9', fg: '#475569' };
         const iAmSender = t.fromClinicianId === me;
@@ -195,7 +196,7 @@ function TransferDetail({ id, me, isDoctor, accent, navigation, onChanged }) {
           {['AWAITING_RECIPIENT', 'REJECTED_AWAITING_REASSIGN'].includes(t.status) ? (choosing ? (
             <View>
               <Text style={s.secLabel}>Choose another {isDoctor ? 'doctor' : 'therapist'}</Text>
-              {options.length === 0 ? <Text style={s.small}>No other matching clinician is available right now.</Text> : options.map((o) => (
+              {options.length === 0 ? <EmptyLineMobile icon="Health" tone="indigo" style={s.small}>No other matching clinician is available right now.</EmptyLineMobile> : options.map((o) => (
                 <TouchableOpacity key={o.id} onPress={() => setPick(o.id)} style={[s.option, pick === o.id && { borderColor: accent, borderWidth: 2 }]}>
                   <Text style={s.cardTitle}>{isDoctor ? `Dr. ${o.name}` : o.name} · {o.score}%</Text>
                   <Text style={s.small}>{o.specialization || o.professionalType || ''}{o.reasons?.length ? ` · ${o.reasons.join(' · ')}` : ''}</Text>

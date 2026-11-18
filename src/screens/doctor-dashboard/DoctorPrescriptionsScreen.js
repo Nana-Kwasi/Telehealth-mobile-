@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { RxAdviceMobile, RxInsurancePickerMobile, attachRxCardMobile } from '../../components/ProviderInsuranceMobile';
 import {
@@ -1253,11 +1253,11 @@ export default function DoctorPrescriptionsScreen() {
                       </View>
                     ) : null}
                     {branchOptions.length === 0 && !loadingBranchDirectory && (
-                      <Text style={[styles.pickerItemText, { padding: 12, color: '#64748b' }]}>
+                      <EmptyLineMobile icon="Pharmacy" tone="emerald" style={[styles.pickerItemText, { padding: 12, color: '#64748b' }]}>
                         {form.patientId && !showAllBranches
                           ? `${patientFirstName} has not saved a pharmacy yet. Choose "Open to all pharmacies" above, or tap Show all.`
                           : 'No active branches found.'}
-                      </Text>
+                      </EmptyLineMobile>
                     )}
                     {branchOptions.map(row => (
                       <TouchableOpacity key={`${row.pharmacyId}-${row.branchId}`}

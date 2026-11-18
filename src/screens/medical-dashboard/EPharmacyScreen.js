@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -403,7 +404,7 @@ export default function EPharmacyScreen() {
               {filteredPh.length === 0 ? (
                 <View style={styles.empty}>
                   <Text style={{ fontSize: 48 }}>🏪</Text>
-                  <Text style={styles.emptyTitle}>{searchPh ? 'No matches found' : 'No pharmacies yet'}</Text>
+                  <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Health" tone="indigo" size={30} /></View><Text style={styles.emptyTitle}>{searchPh ? 'No matches found' : 'No pharmacies yet'}</Text></>
                 </View>
               ) : filteredPh.map(({ key, ph, br, distanceKm }) => {
                 const saved = isSaved(ph, br);

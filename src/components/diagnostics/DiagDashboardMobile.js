@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../EmptyStateMobile';
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -185,7 +186,7 @@ export default function DiagDashboardMobile({ type = 'lab', profile, isBranch, c
             <View style={st.card}>
               <Text style={st.cardTitle}>📅 Upcoming scans</Text>
               {data.upcoming?.length ? data.upcoming.map(r => <Row key={r.orderId} r={r} right={<Text style={st.hint}>{fmtDateTime(r.scheduledAt)}</Text>} />)
-                : <Text style={st.empty}>No scans booked yet.</Text>}
+                : <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="MicroscopeWithSpecimen" tone="violet" size={30} /></View><Text style={st.empty}>No scans booked yet.</Text></>}
             </View>
           ) : (
             <View style={st.card}>
@@ -222,7 +223,7 @@ export default function DiagDashboardMobile({ type = 'lab', profile, isBranch, c
                   </View>
                   <Text style={[st.hint, { marginTop: 4 }]}>{money(b.revenue, currency)}</Text>
                 </TouchableOpacity>
-              )) : <Text style={st.empty}>No branches yet.</Text>}
+              )) : <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Pharmacy" tone="emerald" size={30} /></View><Text style={st.empty}>No branches yet.</Text></>}
             </View>
           )}
         </>

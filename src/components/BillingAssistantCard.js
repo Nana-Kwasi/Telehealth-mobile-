@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from './EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -106,7 +107,7 @@ export default function BillingAssistantCard({ accent = '#2a3ea8' }) {
             <Text style={styles.sub}>One for every payment. Insured? Prepare a claim from an invoice.</Text>
           </View>
         </View>
-        {invoices.length === 0 ? <Text style={styles.sub}>No invoices yet.</Text> : invoices.map((inv) => (
+        {invoices.length === 0 ? <EmptyLineMobile icon="MoneyBag" tone="amber" style={styles.sub}>No invoices yet.</EmptyLineMobile> : invoices.map((inv) => (
           <View key={inv.id} style={styles.line}>
             <Text style={styles.strong}>{inv.invoice_number} · {money(inv.amount_cents, inv.currency)}</Text>
             <Text style={styles.sub}>{clean(inv.description)} · {day(inv.created_at)} · {inv.status}</Text>

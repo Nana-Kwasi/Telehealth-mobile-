@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -64,7 +65,7 @@ function EngagementCard({ booking, navigation }) {
       </View>
       {open ? (
         logs.length === 0 ? (
-          <Text style={[hc.sub, { marginTop: 8 }]}>No visit logs yet.</Text>
+          <EmptyLineMobile icon="Calendar" tone="sky" style={[hc.sub, { marginTop: 8 }]}>No visit logs yet.</EmptyLineMobile>
         ) : (
           logs.map((l) => (
             <View key={l.id} style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border }}>

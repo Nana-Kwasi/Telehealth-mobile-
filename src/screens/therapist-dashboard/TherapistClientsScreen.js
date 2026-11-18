@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -579,7 +579,7 @@ const TherapistClientsScreen = ({ navigation, profile }) => {
             </View>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
               {allTherapists.length === 0 ? (
-                <Text style={styles.emptySubtitle}>No therapists found</Text>
+                <EmptyLineMobile icon="Doctor" tone="blue" style={styles.emptySubtitle}>No therapists found</EmptyLineMobile>
               ) : (
                 allTherapists.map((t) => {
                   const isCurrent = reassignClient?.therapistId === t.id;

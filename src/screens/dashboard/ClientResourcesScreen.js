@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -494,9 +495,9 @@ const ClientResourcesScreen = ({ navigation }) => {
         {filteredItems.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="book-outline" size={64} color={Colors.textSecondary} />
-            <Text style={styles.emptyText}>
+            <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Book" tone="violet" size={30} /></View><Text style={styles.emptyText}>
               {searchTerm ? 'No resources found' : `No ${selectedCategory} available`}
-            </Text>
+            </Text></>
             <Text style={styles.emptySubtext}>
               {searchTerm ? 'Try a different search term' : 'Check back later for new content'}
             </Text>

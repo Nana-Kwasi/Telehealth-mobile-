@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, Linking,
@@ -58,7 +59,7 @@ export default function EarningsScreen({ serviceKey = 'consultation', accent = '
           </View>
           <PayoutDetails method={s.payoutMethod} onSaved={load} accent={accent} />
           <Text style={st.h2}>Bookings</Text>
-          {ledger.length === 0 ? <Text style={st.muted}>No bookings yet.</Text> : ledger.map((e) => {
+          {ledger.length === 0 ? <EmptyLineMobile icon="Calendar" tone="sky" style={st.muted}>No bookings yet.</EmptyLineMobile> : ledger.map((e) => {
             const [label, color] = STATE[e.state] || [e.state, '#64748b'];
             return (
               <View key={e.reference} style={st.card}>
@@ -73,7 +74,7 @@ export default function EarningsScreen({ serviceKey = 'consultation', accent = '
             );
           })}
           <Text style={st.h2}>Payouts</Text>
-          {payouts.length === 0 ? <Text style={st.muted}>No payouts yet.</Text> : payouts.map((p) => {
+          {payouts.length === 0 ? <EmptyLineMobile icon="MoneyBag" tone="amber" style={st.muted}>No payouts yet.</EmptyLineMobile> : payouts.map((p) => {
             const [label, color] = ITEM[p.status] || [p.status, '#64748b'];
             return (
               <View key={p.id} style={st.card}>

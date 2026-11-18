@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useCallback,useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -183,7 +184,7 @@ export default function MedicalTimelineScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="time-outline" size={56} color="#e2e8f0" />
-              <Text style={styles.emptyTitle}>No health events yet</Text>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Heartbeat" tone="rose" size={30} /></View><Text style={styles.emptyTitle}>No health events yet</Text></>
               <Text style={styles.emptySub}>Your consultations, prescriptions, lab tests, and scans will all appear here in chronological order.</Text>
             </View>
           }

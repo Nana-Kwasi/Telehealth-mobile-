@@ -1,4 +1,4 @@
-import { IconBubbleMobile } from '../../components/EmptyStateMobile';
+import { IconBubbleMobile, EmptyLineMobile } from '../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -303,9 +303,9 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Assign to clients *</Text>
               {clients.length === 0 ? (
-                <Text style={styles.formEmptyHint}>
+                <EmptyLineMobile icon="Calendar" tone="sky" style={styles.formEmptyHint}>
                   No clients available yet — pull down on the notes list to refresh.
-                </Text>
+                </EmptyLineMobile>
               ) : (
                 clients.map((c) => {
                   const selected = (noteForm.assignedClientIds || []).includes(c.id);
@@ -385,9 +385,9 @@ export default function TherapistNotesScreen({ profile, route, navigation }) {
               empty, so a failed lookup was indistinguishable from a screen that
               had simply not finished loading. */}
           {clients.length === 0 ? (
-            <Text style={styles.formEmptyHint}>
+            <EmptyLineMobile icon="Calendar" tone="sky" style={styles.formEmptyHint}>
               No clients available yet — pull down on the notes list to refresh.
-            </Text>
+            </EmptyLineMobile>
           ) : null}
           <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
             {clients.map((c) => (

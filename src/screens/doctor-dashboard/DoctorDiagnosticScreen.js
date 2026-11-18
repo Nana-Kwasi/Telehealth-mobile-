@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -566,7 +567,7 @@ export default function DoctorDiagnosticScreen({ navigation, route }) {
                 {filteredBranches.length === 0 && (
                   <View style={styles.empty}>
                     <Ionicons name="location-outline" size={40} color="#e2e8f0" />
-                    <Text style={styles.emptyText}>No centers match filters</Text>
+                    <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Hospital" tone="blue" size={30} /></View><Text style={styles.emptyText}>No centers match filters</Text></>
                     <Text style={[styles.emptyText, { marginTop: 6, fontSize: 12 }]}>
                       Ensure lab/scan branches exist in Admin and are marked active (or leave status unset).
                     </Text>

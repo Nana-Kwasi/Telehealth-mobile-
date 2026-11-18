@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -111,7 +112,7 @@ export default function SecondOpinionHomeScreen({ navigation }) {
               </TouchableOpacity>
             </>
           ) : (
-            <Text style={zcStyles.meta}>No consultation scheduled yet.</Text>
+            <EmptyLineMobile icon="Calendar" tone="sky" style={zcStyles.meta}>No consultation scheduled yet.</EmptyLineMobile>
           )}
         </View>
 

@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from './EmptyStateMobile';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -120,7 +121,7 @@ function Flags({ data, live }) {
       ))}
       {data.notChecked?.length ? <Text style={styles.notChecked}>Not checked — not in the formulary: {data.notChecked.join(', ')}</Text> : null}
       {live && !flags.length && !data.notChecked?.length && !data.allergyWarning
-        ? <Text style={styles.sub}>No interactions, duplicates or allergy conflicts found in the formulary.</Text> : null}
+        ? <EmptyLineMobile icon="Health" tone="indigo" style={styles.sub}>No interactions, duplicates or allergy conflicts found in the formulary.</EmptyLineMobile> : null}
       {(data.reference || []).map((r) => (
         <Text key={r.drug} style={styles.ref}><Text style={{ fontWeight: '800' }}>{r.drug}</Text> (pharmacist reference{r.reviewed ? '' : ', unreviewed'}): {r.text}</Text>
       ))}

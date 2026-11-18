@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useCallback, useLayoutEffect, useMemo,useEffect } from 'react';
 import {
   View,
@@ -298,7 +299,7 @@ export default function DoctorDiagnosticResultsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} tintColor={C.primary} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="document-text-outline" size={48} color="#e2e8f0" />
+              <View style={{ marginBottom: 8 }}><IconBubbleMobile icon="MicroscopeWithSpecimen" tone="violet" size={40} /></View>
               <Text style={styles.emptyText}>{emptyCopy.title}</Text>
               <Text style={styles.emptySub}>{emptyCopy.sub}</Text>
               {filter !== 'Draft' && (

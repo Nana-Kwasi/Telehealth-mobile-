@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
@@ -212,7 +213,7 @@ export default function PharmacyBranchDetailScreen({ profile }) {
 
       <Text style={styles.sectionTitle}>Live branch operations</Text>
       <View style={styles.card}>
-        {rx.length === 0 ? <Text style={styles.muted}>No prescriptions for this branch yet.</Text> : [...rx]
+        {rx.length === 0 ? <EmptyLineMobile icon="Medicines" tone="emerald" style={styles.muted}>No prescriptions for this branch yet.</EmptyLineMobile> : [...rx]
           .sort((a, b) => Math.max(toMillis(b.updatedAt), toMillis(b.createdAt)) - Math.max(toMillis(a.updatedAt), toMillis(a.createdAt)))
           .slice(0, 20)
           .map((r, i, arr) => {
@@ -261,7 +262,7 @@ export default function PharmacyBranchDetailScreen({ profile }) {
 
       <Text style={styles.sectionTitle}>Recent activity</Text>
       {events.length === 0 ? (
-        <Text style={styles.muted}>No activity recorded for this branch yet.</Text>
+        <EmptyLineMobile icon="PrescriptionDocument" tone="violet" style={styles.muted}>No activity recorded for this branch yet.</EmptyLineMobile>
       ) : (
         events.map(e => (
           <View key={e.id} style={styles.eventCard}>

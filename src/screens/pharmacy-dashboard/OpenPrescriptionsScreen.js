@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -62,7 +63,7 @@ export default function OpenPrescriptionsScreen({ rxOpsRoute }) {
           {error ? <Text style={s.error}>{error}</Text> : null}
         </View>
       }
-      ListEmptyComponent={<Text style={s.empty}>No open prescriptions right now.</Text>}
+      ListEmptyComponent={<><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Medicines" tone="emerald" size={30} /></View><Text style={s.empty}>No open prescriptions right now.</Text></>}
       renderItem={({ item }) => (
         <View style={s.card}>
           {(item.medications || []).map((m, i) => (

@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
@@ -152,11 +153,11 @@ export default function ProviderWellnessScreen({ audience = 'my_clients', people
           {reach ? (
             <View style={styles.reachCard}>
               <Ionicons name="people-outline" size={18} color={MedicalColors.primary} />
-              <Text style={styles.reachText}>
+              <EmptyLineMobile icon="Health" tone="indigo" style={styles.reachText}>
                 {reach.willingToReceive} of {reach.total} {peopleNoun} will receive this
                 {reach.optedOut ? ` • ${reach.optedOut} have wellness email off.` : '.'}
                 {noAudience ? ' No one is assigned yet.' : ''}
-              </Text>
+              </EmptyLineMobile>
             </View>
           ) : null}
 

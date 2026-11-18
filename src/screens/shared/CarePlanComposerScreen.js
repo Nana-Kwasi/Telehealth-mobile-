@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
@@ -183,7 +184,7 @@ export default function CarePlanComposerScreen({ role = 'DOCTOR' }) {
                 </TouchableOpacity>
               ))}
               {patients.length === 0 ? (
-                <Text style={styles.hint}>No patients found.</Text>
+                <EmptyLineMobile icon="People" tone="teal" style={styles.hint}>No patients found.</EmptyLineMobile>
               ) : null}
             </ScrollView>
 

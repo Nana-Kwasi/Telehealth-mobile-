@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -230,7 +231,7 @@ export default function PharmacyPrescriptionsScreen({ profile }) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={{ fontSize: 48 }}>💊</Text>
-              <Text style={styles.emptyTitle}>{prescriptions.length ? 'Nothing matches this filter' : 'No prescriptions yet'}</Text>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Medicines" tone="emerald" size={30} /></View><Text style={styles.emptyTitle}>{prescriptions.length ? 'Nothing matches this filter' : 'No prescriptions yet'}</Text></>
               <Text style={styles.emptySub}>{prescriptions.length ? 'Try another filter or clear the search.' : 'Prescriptions routed to this pharmacy will appear here.'}</Text>
             </View>
           }

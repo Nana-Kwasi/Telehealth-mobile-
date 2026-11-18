@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
@@ -84,7 +85,7 @@ export default function PharmacyActivityScreen({ profile, isBranch = false }) {
           </Text>
         </View>
       }
-      ListEmptyComponent={<Text style={styles.muted}>No activity yet.</Text>}
+      ListEmptyComponent={<EmptyLineMobile icon="Heartbeat" tone="rose" style={styles.muted}>No activity yet.</EmptyLineMobile>}
     />
   );
 }

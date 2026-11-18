@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from './EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Linking, Switch } from 'react-native';
 import { api } from '../services/apiClient';
@@ -120,7 +121,7 @@ export function InsuranceCardsMobile({ accent = '#2563eb' }) {
         </View>
       ) : null}
 
-      {cards.length === 0 ? <Text style={[s.sub, { marginTop: 10 }]}>{insurers.length ? 'No cards yet.' : 'No insurers are connected to NessaHub yet.'}</Text> : cards.map(c => {
+      {cards.length === 0 ? <EmptyLineMobile icon="Health" tone="indigo" style={[s.sub, { marginTop: 10 }]}>{insurers.length ? 'No cards yet.' : 'No insurers are connected to NessaHub yet.'}</EmptyLineMobile> : cards.map(c => {
         const [label, bg, fg] = CARD_STATUS[c.status] || CARD_STATUS.PENDING;
         return (
           <View key={c.id} style={[s.card, { backgroundColor: c.status === 'VERIFIED' ? accent : '#475569' }]}>
@@ -177,7 +178,7 @@ export function InsuranceCardsMobile({ accent = '#2563eb' }) {
               <TextInput style={[s.input, { flex: 1, marginTop: 0 }]} placeholder="Town or city" placeholderTextColor="#94a3b8" value={places.city} onChangeText={v => setPlaces(p => ({ ...p, city: v }))} onSubmitEditing={() => findPlaces(c.id, places.city)} returnKeyType="search" />
               <TouchableOpacity onPress={() => findPlaces(c.id, places.city)} style={[s.btn, { backgroundColor: accent }]}><Text style={s.btnText}>Search</Text></TouchableOpacity>
             </View>
-            {places.loading ? <ActivityIndicator style={{ marginTop: 8 }} /> : places.list.length === 0 ? <Text style={[s.sub, { marginTop: 8 }]}>No pharmacies found{places.city ? ` in ${places.city}` : ''}.</Text> : places.list.map((p, i) => (
+            {places.loading ? <ActivityIndicator style={{ marginTop: 8 }} /> : places.list.length === 0 ? <EmptyLineMobile icon="Pharmacy" tone="emerald" style={[s.sub, { marginTop: 8 }]}>No pharmacies found{places.city ? ` in ${places.city}` : ''}.</EmptyLineMobile> : places.list.map((p, i) => (
               <View key={p.ownerId || i} style={s.codeRow}>
                 <View style={{ flex: 1 }}><Text style={s.med}>{p.name}</Text><Text style={s.sub}>{[p.address, p.city].filter(Boolean).join(', ') || '—'}</Text></View>
                 {p.phone ? <TouchableOpacity onPress={() => Linking.openURL(`tel:${p.phone}`)}><Text style={[s.link, { color: accent }]}>Call</Text></TouchableOpacity> : null}
@@ -296,7 +297,7 @@ export function InsuranceNetworksMobile({ accent = '#0f766e' }) {
         </View>
       ) : (
         <View style={{ marginTop: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: '#cbd5e1', borderRadius: 12, padding: 12, backgroundColor: '#f8fafc' }}>
-          <Text style={{ fontSize: 13, fontWeight: '800', color: '#0f172a' }}>No insurance company has joined NessaHub yet.</Text>
+          <EmptyLineMobile icon="InsuranceCard" tone="violet" style={{ fontSize: 13, fontWeight: '800', color: '#0f172a' }}>No insurance company has joined NessaHub yet.</EmptyLineMobile>
           <Text style={[s.sub, { marginTop: 4 }]}>As soon as one joins, you can pick it here, type the provider code that insurer gave you and tap Add & verify. Until then you can still serve patients who pay themselves.</Text>
           <TextInput style={[s.input, { marginTop: 10, opacity: 0.5 }]} editable={false} placeholder="Your provider code" placeholderTextColor="#94a3b8" />
         </View>

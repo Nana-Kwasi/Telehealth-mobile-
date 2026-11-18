@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from './EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -144,7 +145,7 @@ export default function PrescriptionRequestsInboxMobile({ rxRoute }) {
         ))}
       </View>
       {error ? <Text style={s.error}>{error}</Text> : null}
-      {loading ? <ActivityIndicator /> : rows.length === 0 ? <Text style={s.sub}>No requests here.</Text> : rows.map(r => (
+      {loading ? <ActivityIndicator /> : rows.length === 0 ? <EmptyLineMobile icon="Health" tone="indigo" style={s.sub}>No requests here.</EmptyLineMobile> : rows.map(r => (
         <TouchableOpacity key={r.id} style={[s.box, r.urgentFlag && ['PENDING_REVIEW', 'UNDER_REVIEW'].includes(r.status) && { borderColor: '#fca5a5' }]} onPress={() => open(r)}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <Text style={{ fontWeight: '700', color: '#0f172a' }}>{r.patientName || 'Patient'}</Text>

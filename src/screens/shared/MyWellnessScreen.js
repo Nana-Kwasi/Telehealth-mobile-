@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
@@ -97,7 +98,7 @@ export default function MyWellnessScreen({ peopleNoun = 'therapist' }) {
             <View style={styles.emptyIconWrap}>
               <Ionicons name="leaf-outline" size={28} color={MedicalColors.primary} />
             </View>
-            <Text style={styles.emptyTitle}>No wellness messages yet</Text>
+            <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Telemedicine" tone="sky" size={30} /></View><Text style={styles.emptyTitle}>No wellness messages yet</Text></>
             <Text style={styles.emptyText}>
               When your {peopleNoun} shares a note, it will appear here so you can read it anytime.
             </Text>

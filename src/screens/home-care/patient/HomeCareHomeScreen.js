@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../../components/EmptyStateMobile';
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Alert,
@@ -116,7 +117,7 @@ export default function HomeCareHomeScreen({ navigation }) {
         {loading ? (
           <ActivityIndicator color={C.primary} style={{ marginVertical: 24 }} />
         ) : topRated.length === 0 ? (
-          <Text style={hc.sub}>No nurses available yet. Check back soon.</Text>
+          <EmptyLineMobile icon="Calendar" tone="sky" style={hc.sub}>No nurses available yet. Check back soon.</EmptyLineMobile>
         ) : (
           topRated.map((n) => (
             <NurseCard key={n.id} nurse={n} onPressProfile={() => openNurse(n)} onPressBook={() => bookNurse(n)} />

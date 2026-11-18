@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -881,9 +882,9 @@ export default function TherapistResourcesScreen({ profile }) {
                 <>
                   <Text style={styles.fieldLabel}>Assign to clients *</Text>
                   {clients.length === 0 ? (
-                    <Text style={styles.fieldHint}>
+                    <EmptyLineMobile icon="People" tone="teal" style={styles.fieldHint}>
                       No clients assigned to you yet — pull down on the library to refresh.
-                    </Text>
+                    </EmptyLineMobile>
                   ) : (
                     clients.map((c) => {
                       const selected = (resourceForm.assignedClients || []).includes(c.id);
@@ -1126,9 +1127,9 @@ export default function TherapistResourcesScreen({ profile }) {
               </View>
               <Text style={styles.fieldLabel}>Assign to clients</Text>
               {clients.length === 0 ? (
-                <Text style={styles.fieldHint}>
+                <EmptyLineMobile icon="People" tone="teal" style={styles.fieldHint}>
                   No clients assigned to you yet — pull down on the library to refresh.
-                </Text>
+                </EmptyLineMobile>
               ) : null}
               <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
                 {clients.map((c) => {

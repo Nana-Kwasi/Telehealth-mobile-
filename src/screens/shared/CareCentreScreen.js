@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
@@ -356,7 +357,7 @@ export default function CareCentreScreen() {
           {activeReminders.length === 0 && !adding ? (
             <View style={styles.empty}>
               <View style={[styles.emptyIcon, { backgroundColor: P.soft }]}><Ionicons name="medkit-outline" size={26} color={P.accent} /></View>
-              <Text style={styles.emptyTitle}>No reminders yet</Text>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Phone" tone="amber" size={30} /></View><Text style={styles.emptyTitle}>No reminders yet</Text></>
               <Text style={styles.emptyText}>
                 {scripts.length
                   ? 'Tap Add to be reminded about one of your prescriptions.'

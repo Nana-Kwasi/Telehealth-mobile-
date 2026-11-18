@@ -1,3 +1,4 @@
+import { IconBubbleMobile, EmptyLineMobile } from '../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import PriceTag from '../components/PriceTag';
 import { quotePrices } from '../services/pricing';
@@ -298,9 +299,9 @@ const MatchTherapistScreen = ({ navigation, route }) => {
 
       {coupleProfile && !availabilityOverlap ? (
         <View style={styles.warnBox}>
-          <Text style={styles.warnText}>
+          <EmptyLineMobile icon="Calendar" tone="sky" style={styles.warnText}>
             No overlapping availability detected. Consider updating your availability in intake or choose the closest match.
-          </Text>
+          </EmptyLineMobile>
         </View>
       ) : null}
 
@@ -315,7 +316,7 @@ const MatchTherapistScreen = ({ navigation, route }) => {
 
       {therapists.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No matches found. We'll assign the best available therapist shortly.</Text>
+          <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Health" tone="indigo" size={30} /></View><Text style={styles.emptyText}>No matches found. We'll assign the best available therapist shortly.</Text></>
         </View>
       ) : (
         <View style={styles.therapistsList}>

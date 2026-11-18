@@ -1,4 +1,4 @@
-import { IonBubble } from '../EmptyStateMobile';
+import { IonBubble, IconBubbleMobile } from '../EmptyStateMobile';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, ScrollView, Linking, Alert, Modal,
@@ -228,7 +228,7 @@ export function DiagOrderDetailMobile({ type = 'lab', colors: C }) {
 
       <View style={st.card}>
         <Text style={st.section}>Result</Text>
-        {results.length ? results.map(r => <ResultCardMobile key={r.id} r={r} />) : <Text style={st.empty}>No result yet.</Text>}
+        {results.length ? results.map(r => <ResultCardMobile key={r.id} r={r} />) : <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="MicroscopeWithSpecimen" tone="violet" size={30} /></View><Text style={st.empty}>No result yet.</Text></>}
       </View>
 
       <View style={st.card}>
@@ -240,7 +240,7 @@ export function DiagOrderDetailMobile({ type = 'lab', colors: C }) {
             {e.notes ? <Text style={st.meta}>{e.notes}</Text> : null}
             <Text style={[st.meta, { fontSize: 10 }]}>{fmtDateTime(e.createdAt)}</Text>
           </View>
-        )) : <Text style={st.empty}>No activity yet.</Text>}
+        )) : <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Heartbeat" tone="rose" size={30} /></View><Text style={st.empty}>No activity yet.</Text></>}
       </View>
       {actions.element}
     </ScrollView>
@@ -278,7 +278,7 @@ export function DiagResultsMobile({ type = 'lab', isBranch, colors: C }) {
       {loading ? <ActivityIndicator color={C.primary} style={{ margin: 32 }} /> : (
         <FlatList showsVerticalScrollIndicator={false} data={shown} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, paddingTop: 0, gap: 10, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.primary} />}
-          ListEmptyComponent={<Text style={[st.empty, { padding: 40 }]}>No results yet.</Text>}
+          ListEmptyComponent={<><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="MicroscopeWithSpecimen" tone="violet" size={30} /></View><Text style={[st.empty, { padding: 40 }]}>No results yet.</Text></>}
           renderItem={({ item: r }) => (
             <TouchableOpacity style={st.card} onPress={() => setOpen(open === r.id ? null : r.id)}>
               <View style={st.cardTop}>
@@ -334,7 +334,7 @@ export function DiagCatalogMobile({ type = 'lab', isBranch, colors: C }) {
       <Text style={[st.meta, { paddingHorizontal: 16, marginBottom: 6 }]}>{isBranch ? 'Set by head office. Reference ranges here drive result flags.' : 'Tap to edit price and turnaround. Reference ranges: edit on the web dashboard.'}</Text>
       {loading ? <ActivityIndicator color={C.primary} style={{ margin: 32 }} /> : (
         <FlatList showsVerticalScrollIndicator={false} data={shown} keyExtractor={i => i.id} contentContainerStyle={{ padding: 12, paddingTop: 0, gap: 8, flexGrow: 1 }}
-          ListEmptyComponent={<Text style={[st.empty, { padding: 40 }]}>{isBranch ? 'Head office has not published a catalog yet.' : 'No items yet. Tap + to add, or use Quick add on the web.'}</Text>}
+          ListEmptyComponent={<><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Health" tone="indigo" size={30} /></View><Text style={[st.empty, { padding: 40 }]}>{isBranch ? 'Head office has not published a catalog yet.' : 'No items yet. Tap + to add, or use Quick add on the web.'}</Text></>}
           renderItem={({ item: i }) => (
             <TouchableOpacity activeOpacity={isBranch ? 1 : 0.7} style={[st.card, !i.active && { opacity: 0.55 }]}
               onPress={isBranch ? undefined : () => setEdit({ id: i.id, name: i.name, price: i.price != null ? String(i.price) : '', tatHours: i.tatHours != null ? String(i.tatHours) : '', preparation: i.preparation || '' })}>

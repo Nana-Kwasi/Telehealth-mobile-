@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -171,7 +172,7 @@ export default function BranchPrescriptionsScreen({ profile }) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={{ fontSize: 48 }}>💊</Text>
-              <Text style={styles.emptyTitle}>No prescriptions yet</Text>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Medicines" tone="emerald" size={30} /></View><Text style={styles.emptyTitle}>No prescriptions yet</Text></>
               <Text style={styles.emptySub}>Prescriptions routed to this branch will appear here.</Text>
             </View>
           }

@@ -67,6 +67,20 @@ export function IonBubble({ name, tone = 'indigo', size = 36 }) {
   );
 }
 
+/**
+ * A short "nothing here" line: a small coloured icon beside the text. Takes the
+ * text's original style, so it drops in where a plain <Text> was.
+ */
+export function EmptyLineMobile({ icon = 'Health', tone = 'indigo', style, children }) {
+  const flat = StyleSheet.flatten(style) || {};
+  return (
+    <View style={[st.line, flat.textAlign === 'center' && { justifyContent: 'center' }, flat.marginTop != null && { marginTop: flat.marginTop }]}>
+      <IconBubbleMobile icon={icon} tone={tone} size={16} />
+      <Text style={[style, { marginTop: 0, flexShrink: 1, textAlign: 'left' }]}>{children}</Text>
+    </View>
+  );
+}
+
 /** A heading with a small coloured icon. */
 export function IconHeadingMobile({ icon, tone = 'indigo', children, style }) {
   return (
@@ -84,5 +98,6 @@ const st = StyleSheet.create({
   title: { marginTop: 12, fontSize: 17, fontWeight: '700', color: '#0f172a', textAlign: 'center' },
   text: { marginTop: 4, fontSize: 14, color: '#64748b', textAlign: 'center', lineHeight: 20 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
   headingText: { fontSize: 15, fontWeight: '700', color: '#0f172a', flexShrink: 1 },
 });

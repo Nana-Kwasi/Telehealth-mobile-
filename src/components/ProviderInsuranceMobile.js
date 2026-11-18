@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from './EmptyStateMobile';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -52,7 +53,7 @@ export function ProviderClaimsMobile({ accent = '#0f766e' }) {
       {loading ? <ActivityIndicator style={{ margin: 30 }} color={accent} /> : (
         <FlatList showsVerticalScrollIndicator={false} data={rows} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, gap: 8, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
-          ListEmptyComponent={<Text style={s.empty}>No insurance claims yet.</Text>}
+          ListEmptyComponent={<><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="InsuranceCard" tone="violet" size={30} /></View><Text style={s.empty}>No insurance claims yet.</Text></>}
           renderItem={({ item: r }) => (
             <TouchableOpacity style={[s.card, r.status === 'QUERIED' && { borderLeftWidth: 4, borderLeftColor: '#f59e0b' }]} onPress={() => openClaim(r.id)}>
               <View style={s.row}><Text style={s.ref}>{r.claimRef}</Text><Pill map={CLAIM} k={r.status} /></View>
@@ -132,7 +133,7 @@ export function ProviderPreauthMobile({ accent = '#0f766e', listPath = `${I}/pre
   const cancel = (p) => Alert.alert('Cancel request?', '', [{ text: 'No', style: 'cancel' }, { text: 'Cancel it', style: 'destructive', onPress: async () => { try { await api(`${I}/preauth/${p.id}/cancel`, { method: 'POST' }); load(); } catch (e) { Alert.alert('Error', e?.message); } } }]);
   return (
     <FlatList showsVerticalScrollIndicator={false} style={{ backgroundColor: '#f8fafc' }} data={rows} keyExtractor={r => r.id} contentContainerStyle={{ padding: 12, gap: 8, flexGrow: 1 }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={load} />} ListEmptyComponent={<Text style={s.empty}>No approval requests yet.</Text>}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={load} />} ListEmptyComponent={<><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Health" tone="indigo" size={30} /></View><Text style={s.empty}>No approval requests yet.</Text></>}
       renderItem={({ item: p }) => (
         <View style={s.card}>
           <View style={s.row}><Text style={s.ref}>{p.ref}</Text><Pill map={PA} k={p.status} /></View>

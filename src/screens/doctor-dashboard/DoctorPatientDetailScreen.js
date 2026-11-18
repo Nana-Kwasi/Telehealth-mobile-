@@ -567,7 +567,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
                 </View>
               );
             })}
-            {appointments.length === 0 && <Text style={styles.emptyText}>No appointments yet</Text>}
+            {appointments.length === 0 && <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={30} /></View><Text style={styles.emptyText}>No appointments yet</Text></>}
 
             <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Latest Notes</Text>
             {notes.slice(0, 3).map(n => {
@@ -599,7 +599,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
         {/* ── APPOINTMENTS ── */}
         {activeTab === 'Appointments' && (
           dataSharing.appointments === false ? <RestrictedBanner section="appointment history" /> : <>
-            {appointments.length === 0 && <Text style={styles.emptyText}>No appointments with this patient yet</Text>}
+            {appointments.length === 0 && <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={30} /></View><Text style={styles.emptyText}>No appointments with this patient yet</Text></>}
             {appointments.map(appt => {
               const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.pending;
               return (
@@ -677,7 +677,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               </View>
             )}
 
-            {notes.length === 0 && <Text style={styles.emptyText}>No notes for this patient yet</Text>}
+            {notes.length === 0 && <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="People" tone="teal" size={30} /></View><Text style={styles.emptyText}>No notes for this patient yet</Text></>}
             {notes.map(n => {
               const tm = getTypeMeta(n.type);
               return (
@@ -709,7 +709,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
               <Text style={styles.addRowBtnText}>New prescription (full form)</Text>
             </TouchableOpacity>
 
-            {prescriptions.length === 0 && <Text style={styles.emptyText}>No prescriptions issued yet</Text>}
+            {prescriptions.length === 0 && <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Medicines" tone="emerald" size={30} /></View><Text style={styles.emptyText}>No prescriptions issued yet</Text></>}
             {prescriptions.map(rx => {
               const isDone = rx.status === 'completed';
               const medName = rx.medication || rx.medications?.[0]?.name || 'Medication';
@@ -1054,7 +1054,7 @@ export default function DoctorPatientDetailScreen({ route, navigation }) {
             ) : null}
 
             {!patient.bloodType && !patientProfile && healthRecords.length === 0 && !intakeData && (
-              <Text style={styles.emptyText}>No additional patient information available</Text>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Calendar" tone="sky" size={30} /></View><Text style={styles.emptyText}>No additional patient information available</Text></>
             )}
           </>
         )}

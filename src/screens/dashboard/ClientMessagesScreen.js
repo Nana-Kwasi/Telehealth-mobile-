@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -197,7 +198,7 @@ const ClientMessagesScreen = ({ navigation }) => {
     return (
       <View style={[styles.container, styles.centerContent]}>
         <Ionicons name="person-remove-outline" size={64} color={Colors.textSecondary} />
-        <Text style={styles.emptyText}>No therapist assigned</Text>
+        <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="Doctor" tone="blue" size={30} /></View><Text style={styles.emptyText}>No therapist assigned</Text></>
         <Text style={styles.emptySubtext}>Please contact support to get assigned to a therapist</Text>
       </View>
     );

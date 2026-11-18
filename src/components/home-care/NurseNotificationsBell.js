@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../EmptyStateMobile';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,7 +60,7 @@ export default function NurseNotificationsBell({ profileId }) {
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               {loading ? <Text style={hc.sub}>Loading…</Text> : null}
-              {!loading && list.length === 0 ? <Text style={hc.sub}>No notifications yet.</Text> : null}
+              {!loading && list.length === 0 ? <EmptyLineMobile icon="Phone" tone="amber" style={hc.sub}>No notifications yet.</EmptyLineMobile> : null}
               {list.map((n) => (
                 <TouchableOpacity
                   key={n.id}

@@ -1,3 +1,4 @@
+import { IconBubbleMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useCallback,useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -119,7 +120,7 @@ export default function MedicalDiagnosticScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="flask-outline" size={48} color="#e2e8f0" />
-              <Text style={styles.emptyText}>No lab or scan orders yet</Text>
+              <><View style={{ alignItems: 'center', marginBottom: 8 }}><IconBubbleMobile icon="MicroscopeWithSpecimen" tone="violet" size={30} /></View><Text style={styles.emptyText}>No lab or scan orders yet</Text></>
               <Text style={styles.emptySub}>Your doctor will order tests when needed</Text>
             </View>
           }

@@ -1,3 +1,4 @@
+import { EmptyLineMobile } from '../../components/EmptyStateMobile';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
@@ -192,9 +193,9 @@ export default function ClinicianFollowUpsScreen({ role = 'THERAPIST' }) {
                         <Text style={styles.answer}>{f.response}</Text>
                       </>
                     ) : (
-                      <Text style={styles.pendingNote}>
+                      <EmptyLineMobile icon="Health" tone="indigo" style={styles.pendingNote}>
                         No answer yet. Due {new Date(f.due_at).toLocaleDateString()}.
-                      </Text>
+                      </EmptyLineMobile>
                     )}
                     <Text style={styles.meta}>
                       Sent {f.created_at ? new Date(f.created_at).toLocaleDateString() : '—'}
