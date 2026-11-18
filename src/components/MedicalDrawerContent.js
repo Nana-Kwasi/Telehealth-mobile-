@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../utils/platformFeatures';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
@@ -12,6 +13,7 @@ import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
 import { performLogout } from '../services/authService';
 
 const MedicalDrawerContent = ({ navigation, profile }) => {
+  const features = usePlatformFeatures();
   const [hasPrimaryDoctor, setHasPrimaryDoctor] = useState(false);
   const [displayName, setDisplayName] = useState(profile?.name || profile?.fullName || '');
 
@@ -99,7 +101,7 @@ const MedicalDrawerContent = ({ navigation, profile }) => {
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
         <ServiceSwitchRow navigation={navigation} profile={profile} current="medical" color={MedicalColors.primary} />
-        {drawerItems.map((item) => (
+        {drawerItems.filter((i) => featureOn(features, SCREEN_FEATURE[i.name])).map((item) => (
           <TouchableOpacity
             key={item.name}
             style={styles.menuItem}

@@ -9,6 +9,7 @@ import * as Sharing from 'expo-sharing';
 import { LineChart } from 'react-native-chart-kit';
 import { api, uploadFile, API_BASE } from '../../services/apiClient';
 import { s } from '../../components/PsychRecordMobile';
+import { usePlatformFeatures, featureOn } from '../../utils/platformFeatures';
 
 /*
  * My Journal on mobile. Same endpoints as web, plus a Face ID / fingerprint
@@ -60,6 +61,7 @@ export function JournalTextMobile({ text }) {
 
 export default function JournalScreen({ accent = '#4f46e5' }) {
   const navigation = useNavigation();
+  const canWrite = featureOn(usePlatformFeatures(), 'journal');
   const [locked, setLocked] = useState(null);
   const [lockOn, setLockOn] = useState(false);
   const [entries, setEntries] = useState(null);
@@ -162,7 +164,7 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
         <Text style={s.title}>My Journal</Text>
         <Text style={s.muted}>Private to you, unless you share an entry with your care team.</Text>
         <View style={s.chips}>
-          <TouchableOpacity style={[s.btn, { backgroundColor: accent }]} onPress={() => setEditing({ entry_date: todayStr(), area: 'health' })}><Text style={s.btnText}>New entry</Text></TouchableOpacity>
+          {canWrite ? <TouchableOpacity style={[s.btn, { backgroundColor: accent }]} onPress={() => setEditing({ entry_date: todayStr(), area: 'health' })}><Text style={s.btnText}>New entry</Text></TouchableOpacity> : null}
           <TouchableOpacity onPress={exportPdf}><Text style={[s.link, { color: accent }]}>Save as PDF</Text></TouchableOpacity>
           <TouchableOpacity onPress={toggleLock}><Text style={[s.link, { color: accent }]}>{lockOn ? 'Lock: on' : 'Lock with Face ID'}</Text></TouchableOpacity>
         </View>
@@ -175,6 +177,7 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
         </View>
       ) : null}
       {error ? <Text style={s.err}>{error}</Text> : null}
+      {!canWrite ? <View style={s.gaps}><Text style={s.detail}>Writing new entries is switched off on NessaHub at the moment. You can still read and save everything you wrote.</Text></View> : null}
 
       {overview ? (
         <View style={[s.card, { flexDirection: 'row', justifyContent: 'space-around' }]}>
@@ -183,7 +186,7 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
         </View>
       ) : null}
 
-      {overview && overview.prompts.length ? (
+      {canWrite && overview && overview.prompts.length ? (
         <View style={s.card}>
           <Text style={s.title}>Today's prompts</Text>
           {overview.prompts.map((p) => (
@@ -239,18 +242,18 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
                       {e.photos.map((p) => <Image key={p.id} source={{ uri: abs(p.url) }} style={{ width: 90, height: 90, borderRadius: 8, marginRight: 6 }} />)}
                     </ScrollView>
                   ) : null}
-                  <View style={s.chips}>
+                  {canWrite ? <View style={s.chips}>
                     <TouchableOpacity onPress={() => setEditing(e)}><Text style={[s.link, { color: accent }]}>Edit</Text></TouchableOpacity>
                     <TouchableOpacity onPress={() => toCommunity(e)}><Text style={[s.link, { color: accent }]}>Post to a group</Text></TouchableOpacity>
                     <TouchableOpacity onPress={() => remove(e.id)}><Text style={[s.link, { color: '#b91c1c' }]}>Delete</Text></TouchableOpacity>
-                  </View>
+                  </View> : null}
                 </View>
               </View>
             );
           })}
       </View>
 
-      <View style={s.card}>
+      {canWrite ? <View style={s.card}>
         <Text style={s.title}>Guided programmes</Text>
         <Text style={s.muted}>A prompt a day for a week.</Text>
         {programs.map((p) => (
@@ -264,9 +267,9 @@ export default function JournalScreen({ accent = '#4f46e5' }) {
             </TouchableOpacity>
           </View>
         ))}
-      </View>
+      </View> : null}
 
-      {settings ? (
+      {canWrite && settings ? (
         <View style={s.card}>
           <Text style={s.title}>Daily reminder</Text>
           <View style={s.chips}>

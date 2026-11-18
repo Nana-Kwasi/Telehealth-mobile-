@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../utils/platformFeatures';
 import React, { useState } from 'react';
 import {
   View,
@@ -46,6 +47,7 @@ const drawerItems = [
 ];
 
 const TherapistDrawerContent = ({ navigation, profile, state }) => {
+  const features = usePlatformFeatures();
   const [photoFailed, setPhotoFailed] = useState(false);
   // Edge-to-edge drawer: without this the brand row sits UNDER the status bar
   // and the clock overprints the tagline.
@@ -128,7 +130,7 @@ const TherapistDrawerContent = ({ navigation, profile, state }) => {
 
       {/* Navigation Items */}
       <ScrollView style={styles.menuContainer} contentContainerStyle={styles.menuContent} showsVerticalScrollIndicator={false}>
-        {drawerItems.map((item) => {
+        {drawerItems.filter((i) => featureOn(features, SCREEN_FEATURE[i.screen])).map((item) => {
           const isActive = activeRoute === item.screen;
           return (
             <TouchableOpacity

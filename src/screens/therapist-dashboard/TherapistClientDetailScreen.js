@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../../utils/platformFeatures';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -169,7 +170,10 @@ function QuestionnairePanel({ client }) {
   );
 }
 
+const TAB_FEATURE = { measures: 'scoredMeasures', mse: 'psychRecord', diagnosis: 'psychRecord', private: 'psychRecord' };
+
 export default function TherapistClientDetailScreen({ navigation, route }) {
+  const features = usePlatformFeatures();
   const clientId = route.params?.clientId;
   const [client, setClient] = useState(null);
   const [authProfile, setAuthProfile] = useState(null);
@@ -520,12 +524,16 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
             <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowStatusMenu(true)} disabled={statusUpdating}>
               <Text style={styles.outlineBtnText}>{statusUpdating ? '…' : 'Status'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.outlineBtn} onPress={() => setTemplateNote(true)}>
-              <Text style={styles.outlineBtnText}>Use my template</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.outlineBtn} onPress={() => setShareOpen(true)}>
-              <Text style={styles.outlineBtnText}>Share forms</Text>
-            </TouchableOpacity>
+            {featureOn(features, 'customTemplates') ? (
+              <TouchableOpacity style={styles.outlineBtn} onPress={() => setTemplateNote(true)}>
+                <Text style={styles.outlineBtnText}>Use my template</Text>
+              </TouchableOpacity>
+            ) : null}
+            {featureOn(features, 'intakeForms') ? (
+              <TouchableOpacity style={styles.outlineBtn} onPress={() => setShareOpen(true)}>
+                <Text style={styles.outlineBtnText}>Share forms</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity style={styles.outlineBtn} onPress={() => navigation.navigate('TransferPatient', { patientId: clientId, patientName: clientName, role: 'THERAPIST' })}>
               <Text style={styles.outlineBtnText}>Transfer</Text>
             </TouchableOpacity>
@@ -567,7 +575,7 @@ export default function TherapistClientDetailScreen({ navigation, route }) {
         <CodingAssistCard patientId={clientId} accent={TherapistColors.primary} />
 
         <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
-          {[...TABS, ...(canPrescribe ? PSYCHIATRY_TABS : [])].map((tab) => (
+          {[...TABS, ...(canPrescribe ? PSYCHIATRY_TABS : [])].filter((t) => featureOn(features, TAB_FEATURE[t])).map((tab) => (
             <TouchableOpacity
               key={tab}
               style={[styles.tab, activeTab === tab && styles.tabActive]}

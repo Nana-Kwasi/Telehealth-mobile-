@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../../utils/platformFeatures';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -107,6 +108,7 @@ function buildStatusData(appointments) {
 }
 
 const MedicalHomeScreen = ({ navigation }) => {
+  const features = usePlatformFeatures();
   const [appointments, setAppointments] = useState([]);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   // Days that have an appointment. `date` is already a local YYYY-MM-DD string,
@@ -481,8 +483,8 @@ const MedicalHomeScreen = ({ navigation }) => {
     >
       {/* A transfer of this patient's care waiting for their consent. */}
       <TransferConsentCard kind="MEDICAL" />
-      <MyIntakeFormsMobile accent="#1e6bb8" />
-      <MyQuestionnairesMobile accent="#1e6bb8" />
+      {featureOn(features, 'intakeForms') ? <MyIntakeFormsMobile accent="#1e6bb8" /> : null}
+      {featureOn(features, 'scoredMeasures') ? <MyQuestionnairesMobile accent="#1e6bb8" /> : null}
       {/* Welcome Banner */}
       <View style={styles.welcomeCard}>
         {/* Behind the header content, faded left-to-right so the

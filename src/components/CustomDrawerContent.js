@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../utils/platformFeatures';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -20,6 +21,7 @@ import { api } from '../services/apiClient';
 import { resolveFileUrl, avatarOf } from '../utils/mediaUrl';
 
 const CustomDrawerContent = ({ navigation, profile, state }) => {
+  const features = usePlatformFeatures();
   // Second Opinion clients see a narrower drawer: one case, one consultation,
   // no programme. Schedule and Resources describe ongoing care they have not
   // bought, so they are hidden rather than shown empty.
@@ -239,7 +241,7 @@ const CustomDrawerContent = ({ navigation, profile, state }) => {
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.menuContainer}>
         <ServiceSwitchRow navigation={navigation} profile={profile} current="therapy" color="#5046bd" />
-        {visibleItems.map((item) => (
+        {visibleItems.filter((i) => featureOn(features, SCREEN_FEATURE[i.screen])).map((item) => (
           <TouchableOpacity
             key={item.name}
             style={[styles.menuItem, activeRoute === item.screen && styles.menuItemActive]}

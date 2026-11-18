@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn } from '../../utils/platformFeatures';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, View, Text, TextInput, TouchableOpacity, Share, Linking } from 'react-native';
 import { api, API_BASE } from '../../services/apiClient';
@@ -28,21 +29,22 @@ function Chip({ on, label, onPress, accent }) {
 }
 
 export default function PracticeScreen({ role = 'THERAPIST', accent = '#4f46e5' }) {
+  const features = usePlatformFeatures();
   const clientsPath = role === 'DOCTOR' ? '/api/v1/doctors/me/patients' : '/api/v1/therapy-management/clients';
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
       <Goals accent={accent} />
       <Waitlist clientsPath={clientsPath} accent={accent} />
       <TimeOff accent={accent} />
-      <Policies accent={accent} />
-      <CalendarSync accent={accent} />
-      <Announcements clientsPath={clientsPath} accent={accent} />
-      <TemplatesMobile accent={accent} />
+      <Policies accent={accent} features={features} />
+      {featureOn(features, 'calendarSync') ? <CalendarSync accent={accent} /> : null}
+      {featureOn(features, 'practiceAnnouncements') ? <Announcements clientsPath={clientsPath} accent={accent} /> : null}
+      {featureOn(features, 'customTemplates') ? <TemplatesMobile accent={accent} /> : null}
     </ScrollView>
   );
 }
 
-function Policies({ accent }) {
+function Policies({ accent, features = {} }) {
   const [st, setSt] = useState(null);
   const [msg, setMsg] = useState('');
   useEffect(() => { api('/api/v1/practice/settings').then(setSt).catch((e) => setMsg(e?.message || 'Could not load.')); }, []);
@@ -71,12 +73,15 @@ function Policies({ accent }) {
       <View style={s.chips}>
         <Chip label={st.smsReminders ? 'Day-before texts: on' : 'Day-before texts: off'} accent={accent} on={!!st.smsReminders} onPress={() => save({ smsReminders: !st.smsReminders })} />
       </View>
-      <Text style={[s.kind, { marginTop: 12 }]}>Automatic help</Text>
+      {featureOn(features, 'waitlistAutoOffers') || featureOn(features, 'reminderCalls') ? <Text style={[s.kind, { marginTop: 12 }]}>Automatic help</Text> : null}
+      {featureOn(features, 'waitlistAutoOffers') ? <>
       <View style={s.chips}>
         <Chip label={st.autoOfferWaitlist ? 'Offer cancelled times to my waitlist: on' : 'Offer cancelled times to my waitlist: off'} accent={accent}
           on={!!st.autoOfferWaitlist} onPress={() => automate({ autoOfferWaitlist: !st.autoOfferWaitlist })} />
       </View>
-      <Text style={[s.muted, { marginTop: 4 }]}>The person who has waited longest is told. Not when the time is under 3 hours away, in your time off, or booked again.</Text>
+      <Text style={[s.muted, { marginTop: 4 }]}>The person who has waited longest is told. Not when the time is only a few hours away, in your time off, or booked again.</Text>
+      </> : null}
+      {featureOn(features, 'reminderCalls') ? <>
       <View style={s.chips}>
         <Chip label={st.voiceReminders ? 'Reminder calls the day before: on' : 'Reminder calls the day before: off'} accent={accent}
           on={!!st.voiceReminders} onPress={() => automate({ voiceReminders: !st.voiceReminders })} />
@@ -85,6 +90,7 @@ function Policies({ accent }) {
         The call names neither you nor the service, and is never placed between 8 pm and 8 am.
         {st.voiceAvailable ? '' : ' Reminder calls are not switched on for NessaHub yet, so nothing is dialled until they are.'}
       </Text>
+      </> : null}
       {msg ? <Text style={msg === 'Saved.' ? s.ok : s.err}>{msg}</Text> : null}
     </View>
   );

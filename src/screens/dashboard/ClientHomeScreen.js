@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../../utils/platformFeatures';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -125,6 +126,7 @@ const MOOD_OPTIONS = [
 ];
 
 const ClientHomeScreen = ({ navigation }) => {
+  const features = usePlatformFeatures();
   const [clientData, setClientData] = useState(null);
   // Psychiatry: the medical patient home's Prescriptions / E-Pharmacy shortcuts.
   const [isPsychiatry, setIsPsychiatry] = useState(false);
@@ -510,8 +512,8 @@ const ClientHomeScreen = ({ navigation }) => {
     >
       {/* A transfer to another therapist waiting for this client's consent. */}
       <TransferConsentCard kind="THERAPY" />
-      <MyIntakeFormsMobile />
-      <MyQuestionnairesMobile />
+      {featureOn(features, 'intakeForms') ? <MyIntakeFormsMobile /> : null}
+      {featureOn(features, 'scoredMeasures') ? <MyQuestionnairesMobile /> : null}
       <View style={[styles.header, glassStyle]}>
         <GlassFill />
         {/* Behind the header content, faded left-to-right so the greeting

@@ -1,3 +1,4 @@
+import { usePlatformFeatures, featureOn, SCREEN_FEATURE } from '../utils/platformFeatures';
 import React from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, DeviceEventEmitter } from 'react-native';
@@ -38,6 +39,7 @@ const drawerItems = [
 ];
 
 const DoctorDrawerContent = ({ navigation, profile, state }) => {
+  const features = usePlatformFeatures();
   const activeRoute = state?.routes?.[state.index]?.name;
 
   // Self-heal: the cached login profile can be stale, so fetch the live doctor
@@ -103,7 +105,7 @@ const DoctorDrawerContent = ({ navigation, profile, state }) => {
 
       {/* Navigation */}
       <ScrollView style={styles.menuContainer} showsVerticalScrollIndicator={false}>
-        {drawerItems.map(item => {
+        {drawerItems.filter((i) => featureOn(features, SCREEN_FEATURE[i.screen])).map(item => {
           const key = item.stackScreen || item.screen;
           const isActive = item.stackScreen ? false : activeRoute === item.screen;
           return (
